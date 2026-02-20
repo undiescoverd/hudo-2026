@@ -5,8 +5,9 @@
 
 'use strict';
 
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 // ─── Colour helpers ───────────────────────────────────────────────────────────
 const c = {
@@ -420,6 +421,24 @@ function cmdStart(taskId) {
   const { byId } = loadAllTasks();
   const task = byId.get(taskId);
   if (!task) { console.error(col(c.red, `✗  Task not found: ${taskId}`)); process.exit(1); }
+
+  // Always branch from main so PRs always target main
+  if (task.branch) {
+    try {
+      console.log(col(c.grey, '  Branching from main…'));
+      execFileSync('git', ['checkout', 'main'], { stdio: 'inherit' });
+      execFileSync('git', ['pull', 'origin', 'main'], { stdio: 'inherit' });
+      try {
+        execFileSync('git', ['checkout', '-b', task.branch], { stdio: 'inherit' });
+      } catch {
+        execFileSync('git', ['checkout', task.branch], { stdio: 'inherit' });
+      }
+      console.log(col(c.grey, `  on branch: ${task.branch}`));
+    } catch (err) {
+      console.warn(col(c.yellow, `⚠  git branch setup failed — create branch manually: git checkout main && git checkout -b ${task.branch}`));
+    }
+  }
+
   setTaskStatus(task, 'in_progress');
   auditLog(`START ${taskId}`);
   console.log(col(c.yellow, `▶  ${taskId} set to in_progress`));
