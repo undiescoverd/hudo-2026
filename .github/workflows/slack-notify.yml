@@ -1,0 +1,78 @@
+name: Slack Notify
+
+on:
+  pull_request:
+    types: [opened, closed]
+    branches: [main]
+  issue_comment:
+    types: [created]
+
+jobs:
+  notify-pr-opened:
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    name: Notify PR opened
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          python3 -c "
+          import os, json, urllib.request
+          payload = json.dumps({
+              'text': f':git: *New PR opened:* <{os.environ[\"PR_URL\"]}|#{os.environ[\"PR_NUMBER\"]} {os.environ[\"PR_TITLE\"]}>\n*Branch:* \`{os.environ[\"BRANCH\"]}\`\nDeepSeek review running...'
+          }).encode()
+          req = urllib.request.Request(os.environ['SLACK_WEBHOOK_URL'], data=payload, headers={'Content-Type': 'application/json'})
+          urllib.request.urlopen(req)
+          "
+
+  notify-pr-merged:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+    name: Notify PR merged
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python3 -c "
+          import os, json, urllib.request
+          payload = json.dumps({
+              'text': f':merged: *PR merged to main:* <{os.environ[\"PR_URL\"]}|#{os.environ[\"PR_NUMBER\"]} {os.environ[\"PR_TITLE\"]}>'
+          }).encode()
+          req = urllib.request.Request(os.environ['SLACK_WEBHOOK_URL'], data=payload, headers={'Content-Type': 'application/json'})
+          urllib.request.urlopen(req)
+          "
+
+  notify-approved:
+    if: |
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'created' &&
+      github.event.comment.user.login == 'github-actions[bot]' &&
+      contains(github.event.comment.body, 'Approved') &&
+      contains(github.event.comment.body, 'No issues found')
+    name: Notify PR approved
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          PR_URL: ${{ github.event.issue.html_url }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          PR_TITLE: ${{ github.event.issue.title }}
+        run: |
+          python3 -c "
+          import os, json, urllib.request
+          payload = json.dumps({
+              'text': f':white_check_mark: *PR approved — ready to merge:* <{os.environ[\"PR_URL\"]}|#{os.environ[\"PR_NUMBER\"]} {os.environ[\"PR_TITLE\"]}>'
+          }).encode()
+          req = urllib.request.Request(os.environ['SLACK_WEBHOOK_URL'], data=payload, headers={'Content-Type': 'application/json'})
+          urllib.request.urlopen(req)
+          "
