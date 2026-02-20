@@ -8,13 +8,13 @@
 
 ---
 
-- [ ] **S0-INFRA-001** — Initialise repository and Next.js project
+- [x] **S0-INFRA-001** — Initialise repository and Next.js project
 
 TASK_ID: S0-INFRA-001
 TITLE: Initialise repository and Next.js project
 BRANCH: feat/s0-infra-001-repo-init
 MODEL: haiku-4.5
-STATUS: in_progress
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Next.js 14 project created with App Router and TypeScript strict mode
@@ -45,7 +45,7 @@ TASK_ID: S0-INFRA-002
 TITLE: Configure GitHub Actions CI pipeline
 BRANCH: feat/s0-infra-002-ci
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: in_progress
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - CI runs on every PR and push to main
@@ -86,7 +86,7 @@ TASK_ID: S0-INFRA-004
 TITLE: Add security headers to Next.js config
 BRANCH: feat/s0-infra-004-security-headers
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: in_progress
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - All five required headers present on every response (see PRD Section 5.5)
@@ -217,7 +217,7 @@ TASK_ID: S0-INFRA-005
 TITLE: Install and configure Sentry for error monitoring
 BRANCH: feat/s0-infra-005-sentry
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: in_progress
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - Sentry Next.js SDK installed and configured
@@ -242,7 +242,7 @@ TASK_ID: S0-INFRA-006
 TITLE: Install PostHog with cookie consent gate
 BRANCH: feat/s0-infra-006-posthog
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: in_progress
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - PostHog installed but does NOT initialise or fire any events until cookie consent is granted
