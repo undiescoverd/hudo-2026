@@ -2,7 +2,7 @@ name: Slack Notify
 
 on:
   pull_request:
-    types: [opened, closed]
+    types: [opened, reopened, closed]
     branches: [main]
   issue_comment:
     types: [created]
