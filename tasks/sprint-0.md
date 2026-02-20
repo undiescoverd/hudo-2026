@@ -14,7 +14,7 @@ TASK_ID: S0-INFRA-001
 TITLE: Initialise repository and Next.js project
 BRANCH: feat/s0-infra-001-repo-init
 MODEL: haiku-4.5
-STATUS: in_progress
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Next.js 14 project created with App Router and TypeScript strict mode
@@ -45,7 +45,7 @@ TASK_ID: S0-INFRA-002
 TITLE: Configure GitHub Actions CI pipeline
 BRANCH: feat/s0-infra-002-ci
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: in_progress
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - CI runs on every PR and push to main
@@ -54,7 +54,9 @@ ACCEPTANCE_CRITERIA:
   - Branch protection rule on main documented in README (must be enabled manually in GitHub settings)
 FILES:
   - .github/workflows/ci.yml
-NOTES: Use pnpm in CI. Cache pnpm store between runs.
+  - .github/workflows/pr-review.yml
+  - .github/pr-review-prompt.md
+NOTES: Use pnpm in CI. Cache pnpm store between runs. PR review uses DeepSeek V3 (OpenAI-compatible API). Requires DEEPSEEK_API_KEY secret in GitHub repo settings.
 
 ---
 
