@@ -1,0 +1,64 @@
+# Hudo — Cursor Agent Rules
+
+## What is Hudo?
+
+Hudo is a video review platform purpose-built for the talent agency / talent relationship — think Frame.io but for agencies managing talent. Agencies upload videos on behalf of talent, talent reviews and comments, and agencies manage the full approval workflow. The core loop is: upload → review → comment → approve. Everything else (billing, guest links, notifications) serves that loop.
+
+Full product context: `docs/prd.md`
+Tech stack, schema, and sprint tasks: `docs/build-foundation.md`
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 14, App Router, TypeScript strict mode |
+| UI | Shadcn UI (Radix UI primitives), Tailwind CSS 3 |
+| Auth | Supabase Auth (email/password only) |
+| Database | Supabase (PostgreSQL), RLS on all tables |
+| Realtime | Supabase Realtime |
+| Storage | Cloudflare R2 (private, signed URLs) |
+| Email | Resend |
+| Payments | Stripe + Stripe Tax |
+| Errors | Sentry (Next.js SDK) |
+| Analytics | PostHog (consent-gated) |
+| Hosting | Vercel |
+| Package manager | pnpm |
+| Node version | 20 LTS |
+
+---
+
+## Agent Behaviour Rules
+
+These rules apply to every agent session in this repo. They are non-negotiable.
+
+**Before writing any code:**
+1. Read the full task block for your assigned task.
+2. Read `docs/prd.md` and `docs/build-foundation.md` if you need context beyond the task block.
+3. Run `node orchestrate.js start [TASK_ID]` to mark the task in_progress.
+
+**Scope discipline:**
+- Only create or modify files listed in the task's `FILES` field.
+- Do not touch files outside that list without an explicit reason documented in a code comment.
+- Do not begin a task while any `BLOCKED_BY` task is not in `done` status — check with `node orchestrate.js status`.
+
+**Code quality:**
+- Write the minimum code needed to satisfy every acceptance criterion — nothing more.
+- No speculative features, no unused variables, no dead code.
+- Write a test for every behaviour described in the acceptance criteria.
+- A code review agent will rewrite any code that is not clean and minimal — write it right first.
+
+**Dependencies:**
+- Never install an npm dependency not already in `package.json` without flagging it in a comment and getting explicit approval.
+- Check `package.json` before adding any import.
+
+**Security:**
+- Stripe secret keys, Supabase service role keys, and R2 secret keys must never appear in client-side code or be committed to git.
+- Direct R2 object URLs must never be returned to any client — always use the signing proxy.
+- Guest pages must never access Supabase directly.
+
+**When opening a PR:**
+- Run `node orchestrate.js review [TASK_ID]` before pushing.
+- Commit message format: `[TASK_ID] short description` (e.g. `[S0-INFRA-002] add CI workflow`).
+- Push the feature branch; do not push to main directly.
