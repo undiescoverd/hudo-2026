@@ -9,7 +9,7 @@ on:
 
 jobs:
   notify-pr-opened:
-    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    if: github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'reopened')
     name: Notify PR opened
     runs-on: ubuntu-latest
     steps:
