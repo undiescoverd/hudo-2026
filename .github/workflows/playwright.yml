@@ -1,0 +1,79 @@
+name: Playwright E2E
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Override base URL for E2E tests'
+        required: false
+        default: ''
+
+jobs:
+  e2e:
+    name: E2E Tests (Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ github.event.inputs.base_url || secrets.PLAYWRIGHT_TEST_URL }}
+          E2E_TEST_AGENCY_EMAIL: ${{ secrets.E2E_TEST_AGENCY_EMAIL }}
+          E2E_TEST_AGENCY_PASSWORD: ${{ secrets.E2E_TEST_AGENCY_PASSWORD }}
+          E2E_GUEST_TEST_TOKEN: ${{ secrets.E2E_GUEST_TEST_TOKEN }}
+          E2E_AGENCY_A_EMAIL: ${{ secrets.E2E_AGENCY_A_EMAIL }}
+          E2E_AGENCY_A_PASSWORD: ${{ secrets.E2E_AGENCY_A_PASSWORD }}
+          E2E_AGENCY_B_EMAIL: ${{ secrets.E2E_AGENCY_B_EMAIL }}
+          E2E_AGENCY_B_PASSWORD: ${{ secrets.E2E_AGENCY_B_PASSWORD }}
+        run: pnpm test:e2e
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  notify-slack:
+    name: Slack notification
+    runs-on: ubuntu-latest
+    needs: e2e
+    if: always()
+    steps:
+      - name: Post pass/fail to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          JOB_STATUS: ${{ needs.e2e.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 -c "
+          import os, json, urllib.request
+          status = os.environ['JOB_STATUS']
+          icon = ':white_check_mark:' if status == 'success' else ':x:'
+          payload = json.dumps({
+              'text': f'{icon} *Playwright E2E:* {status} — <{os.environ[\"RUN_URL\"]}|View run>'
+          }).encode()
+          req = urllib.request.Request(os.environ['SLACK_WEBHOOK_URL'], data=payload, headers={'Content-Type': 'application/json'})
+          urllib.request.urlopen(req)
+          "

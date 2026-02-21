@@ -6,10 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ci:
     name: Lint, Type-check, Build
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -23,13 +28,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Type-check
-        run: pnpm type-check
-
       - name: Lint
         run: pnpm lint
 
-      - name: Format check
+      - name: Type check
+        run: pnpm type-check
+
+      - name: Check formatting
         run: pnpm format:check
 
       - name: Build
