@@ -33,8 +33,11 @@ jobs:
           TASK_ID: ${{ steps.task.outputs.task_id }}
         run: |
           python3 - << 'PYEOF'
-          import os, json, urllib.request
+          import os, json, urllib.request, sys
           token = os.environ["BASEROW_DB_TOKEN"]
+          if not token:
+              print("BASEROW_DB_TOKEN not set — skipping")
+              sys.exit(0)
           task_id = os.environ["TASK_ID"]
           table_id = "849304"
           base = "https://api.baserow.io/api"
@@ -85,9 +88,12 @@ jobs:
           TASK_ID: ${{ steps.task.outputs.task_id }}
         run: |
           python3 - << 'PYEOF'
-          import os, json, urllib.request
+          import os, json, urllib.request, sys
 
           token = os.environ["BASEROW_DB_TOKEN"]
+          if not token:
+              print("BASEROW_DB_TOKEN not set — skipping")
+              sys.exit(0)
           task_id = os.environ["TASK_ID"]
           table_id = "849304"
           base = "https://api.baserow.io/api"
