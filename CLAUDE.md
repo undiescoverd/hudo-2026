@@ -71,7 +71,14 @@ Task format requires: `TASK_ID`, `TITLE`, `BRANCH`, `MODEL`, `STATUS`, `BLOCKED_
 - Write tests for every acceptance criterion
 - Do not add dependencies without flagging first
 - Commit → push branch → open PR → run `orchestrate.js review`
+- After opening a PR, always run `/pr-fix` to start the Ralph Loop — do not wait for manual invocation
+- Before committing, run `pnpm format:check && pnpm type-check && pnpm lint` to catch CI issues locally
 - Do not start a task while any `BLOCKED_BY` task is not `done`
+- After completing work, update CLAUDE.md with any learnings (new patterns, gotchas, tooling changes). Keep it concise — remove stale info, never duplicate, only add what future agents genuinely need. Prefer updating MEMORY.md for session-specific details and CLAUDE.md for durable project rules.
+
+## Code Quality
+
+- **Pre-commit hooks** via Husky + lint-staged. Staged files are auto-formatted (Prettier) and linted (ESLint) on every commit. Config in `package.json` under `lint-staged`.
 
 ## Environments
 
