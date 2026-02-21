@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import { Page } from '@playwright/test'
 
 // Page Object for the upload flow — populated in S1-E2E-001
 //

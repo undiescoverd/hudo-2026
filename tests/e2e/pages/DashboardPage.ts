@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import { Page } from '@playwright/test'
 
 // Page Object for /dashboard — populated in S1-E2E-001 and S3-E2E-001
 //

@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import { Page } from '@playwright/test'
 
 // Page Object for /sign-in and /sign-up — populated in S1-E2E-001
 //

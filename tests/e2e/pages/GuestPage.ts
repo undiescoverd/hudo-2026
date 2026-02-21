@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import { Page } from '@playwright/test'
 
 // Page Object for /guest/:token — populated in S2-E2E-001
 //
