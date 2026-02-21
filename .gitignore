@@ -39,5 +39,9 @@ pnpm-debug.log*
 # Sentry
 .sentryclirc
 
+# Playwright
+playwright-report/
+test-results/
+
 # Local utility scripts
 get-jwt.sh

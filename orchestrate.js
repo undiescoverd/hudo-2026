@@ -413,7 +413,17 @@ WHEN OPENING PR:
   Run: node orchestrate.js review ${taskId}
 
 Commit your work, push the branch, and open a PR when done.
-`);
+${taskId.includes('-E2E-') ? `
+E2E TASK NOTES:
+- This is a Playwright E2E task. Tests live in tests/e2e/
+- Run tests locally: pnpm test:e2e (against localhost:3000)
+- Interactive mode: pnpm test:e2e:ui
+- Never call Supabase or R2 directly from tests — drive the browser UI only
+- Use data-testid attributes for selectors, never CSS class names
+- Page Objects live in tests/e2e/pages/ — populate rather than inventing new ones
+- Fixtures live in tests/e2e/fixtures/ — use the auth fixture for authenticated sessions
+- Skeleton files already exist from S1-E2E-000 — populate them, don't recreate
+` : ''}`);
 }
 
 function cmdStart(taskId) {
