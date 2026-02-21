@@ -8,13 +8,13 @@
 
 ---
 
-- [ ] **S0-INFRA-001** — Initialise repository and Next.js project
+- [x] **S0-INFRA-001** — Initialise repository and Next.js project
 
 TASK_ID: S0-INFRA-001
 TITLE: Initialise repository and Next.js project
 BRANCH: feat/s0-infra-001-repo-init
 MODEL: haiku-4.5
-STATUS: in_progress
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Next.js 14 project created with App Router and TypeScript strict mode
@@ -39,13 +39,13 @@ NOTES: Use pnpm as package manager. Node 20 LTS. Do not install any feature depe
 
 ---
 
-- [ ] **S0-INFRA-002** — Configure GitHub Actions CI
+- [x] **S0-INFRA-002** — Configure GitHub Actions CI
 
 TASK_ID: S0-INFRA-002
 TITLE: Configure GitHub Actions CI pipeline
 BRANCH: feat/s0-infra-002-ci
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - CI runs on every PR and push to main
@@ -80,13 +80,13 @@ NOTES: Do not store any secrets in the repo. Environment variables are set via V
 
 ---
 
-- [ ] **S0-INFRA-004** — Configure security headers
+- [x] **S0-INFRA-004** — Configure security headers
 
 TASK_ID: S0-INFRA-004
 TITLE: Add security headers to Next.js config
 BRANCH: feat/s0-infra-004-security-headers
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - All five required headers present on every response (see PRD Section 5.5)
@@ -211,13 +211,13 @@ NOTES: Use AWS SDK v3 `@aws-sdk/client-s3` with `getSignedUrl` — R2 is S3-comp
 
 ---
 
-- [ ] **S0-INFRA-005** — Configure Sentry
+- [x] **S0-INFRA-005** — Configure Sentry
 
 TASK_ID: S0-INFRA-005
 TITLE: Install and configure Sentry for error monitoring
 BRANCH: feat/s0-infra-005-sentry
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - Sentry Next.js SDK installed and configured
@@ -236,13 +236,13 @@ NOTES: Do not enable Sentry session replay in MVP — it captures video frames a
 
 ---
 
-- [ ] **S0-INFRA-006** — Configure PostHog
+- [x] **S0-INFRA-006** — Configure PostHog
 
 TASK_ID: S0-INFRA-006
 TITLE: Install PostHog with cookie consent gate
 BRANCH: feat/s0-infra-006-posthog
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - PostHog installed but does NOT initialise or fire any events until cookie consent is granted
