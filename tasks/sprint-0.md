@@ -8,13 +8,13 @@
 
 ---
 
-- [ ] **S0-INFRA-001** — Initialise repository and Next.js project
+- [x] **S0-INFRA-001** — Initialise repository and Next.js project
 
 TASK_ID: S0-INFRA-001
 TITLE: Initialise repository and Next.js project
 BRANCH: feat/s0-infra-001-repo-init
 MODEL: haiku-4.5
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Next.js 14 project created with App Router and TypeScript strict mode
@@ -39,13 +39,13 @@ NOTES: Use pnpm as package manager. Node 20 LTS. Do not install any feature depe
 
 ---
 
-- [ ] **S0-INFRA-002** — Configure GitHub Actions CI
+- [x] **S0-INFRA-002** — Configure GitHub Actions CI
 
 TASK_ID: S0-INFRA-002
 TITLE: Configure GitHub Actions CI pipeline
 BRANCH: feat/s0-infra-002-ci
 MODEL: haiku-4.5
-STATUS: in_progress
+STATUS: done
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - CI runs on every PR and push to main
