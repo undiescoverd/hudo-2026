@@ -19,7 +19,7 @@ jobs:
           TASK_ID=$(python3 -c "
           import re, os
           branch = os.environ['BRANCH']
-          m = re.search(r's(\d+)-([a-z]+)-(\d+)', branch)
+          m = re.search(r's(\d+)-([a-z0-9]+)-(\d+)', branch)
           if m:
               sprint, area, num = m.group(1), m.group(2).upper(), m.group(3)
               print(f'S{sprint}-{area}-{num}')
@@ -70,7 +70,7 @@ jobs:
           TASK_ID=$(python3 -c "
           import re, os
           branch = os.environ['BRANCH']
-          m = re.search(r's(\d+)-([a-z]+)-(\d+)', branch)
+          m = re.search(r's(\d+)-([a-z0-9]+)-(\d+)', branch)
           if m:
               sprint, area, num = m.group(1), m.group(2).upper(), m.group(3)
               print(f'S{sprint}-{area}-{num}')
