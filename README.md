@@ -85,6 +85,7 @@ See `orchestrate.md` for full documentation.
 The project is deployed on Vercel and automatically linked to the GitHub repository `undiescoverd/hudo-2026`.
 
 **Deployment triggers:**
+
 - **Preview deployments** are triggered automatically on every pull request
 - **Production deployment** is triggered on merge to `main`
 
@@ -93,9 +94,11 @@ The project is deployed on Vercel and automatically linked to the GitHub reposit
 Vercel is configured with three isolated environment variable groups corresponding to the three Hudo environments:
 
 #### 1. Development (`hudo-dev`)
+
 For preview deployments and development testing. Configuration deployed to `hudo-dev.vercel.app`.
 
 **Variables to set:**
+
 - `NEXT_PUBLIC_SUPABASE_URL` — Supabase API endpoint for hudo-dev
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase anon key (public; safe for browser)
 - `SUPABASE_SERVICE_ROLE_KEY` — Supabase service role key (server-side only)
@@ -129,12 +132,14 @@ For preview deployments and development testing. Configuration deployed to `hudo
 - `E2E_AGENCY_B_PASSWORD` — Multi-tenant test account B password (set in GitHub Actions)
 
 #### 2. Preview (`hudo-staging`)
+
 For staging/UAT before production. Configuration deployed to `hudo-staging.vercel.app`.
 
 **Variables to set:**
 Same as Development, but using credentials for the `hudo-staging` Supabase project and R2 bucket.
 
 #### 3. Production (`hudo-prod`)
+
 Live production environment. Configuration deployed to `hudo.io`.
 
 **Variables to set:**
@@ -145,6 +150,7 @@ Same as Development, but using credentials for the `hudo-prod` Supabase project 
 Environment variables are managed exclusively through the Vercel dashboard. **Never commit `.env.local` or store secrets in version control.**
 
 To set variables in Vercel:
+
 1. Go to https://vercel.com/dashboard
 2. Select the Hudo project
 3. Navigate to Settings → Environment Variables
