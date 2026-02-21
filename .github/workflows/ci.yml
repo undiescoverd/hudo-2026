@@ -53,6 +53,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           BRANCH: ${{ github.ref_name }}
         run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then echo "SLACK_WEBHOOK_URL not set — skipping"; exit 0; fi
           python3 -c "
           import os, json, urllib.request
           payload = json.dumps({
@@ -69,6 +70,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           BRANCH: ${{ github.ref_name }}
         run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then echo "SLACK_WEBHOOK_URL not set — skipping"; exit 0; fi
           python3 -c "
           import os, json, urllib.request
           payload = json.dumps({
