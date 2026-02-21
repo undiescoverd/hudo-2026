@@ -6,6 +6,7 @@ on:
     branches: [main]
   issue_comment:
     types: [created]
+  workflow_dispatch:
 
 jobs:
   notify-pr-opened:
@@ -51,14 +52,13 @@ jobs:
           urllib.request.urlopen(req)
           "
 
-  notify-approved:
+  notify-reviewed:
     if: |
       github.event_name == 'issue_comment' &&
       github.event.action == 'created' &&
       github.event.comment.user.login == 'github-actions[bot]' &&
-      contains(github.event.comment.body, 'Approved') &&
-      contains(github.event.comment.body, 'No issues found')
-    name: Notify PR approved
+      contains(github.event.comment.body, 'Automated Code Review')
+    name: Notify DeepSeek review posted
     runs-on: ubuntu-latest
     steps:
       - name: Post to Slack
@@ -71,8 +71,27 @@ jobs:
           python3 -c "
           import os, json, urllib.request
           payload = json.dumps({
-              'text': f':white_check_mark: *PR approved — ready to merge:* <{os.environ[\"PR_URL\"]}|#{os.environ[\"PR_NUMBER\"]} {os.environ[\"PR_TITLE\"]}>'
+              'text': f':robot_face: *DeepSeek review posted:* <{os.environ[\"PR_URL\"]}|#{os.environ[\"PR_NUMBER\"]} {os.environ[\"PR_TITLE\"]}>'
           }).encode()
           req = urllib.request.Request(os.environ['SLACK_WEBHOOK_URL'], data=payload, headers={'Content-Type': 'application/json'})
           urllib.request.urlopen(req)
+          "
+
+  notify-test:
+    if: github.event_name == 'workflow_dispatch'
+    name: Test webhook
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post test message to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          python3 -c "
+          import os, json, urllib.request
+          payload = json.dumps({
+              'text': ':white_check_mark: Hudo Slack webhook is working correctly.'
+          }).encode()
+          req = urllib.request.Request(os.environ['SLACK_WEBHOOK_URL'], data=payload, headers={'Content-Type': 'application/json'})
+          urllib.request.urlopen(req)
+          print('OK')
           "
