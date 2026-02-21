@@ -7,6 +7,7 @@ You are fixing issues flagged by the automated PR review on this branch.
 ### Step 1 — Check the review status
 
 Run:
+
 ```bash
 gh pr view --json number,headRefName,statusCheckRollup 2>/dev/null
 ```
@@ -18,11 +19,13 @@ and stop.
 ### Step 2 — Wait for any in-progress DeepSeek review
 
 Check if the "PR Review" check is currently running:
+
 ```bash
 gh pr checks 2>/dev/null | grep "PR Review"
 ```
 
 If it shows "in_progress" or "queued", wait for it to complete:
+
 ```bash
 for i in $(seq 1 12); do
   sleep 15
@@ -58,11 +61,13 @@ and stop. (Push a trivial commit or wait — the review will trigger on the next
 ### Step 4 — Parse and fix each finding
 
 The review lists findings like:
+
 ```
 1. **[SEVERITY: high]** `path/to/file.ts:42` — Description of issue.
 ```
 
 For each finding:
+
 - Read the referenced file at the referenced line
 - Understand what the issue is
 - Apply the minimal fix that resolves it
@@ -88,6 +93,7 @@ git push
 ### Step 7 — Wait for new DeepSeek review to post
 
 Poll until a new comment appears (DeepSeek typically takes 60–90 seconds):
+
 ```bash
 BEFORE=$(gh pr view --json comments --jq '.comments | map(select(.author.login == "github-actions[bot]")) | length')
 for i in $(seq 1 18); do
