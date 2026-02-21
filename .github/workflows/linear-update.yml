@@ -1,0 +1,163 @@
+name: Update Linear on PR
+
+on:
+  pull_request:
+    types: [closed, opened, reopened]
+
+jobs:
+  mark-in-review:
+    if: github.event.action == 'opened' || github.event.action == 'reopened'
+    name: Mark task In Review in Linear
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update Linear to In Review
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - << 'PYEOF'
+          import re, os, json, sys, urllib.request
+
+          branch  = os.environ["BRANCH"]
+          api_key = os.environ["LINEAR_API_KEY"]
+
+          m = re.search(r's(\d+)-([a-z0-9]+)-(\d+)', branch)
+          if not m:
+              print(f"No task ID found in branch '{branch}' — skipping")
+              sys.exit(0)
+
+          task_id = f"S{m.group(1)}-{m.group(2).upper()}-{m.group(3)}"
+          print(f"Task ID: {task_id}")
+
+          with open("scripts/linear-id-map.json") as f:
+              id_map = json.load(f)
+
+          issue_id = id_map.get(task_id)
+          if not issue_id:
+              print(f"'{task_id}' not in linear-id-map.json — skipping")
+              sys.exit(0)
+
+          headers = {"Authorization": api_key, "Content-Type": "application/json"}
+
+          def gql(query, variables=None):
+              payload = json.dumps({"query": query, "variables": variables or {}}).encode()
+              req = urllib.request.Request("https://api.linear.app/graphql", data=payload, headers=headers)
+              with urllib.request.urlopen(req) as resp:
+                  data = json.loads(resp.read())
+              if data.get("errors"):
+                  raise RuntimeError(f"GraphQL error: {data['errors']}")
+              return data["data"]
+
+          team_id = gql("query($id: String!) { issue(id: $id) { team { id } } }", {"id": issue_id})["issue"]["team"]["id"]
+          states  = gql("query($t: ID!) { workflowStates(filter: { team: { id: { eq: $t } } }) { nodes { id name } } }", {"t": team_id})["workflowStates"]["nodes"]
+
+          target = next((s for s in states if s["name"].lower() == "in review"), None)
+          if not target:
+              print(f"'In Review' state not found. Available: {[s['name'] for s in states]}")
+              sys.exit(1)
+
+          result = gql(
+              "mutation($id: String!, $sid: String!) { issueUpdate(id: $id, input: { stateId: $sid }) { issue { identifier state { name } } } }",
+              {"id": issue_id, "sid": target["id"]}
+          )
+          issue = result["issueUpdate"]["issue"]
+          print(f"✓ {task_id} ({issue['identifier']}) → {issue['state']['name']}")
+
+          identifier = issue["identifier"]  # e.g. "HUD-23"
+          resolves_line = f"Resolves {identifier}"
+
+          pr_body = os.environ.get("PR_BODY") or ""
+          if resolves_line not in pr_body:
+              new_body = (pr_body.rstrip() + f"\n\n{resolves_line}") if pr_body.strip() else resolves_line
+
+              github_token = os.environ["GITHUB_TOKEN"]
+              repo = os.environ["REPO"]
+              pr_number = os.environ["PR_NUMBER"]
+
+              patch_payload = json.dumps({"body": new_body}).encode()
+              patch_req = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}/pulls/{pr_number}",
+                  data=patch_payload,
+                  method="PATCH",
+                  headers={
+                      "Authorization": f"Bearer {github_token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "Content-Type": "application/json",
+                  },
+              )
+              with urllib.request.urlopen(patch_req) as resp:
+                  resp.read()
+              print(f"✓ PR description updated with '{resolves_line}'")
+          else:
+              print(f"✓ PR description already contains '{resolves_line}' — skipping")
+          PYEOF
+
+  mark-done:
+    if: github.event.pull_request.merged == true
+    name: Mark task Done in Linear
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update Linear to Done
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: |
+          python3 - << 'PYEOF'
+          import re, os, json, sys, urllib.request
+
+          branch  = os.environ["BRANCH"]
+          api_key = os.environ["LINEAR_API_KEY"]
+
+          m = re.search(r's(\d+)-([a-z0-9]+)-(\d+)', branch)
+          if not m:
+              print(f"No task ID found in branch '{branch}' — skipping")
+              sys.exit(0)
+
+          task_id = f"S{m.group(1)}-{m.group(2).upper()}-{m.group(3)}"
+          print(f"Task ID: {task_id}")
+
+          with open("scripts/linear-id-map.json") as f:
+              id_map = json.load(f)
+
+          issue_id = id_map.get(task_id)
+          if not issue_id:
+              print(f"'{task_id}' not in linear-id-map.json — skipping")
+              sys.exit(0)
+
+          headers = {"Authorization": api_key, "Content-Type": "application/json"}
+
+          def gql(query, variables=None):
+              payload = json.dumps({"query": query, "variables": variables or {}}).encode()
+              req = urllib.request.Request("https://api.linear.app/graphql", data=payload, headers=headers)
+              with urllib.request.urlopen(req) as resp:
+                  data = json.loads(resp.read())
+              if data.get("errors"):
+                  raise RuntimeError(f"GraphQL error: {data['errors']}")
+              return data["data"]
+
+          team_id = gql("query($id: String!) { issue(id: $id) { team { id } } }", {"id": issue_id})["issue"]["team"]["id"]
+          states  = gql("query($t: ID!) { workflowStates(filter: { team: { id: { eq: $t } } }) { nodes { id name } } }", {"t": team_id})["workflowStates"]["nodes"]
+
+          target = next((s for s in states if s["name"].lower() == "done"), None)
+          if not target:
+              print(f"'Done' state not found. Available: {[s['name'] for s in states]}")
+              sys.exit(1)
+
+          result = gql(
+              "mutation($id: String!, $sid: String!) { issueUpdate(id: $id, input: { stateId: $sid }) { issue { identifier state { name } } } }",
+              {"id": issue_id, "sid": target["id"]}
+          )
+          issue = result["issueUpdate"]["issue"]
+          print(f"✓ {task_id} ({issue['identifier']}) → {issue['state']['name']}")
+          PYEOF
