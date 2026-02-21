@@ -54,7 +54,9 @@ ACCEPTANCE_CRITERIA:
   - Branch protection rule on main documented in README (must be enabled manually in GitHub settings)
 FILES:
   - .github/workflows/ci.yml
-NOTES: Use pnpm in CI. Cache pnpm store between runs.
+  - .github/workflows/pr-review.yml
+  - .github/pr-review-prompt.md
+NOTES: Use pnpm in CI. Cache pnpm store between runs. PR review uses DeepSeek V3 (OpenAI-compatible API). Requires DEEPSEEK_API_KEY secret in GitHub repo settings.
 
 ---
 

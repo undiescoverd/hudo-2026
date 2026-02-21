@@ -5,8 +5,9 @@
 
 'use strict';
 
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 // ─── Colour helpers ───────────────────────────────────────────────────────────
 const c = {
@@ -412,7 +413,17 @@ WHEN OPENING PR:
   Run: node orchestrate.js review ${taskId}
 
 Commit your work, push the branch, and open a PR when done.
-`);
+${taskId.includes('-E2E-') ? `
+E2E TASK NOTES:
+- This is a Playwright E2E task. Tests live in tests/e2e/
+- Run tests locally: pnpm test:e2e (against localhost:3000)
+- Interactive mode: pnpm test:e2e:ui
+- Never call Supabase or R2 directly from tests — drive the browser UI only
+- Use data-testid attributes for selectors, never CSS class names
+- Page Objects live in tests/e2e/pages/ — populate rather than inventing new ones
+- Fixtures live in tests/e2e/fixtures/ — use the auth fixture for authenticated sessions
+- Skeleton files already exist from S1-E2E-000 — populate them, don't recreate
+` : ''}`);
 }
 
 function cmdStart(taskId) {
@@ -420,6 +431,24 @@ function cmdStart(taskId) {
   const { byId } = loadAllTasks();
   const task = byId.get(taskId);
   if (!task) { console.error(col(c.red, `✗  Task not found: ${taskId}`)); process.exit(1); }
+
+  // Always branch from main so PRs always target main
+  if (task.branch) {
+    try {
+      console.log(col(c.grey, '  Branching from main…'));
+      execFileSync('git', ['checkout', 'main'], { stdio: 'inherit' });
+      execFileSync('git', ['pull', 'origin', 'main'], { stdio: 'inherit' });
+      try {
+        execFileSync('git', ['checkout', '-b', task.branch], { stdio: 'inherit' });
+      } catch {
+        execFileSync('git', ['checkout', task.branch], { stdio: 'inherit' });
+      }
+      console.log(col(c.grey, `  on branch: ${task.branch}`));
+    } catch (err) {
+      console.warn(col(c.yellow, `⚠  git branch setup failed — create branch manually: git checkout main && git checkout -b ${task.branch}`));
+    }
+  }
+
   setTaskStatus(task, 'in_progress');
   auditLog(`START ${taskId}`);
   console.log(col(c.yellow, `▶  ${taskId} set to in_progress`));

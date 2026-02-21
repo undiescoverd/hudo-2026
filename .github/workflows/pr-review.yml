@@ -1,0 +1,92 @@
+name: PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate PR diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git diff "origin/${BASE_REF}...HEAD" \
+            -- ':!*.lock' ':!package-lock.json' ':!pnpm-lock.yaml' \
+               ':!docs/' ':!*.json' \
+            > pr_diff.txt
+          echo "Diff size: $(wc -c < pr_diff.txt) bytes"
+
+      - name: Run DeepSeek code review
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          python3 - << 'PYEOF'
+          import os, json, urllib.request, sys
+
+          api_key = os.environ["DEEPSEEK_API_KEY"]
+
+          with open(".github/pr-review-prompt.md") as f:
+              system_prompt = f.read()
+
+          with open("pr_diff.txt") as f:
+              diff = f.read()
+
+          # Cap diff at ~8000 chars to stay within budget
+          if len(diff) > 8000:
+              diff = diff[:8000] + "\n\n[...diff truncated to 8000 chars...]"
+
+          if not diff.strip():
+              diff = "(no significant diff — only lock files or docs changed)"
+
+          payload = json.dumps({
+              "model": "deepseek-chat",
+              "messages": [
+                  {"role": "system", "content": system_prompt},
+                  {"role": "user", "content": f"Please review the following PR diff:\n\n```diff\n{diff}\n```"}
+              ],
+              "max_tokens": 1024,
+              "temperature": 0.2
+          }).encode()
+
+          req = urllib.request.Request(
+              "https://api.deepseek.com/chat/completions",
+              data=payload,
+              headers={
+                  "Authorization": f"Bearer {api_key}",
+                  "Content-Type": "application/json"
+              }
+          )
+
+          with urllib.request.urlopen(req) as resp:
+              data = json.loads(resp.read())
+
+          review = data["choices"][0]["message"]["content"]
+
+          with open("pr_review.txt", "w") as f:
+              f.write(review)
+
+          print("Review generated successfully.")
+          PYEOF
+
+      - name: Post review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('pr_review.txt', 'utf8');
+            const body = `## Automated Code Review\n\n${review}\n\n---\n*Reviewed by DeepSeek V3 · [Hudo review criteria](.github/pr-review-prompt.md)*`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
