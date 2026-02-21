@@ -2,13 +2,13 @@
 
 **Status: In Progress**
 
-**Gate:** Local dev runs end-to-end. Schema applied to dev, staging, and prod. Vercel preview deploys on PR. CI passes on an empty commit. All RLS tests pass. All 24 tasks complete.
+**Gate:** Local dev runs end-to-end. Schema applied to dev, staging, and prod. Vercel preview deploys on PR. CI passes on an empty commit. All RLS tests pass. All 25 tasks complete.
 
 ---
 
 ## Tasks
 
-### INFRA (11 tasks: 8 done, 3 not started)
+### INFRA (12 tasks: 8 done, 4 not started)
 
 ---
 
@@ -245,6 +245,25 @@ NOTES: Redis is used for rate limiting only, not for caching or sessions in Spri
 
 ---
 
+- [ ] **S0-INFRA-012** — Configure Resend
+
+TASK_ID: S0-INFRA-012
+TITLE: Configure Resend
+BRANCH: feat/s0-infra-012-resend
+MODEL: haiku-4.5
+STATUS: not_started
+BLOCKED_BY: S0-INFRA-001
+ACCEPTANCE_CRITERIA:
+  - Resend account created and API keys generated
+  - RESEND_API_KEY stored in all three Vercel environment groups
+  - Sending domain verified in Resend (or dev domain whitelisted)
+  - Test email delivered successfully from dev environment
+FILES:
+  - .env.example (updated)
+NOTES: Required before any auth email flows (confirmation, invitation, password reset) can work.
+
+---
+
 ### DB (4 tasks: 1 done, 3 not started)
 
 ---
@@ -333,7 +352,7 @@ NOTES: Indexes should be created after schema is stable.
 
 ---
 
-### AUTH (6 tasks: 0 done, 6 not started)
+### AUTH (7 tasks: 0 done, 7 not started)
 
 ---
 
@@ -464,6 +483,28 @@ FILES:
   - app/middleware.ts (updated)
   - lib/auth.ts (updated)
 NOTES: Roles are: owner > admin_agent > agent > talent > guest.
+
+---
+
+- [ ] **S0-AUTH-007** — Build password reset flow
+
+TASK_ID: S0-AUTH-007
+TITLE: Build password reset flow
+BRANCH: feat/s0-auth-007-password-reset
+MODEL: sonnet-4.6
+STATUS: not_started
+BLOCKED_BY: S0-AUTH-001, S0-INFRA-012
+ACCEPTANCE_CRITERIA:
+  - Password reset request page accepts email and sends reset link via Resend
+  - Reset link contains a secure, time-limited token (handled by Supabase Auth)
+  - Password update page validates new password and confirms change
+  - Rate limited at 5 requests per IP per hour via Upstash Redis
+  - Expired or invalid tokens show a clear error message
+FILES:
+  - app/auth/forgot-password/page.tsx
+  - app/auth/reset-password/page.tsx
+  - app/api/auth/reset-password/route.ts
+NOTES: Password reset is required for a complete auth flow before launch.
 
 ---
 
