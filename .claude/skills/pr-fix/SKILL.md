@@ -5,6 +5,7 @@ disable-model-invocation: true
 ---
 
 Read the file `.claude/pr-fix-loop.md` using the Read tool, then use the Skill tool to invoke `ralph-loop:ralph-loop` with:
+
 - prompt: the exact content of that file
 - completion-promise: APPROVED
 - max-iterations: 10
