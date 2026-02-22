@@ -29,9 +29,9 @@ else
   fi
 fi
 
-# Load credentials from .env.baserow (project root)
+# Load credentials from .env.linear (project root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../.env.baserow"
+ENV_FILE="$SCRIPT_DIR/../.env.linear"
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$ENV_FILE"
@@ -39,7 +39,7 @@ fi
 
 LINEAR_API_KEY="${LINEAR_API_KEY:-}"
 if [[ -z "$LINEAR_API_KEY" ]]; then
-  echo "Error: LINEAR_API_KEY not set in .env.baserow"
+  echo "Error: LINEAR_API_KEY not set in .env.linear"
   exit 1
 fi
 

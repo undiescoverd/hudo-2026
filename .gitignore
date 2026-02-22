@@ -14,7 +14,7 @@ build/
 .env
 .env.local
 .env.*.local
-.env.baserow
+.env.linear
 
 # Vercel
 .vercel

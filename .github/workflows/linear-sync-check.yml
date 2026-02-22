@@ -21,8 +21,8 @@ jobs:
         env:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
         run: |
-          # Create .env.baserow for the script
-          echo "LINEAR_API_KEY=$LINEAR_API_KEY" > .env.baserow
+          # Create .env.linear for the script
+          echo "LINEAR_API_KEY=$LINEAR_API_KEY" > .env.linear
 
           output=$(node orchestrate.js sync-check 2>&1) || true
           echo "$output"
@@ -38,7 +38,7 @@ jobs:
         env:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
         run: |
-          echo "LINEAR_API_KEY=$LINEAR_API_KEY" > .env.baserow
+          echo "LINEAR_API_KEY=$LINEAR_API_KEY" > .env.linear
           node orchestrate.js sync-fix
 
       - name: Notify Slack (if drifted)
@@ -52,4 +52,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -f .env.baserow
+        run: rm -f .env.linear

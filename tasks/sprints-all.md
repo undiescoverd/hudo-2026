@@ -1,9 +1,6 @@
 # Hudo — Full Sprint Breakdown (Linear Import Reference)
 
 > Generated: 2026-02-21. Covers S0–S4 (76 tasks, 15 with subtasks).
-> Use this as the import source when migrating from Baserow to Linear.
-> Tasks not in Baserow (added here): S0-INFRA-012, S0-AUTH-007, S1-UPLOAD-005, S1-PLAYER-005.
-> Task in Baserow but not previously in sprint-0.md: S0-E2E-001.
 
 ---
 

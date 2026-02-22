@@ -119,4 +119,4 @@ node orchestrate.js sync-fix            # Push markdown statuses to Linear for d
 
 **Linear workflow states:** Backlog, Todo, In Progress, In Review, Blocked, Done, Canceled, Duplicate
 
-`LINEAR_API_KEY` lives in `.env.baserow`. The `.github/workflows/linear-update.yml` and `linear-sync-check.yml` workflows use the `LINEAR_API_KEY` GitHub Actions secret.
+`LINEAR_API_KEY` lives in `.env.linear`. The `.github/workflows/linear-update.yml` and `linear-sync-check.yml` workflows use the `LINEAR_API_KEY` GitHub Actions secret.

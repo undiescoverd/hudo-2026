@@ -7,7 +7,7 @@
  *   node scripts/linear-import.mjs --dry-run   # Preview only
  *   node scripts/linear-import.mjs             # Full import
  *
- * Reads LINEAR_API_KEY and LINEAR_TEAM_KEY from .env.baserow
+ * Reads LINEAR_API_KEY and LINEAR_TEAM_KEY from .env.linear
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
@@ -21,7 +21,7 @@ const DRY_RUN = process.argv.includes('--dry-run');
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 function loadEnv() {
-  const envPath = resolve(ROOT, '.env.baserow');
+  const envPath = resolve(ROOT, '.env.linear');
   const lines = readFileSync(envPath, 'utf8').split('\n');
   const env = {};
   for (const line of lines) {
@@ -39,11 +39,11 @@ const API_KEY = ENV.LINEAR_API_KEY;
 const TEAM_KEY = ENV.LINEAR_TEAM_KEY;
 
 if (!API_KEY) {
-  console.error('ERROR: LINEAR_API_KEY not found in .env.baserow');
+  console.error('ERROR: LINEAR_API_KEY not found in .env.linear');
   process.exit(1);
 }
 if (!TEAM_KEY) {
-  console.error('ERROR: LINEAR_TEAM_KEY not found in .env.baserow');
+  console.error('ERROR: LINEAR_TEAM_KEY not found in .env.linear');
   process.exit(1);
 }
 
