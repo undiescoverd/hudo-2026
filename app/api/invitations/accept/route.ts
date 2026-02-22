@@ -131,15 +131,20 @@ export async function POST(request: NextRequest) {
   }
 
   // Mark invitation as accepted
-  await admin
+  const { error: acceptError } = await admin
     .from('invitations')
     .update({ accepted_at: new Date().toISOString() })
     .eq('id', invitation.id)
 
+  if (acceptError) {
+    console.error('[invitations/accept] mark accepted failed:', acceptError.message)
+    return NextResponse.json({ error: 'Failed to finalize invitation' }, { status: 500 })
+  }
+
   // Insert audit log entry
   const { data: inviter } = await admin.from('users').select('full_name').eq('id', userId).single()
 
-  await admin.from('audit_log').insert({
+  const { error: auditError } = await admin.from('audit_log').insert({
     agency_id: invitation.agency_id,
     actor_id: userId,
     actor_name: inviter?.full_name ?? 'Unknown',
@@ -148,6 +153,11 @@ export async function POST(request: NextRequest) {
     resource_id: invitation.id,
     metadata: { email: invitation.email, role: invitation.role },
   })
+
+  if (auditError) {
+    // Log but don't fail — membership is already created, audit is non-critical
+    console.error('[invitations/accept] audit_log insert failed:', auditError.message)
+  }
 
   return NextResponse.json({ success: true })
 }

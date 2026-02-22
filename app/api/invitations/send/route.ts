@@ -152,12 +152,12 @@ export async function POST(request: NextRequest) {
       to: email.trim().toLowerCase(),
       subject: `You've been invited to join ${agency?.name ?? 'an agency'} on Hudo`,
       html: `
-        <p>You've been invited to join <strong>${agency?.name ?? 'an agency'}</strong> on Hudo as a <strong>${role.replace('_', ' ')}</strong>.</p>
+        <p>You've been invited to join <strong>${agency?.name ?? 'an agency'}</strong> on Hudo as a <strong>${role.replaceAll('_', ' ')}</strong>.</p>
         <p><a href="${inviteUrl}">Accept invitation</a></p>
         <p>This invitation expires in 7 days.</p>
         <p>If you didn't expect this invitation, you can safely ignore this email.</p>
       `,
-      text: `You've been invited to join ${agency?.name ?? 'an agency'} on Hudo as a ${role.replace('_', ' ')}.\n\nAccept invitation: ${inviteUrl}\n\nThis invitation expires in 7 days.`,
+      text: `You've been invited to join ${agency?.name ?? 'an agency'} on Hudo as a ${role.replaceAll('_', ' ')}.\n\nAccept invitation: ${inviteUrl}\n\nThis invitation expires in 7 days.`,
     })
   } catch (err) {
     // Graceful fallback: log invite URL if email fails (e.g. RESEND_API_KEY not set in dev)

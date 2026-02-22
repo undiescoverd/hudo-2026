@@ -124,7 +124,7 @@ export default function InviteAcceptPage() {
           <h1 className="text-2xl font-semibold">Welcome aboard!</h1>
           <p className="text-sm text-muted-foreground">
             You&apos;ve joined <strong>{invitation?.agencyName}</strong> as a{' '}
-            <strong>{invitation?.role?.replace('_', ' ')}</strong>.
+            <strong>{invitation?.role?.replaceAll('_', ' ')}</strong>.
           </p>
           <Link
             href="/auth/signin"
@@ -148,7 +148,7 @@ export default function InviteAcceptPage() {
           </h1>
           <p className="text-sm text-muted-foreground">
             You&apos;ve been invited to join <strong>{invitation?.agencyName}</strong> as a{' '}
-            <strong>{invitation?.role?.replace('_', ' ')}</strong>.
+            <strong>{invitation?.role?.replaceAll('_', ' ')}</strong>.
           </p>
         </div>
 
