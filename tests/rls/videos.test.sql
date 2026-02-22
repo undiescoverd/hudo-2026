@@ -146,6 +146,7 @@ SELECT throws_ok(
       'Talent Unauthorised Upload'
     )$$,
   '42501',
+  'new row violates row-level security policy for table "videos"',
   'videos_insert: Talent has no INSERT policy — upload blocked'
 );
 
@@ -166,6 +167,7 @@ SELECT throws_ok(
       'Cross-Agency Video Injection'
     )$$,
   '42501',
+  'new row violates row-level security policy for table "videos"',
   'videos_insert WITH CHECK: Agent Alpha cannot insert video into Agency B'
 );
 

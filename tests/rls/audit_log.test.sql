@@ -112,6 +112,7 @@ SELECT throws_ok(
       'a1090004-0004-4000-a000-000000000097'::uuid
     )$$,
   '42501',
+  'new row violates row-level security policy for table "audit_log"',
   'No INSERT policy: authenticated client cannot insert into audit_log'
 );
 
