@@ -38,7 +38,8 @@ orchestrate.md         # Orchestrator documentation and workflow guide
 tasks/sprint-0.md      # Sprint 0 task list (STATUS tracked here)
 tasks/sprint-N.md      # Future sprint task lists (added per sprint)
 scripts/
-  update-baserow-task.sh  # Update Baserow task status
+  update-linear-task.sh   # Update Linear task status
+  linear-id-map.json      # Maps TASK_ID → Linear UUID
 docs/
   hudo-prd-v1.1.md        # Product requirements
   hudo-sprint-plan.md     # Full sprint plan v1.2 (task reference)
@@ -98,25 +99,23 @@ Guest: read-only via signed link, no Supabase access.
 - **S3** — Billing, Compliance, Security Hardening
 - **S4** — Accessibility, PWA, Launch Prep
 
-## Baserow Sprint Tracker
+## Linear Sprint Tracker
 
-All sprint tasks are tracked live in Baserow (workspace: Hudo → database: Hudo Sprint Tracker, table ID 849304).
+All sprint tasks are tracked live in Linear. Task ID → Linear UUID map lives in `scripts/linear-id-map.json`.
 
 **When starting a task:**
 ```bash
-./scripts/update-baserow-task.sh <TASK_ID> "In Progress"
+./scripts/update-linear-task.sh <TASK_ID> "In Progress"
 ```
 
 **When a task is complete (PR merged / acceptance criteria met):**
 ```bash
-./scripts/update-baserow-task.sh <TASK_ID> "Done"
+./scripts/update-linear-task.sh <TASK_ID> "Done"
 ```
 
 **When a PR is open and in review:**
 ```bash
-./scripts/update-baserow-task.sh <TASK_ID> "In Review"
+./scripts/update-linear-task.sh <TASK_ID> "In Review"
 ```
 
-Credentials and table ID are in `.env.baserow`. A PostToolUse hook in `.claude/settings.json` attempts auto-update on Bash output — but always call the script explicitly when completing tasks.
-
-View tracker at: https://app.baserow.io (Hudo workspace → Hudo Sprint Tracker → Sprint Tasks)
+`LINEAR_API_KEY` lives in `.env.baserow`. `orchestrate.js start/review/done` calls the script automatically. The `.github/workflows/linear-update.yml` workflow updates Linear on PR open → In Review and PR merge → Done via the GitHub Actions `LINEAR_API_KEY` secret.

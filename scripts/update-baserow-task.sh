@@ -1,4 +1,6 @@
 #!/bin/bash
+# DEPRECATED: Task tracking has migrated to Linear. Use update-linear-task.sh instead.
+#
 # Usage: ./scripts/update-baserow-task.sh <TASK_ID> <status>
 # Status values: "Not Started" | "In Progress" | "In Review" | "Done"
 #

@@ -71,33 +71,33 @@ function auditLog(message) {
   fs.appendFileSync(AUDIT_LOG, `[${ts}] ${message}\n`, 'utf8');
 }
 
-/** Sync task status to Baserow via update-baserow-task.sh script. Never throws. */
-function syncBaserow(taskId, orchestratorStatus) {
+/** Sync task status to Linear via update-linear-task.sh script. Never throws. */
+function syncLinear(taskId, orchestratorStatus) {
   const statusMap = {
     'in_progress': 'In Progress',
     'in_review':   'In Review',
     'done':        'Done',
   };
-  const baserowStatus = statusMap[orchestratorStatus];
-  if (!baserowStatus) return;
+  const linearStatus = statusMap[orchestratorStatus];
+  if (!linearStatus) return;
 
-  const script = path.join(__dirname, 'scripts', 'update-baserow-task.sh');
+  const script = path.join(__dirname, 'scripts', 'update-linear-task.sh');
   if (!fs.existsSync(script)) {
-    console.warn(col(c.grey, `  ⚠  Baserow sync skipped — script not found`));
+    console.warn(col(c.grey, `  ⚠  Linear sync skipped — script not found`));
     return;
   }
   try {
-    execFileSync('bash', [script, taskId, baserowStatus], {
+    execFileSync('bash', [script, taskId, linearStatus], {
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 10000,
     });
-    console.log(col(c.grey, `  ↗  Baserow: ${taskId} → ${baserowStatus}`));
+    console.log(col(c.grey, `  ↗  Linear: ${taskId} → ${linearStatus}`));
   } catch (err) {
     const stderr = err.stderr ? err.stderr.toString().trim() : '';
-    if (stderr.includes('not found in Baserow')) {
-      console.warn(col(c.yellow, `  ⚠  Baserow: '${taskId}' not found — skipping sync`));
+    if (stderr.includes('not found in linear-id-map')) {
+      console.warn(col(c.yellow, `  ⚠  Linear: '${taskId}' not in id-map — skipping sync`));
     } else {
-      console.warn(col(c.grey, `  ⚠  Baserow sync failed: ${stderr || err.message}`));
+      console.warn(col(c.grey, `  ⚠  Linear sync failed: ${stderr || err.message}`));
     }
   }
 }
@@ -483,7 +483,7 @@ function cmdStart(taskId) {
   setTaskStatus(task, 'in_progress');
   auditLog(`START ${taskId}`);
   console.log(col(c.yellow, `▶  ${taskId} set to in_progress`));
-  syncBaserow(taskId, 'in_progress');
+  syncLinear(taskId, 'in_progress');
 }
 
 function cmdReview(taskId) {
@@ -494,7 +494,7 @@ function cmdReview(taskId) {
   setTaskStatus(task, 'in_review');
   auditLog(`REVIEW ${taskId}`);
   console.log(col(c.yellow, `⏳  ${taskId} set to in_review`));
-  syncBaserow(taskId, 'in_review');
+  syncLinear(taskId, 'in_review');
 }
 
 function cmdDone(taskId) {
@@ -505,7 +505,7 @@ function cmdDone(taskId) {
   setTaskStatus(task, 'done');
   auditLog(`DONE ${taskId}`);
   console.log(col(c.green, `✓  ${taskId} done`));
-  syncBaserow(taskId, 'done');
+  syncLinear(taskId, 'done');
 
   // Re-load to get fresh statuses and print newly unblocked tasks
   const { tasks: freshTasks, byId: freshById } = loadAllTasks();
