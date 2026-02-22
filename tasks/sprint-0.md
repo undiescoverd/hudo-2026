@@ -377,13 +377,13 @@ NOTES: This is the foundation for all auth flows.
 
 ---
 
-- [ ] **S0-AUTH-002** — Build registration flow
+- [x] **S0-AUTH-002** — Build registration flow
 
 TASK_ID: S0-AUTH-002
 TITLE: Build registration flow
 BRANCH: feat/s0-auth-002-registration
 MODEL: sonnet-4.6
-STATUS: in_progress
+STATUS: done
 BLOCKED_BY: S0-DB-001, S0-AUTH-001
 ACCEPTANCE_CRITERIA:
   - Registration page accepts email and password
