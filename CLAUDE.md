@@ -73,6 +73,7 @@ Task format requires: `TASK_ID`, `TITLE`, `BRANCH`, `MODEL`, `STATUS`, `BLOCKED_
 - Write minimum code to satisfy acceptance criteria — nothing more
 - Write tests for every acceptance criterion
 - Do not add dependencies without flagging first
+- **Branch naming:** sprint tasks use `feat/s<N>-<TASK_ID>-<slug>`; chores/cleanup use `chore/<slug>`. Never commit directly to `main`.
 - Commit → push branch → open PR → run `orchestrate.js review`
 - After opening a PR, always run `/pr-fix` to start the Ralph Loop — do not wait for manual invocation
 - Before committing, run `pnpm format:check && pnpm type-check && pnpm lint` to catch CI issues locally
