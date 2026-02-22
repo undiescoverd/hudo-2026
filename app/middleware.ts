@@ -70,7 +70,8 @@ export async function middleware(request: NextRequest) {
     // an agency) belongs in S0-AUTH-006 (role-based middleware) after S0-DB-002 (RLS
     // policies) is complete. This middleware only checks authentication, not authorisation.
   } catch (err) {
-    console.error('[middleware] supabase.auth.getUser() failed', err)
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    console.error('[middleware] supabase.auth.getUser() failed:', message)
     if (isPublic) return response
     const signInUrl = request.nextUrl.clone()
     signInUrl.pathname = '/sign-in'

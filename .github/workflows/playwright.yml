@@ -68,6 +68,7 @@ jobs:
     if: always()
     steps:
       - name: Post pass/fail to Slack
+        if: secrets.SLACK_WEBHOOK_URL != ''
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           JOB_STATUS: ${{ needs.e2e.result }}

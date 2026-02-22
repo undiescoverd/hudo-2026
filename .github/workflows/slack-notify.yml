@@ -10,7 +10,7 @@ on:
 
 jobs:
   notify-pr-opened:
-    if: github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'reopened')
+    if: github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'reopened') && secrets.SLACK_WEBHOOK_URL != ''
     name: Notify PR opened
     runs-on: ubuntu-latest
     steps:
@@ -32,7 +32,7 @@ jobs:
           "
 
   notify-pr-merged:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true && secrets.SLACK_WEBHOOK_URL != ''
     name: Notify PR merged
     runs-on: ubuntu-latest
     steps:
@@ -57,7 +57,8 @@ jobs:
       github.event_name == 'issue_comment' &&
       github.event.action == 'created' &&
       github.event.comment.user.login == 'github-actions[bot]' &&
-      contains(github.event.comment.body, 'Automated Code Review')
+      contains(github.event.comment.body, 'Automated Code Review') &&
+      secrets.SLACK_WEBHOOK_URL != ''
     name: Notify DeepSeek review posted
     runs-on: ubuntu-latest
     steps:
@@ -78,7 +79,7 @@ jobs:
           "
 
   notify-test:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && secrets.SLACK_WEBHOOK_URL != ''
     name: Test webhook
     runs-on: ubuntu-latest
     steps:
