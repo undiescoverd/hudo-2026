@@ -45,9 +45,9 @@ INSERT INTO memberships (user_id, agency_id, role) VALUES
 
 -- Videos: two in Agency A (owned by Tara and Tom), one in Agency B
 INSERT INTO videos (id, agency_id, talent_id, title) VALUES
-  ('vid00002-0002-4000-a000-000000000001'::uuid, 'c0ffee02-0000-4000-a000-000000000001'::uuid, 'dbeef002-0002-4000-a000-000000000002'::uuid, 'Taras Showreel'),
-  ('vid00002-0002-4000-a000-000000000002'::uuid, 'c0ffee02-0000-4000-a000-000000000001'::uuid, 'dbeef002-0002-4000-a000-000000000003'::uuid, 'Toms Showreel'),
-  ('vid00002-0002-4000-a000-000000000003'::uuid, 'c0ffee02-0000-4000-a000-000000000002'::uuid, 'dbeef002-0002-4000-a000-000000000005'::uuid, 'Bobs Showreel');
+  ('b1de0002-0002-4000-a000-000000000001'::uuid, 'c0ffee02-0000-4000-a000-000000000001'::uuid, 'dbeef002-0002-4000-a000-000000000002'::uuid, 'Taras Showreel'),
+  ('b1de0002-0002-4000-a000-000000000002'::uuid, 'c0ffee02-0000-4000-a000-000000000001'::uuid, 'dbeef002-0002-4000-a000-000000000003'::uuid, 'Toms Showreel'),
+  ('b1de0002-0002-4000-a000-000000000003'::uuid, 'c0ffee02-0000-4000-a000-000000000002'::uuid, 'dbeef002-0002-4000-a000-000000000005'::uuid, 'Bobs Showreel');
 
 
 -- ── Test 1: videos_select_agents — agent sees all agency videos ───────
@@ -68,7 +68,7 @@ SELECT is(
 -- PRD: Cross-agency data access is impossible.
 SELECT is(
   (SELECT count(*)::int FROM videos
-    WHERE id = 'vid00002-0002-4000-a000-000000000003'::uuid),
+    WHERE id = 'b1de0002-0002-4000-a000-000000000003'::uuid),
   0,
   'videos_select_agents: Agent Alpha cannot see Agency B video (cross-agency)'
 );
@@ -91,7 +91,7 @@ SELECT is(
 -- ── Test 4: videos_select_talent — correct video returned for talent ──
 SELECT is(
   (SELECT id FROM videos LIMIT 1),
-  'vid00002-0002-4000-a000-000000000001'::uuid,
+  'b1de0002-0002-4000-a000-000000000001'::uuid,
   'videos_select_talent: Tara sees Video 1 (hers), not Tom''s'
 );
 
@@ -105,7 +105,7 @@ SET LOCAL ROLE authenticated;
 
 SELECT is(
   (SELECT count(*)::int FROM videos
-    WHERE id = 'vid00002-0002-4000-a000-000000000001'::uuid),
+    WHERE id = 'b1de0002-0002-4000-a000-000000000001'::uuid),
   0,
   'videos_select_talent: Tom cannot read Tara''s video (same-agency talent isolation)'
 );
@@ -121,7 +121,7 @@ SET LOCAL ROLE authenticated;
 SELECT lives_ok(
   $$INSERT INTO videos (id, agency_id, talent_id, title)
     VALUES (
-      'vid00002-0002-4000-a000-000000000004'::uuid,
+      'b1de0002-0002-4000-a000-000000000004'::uuid,
       'c0ffee02-0000-4000-a000-000000000001'::uuid,
       'dbeef002-0002-4000-a000-000000000002'::uuid,
       'Agent-Uploaded Video'
@@ -140,7 +140,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$INSERT INTO videos (id, agency_id, talent_id, title)
     VALUES (
-      'vid00002-0002-4000-a000-000000000099'::uuid,
+      'b1de0002-0002-4000-a000-000000000099'::uuid,
       'c0ffee02-0000-4000-a000-000000000001'::uuid,
       'dbeef002-0002-4000-a000-000000000002'::uuid,
       'Talent Unauthorised Upload'
@@ -160,7 +160,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$INSERT INTO videos (id, agency_id, talent_id, title)
     VALUES (
-      'vid00002-0002-4000-a000-000000000098'::uuid,
+      'b1de0002-0002-4000-a000-000000000098'::uuid,
       'c0ffee02-0000-4000-a000-000000000002'::uuid,
       'dbeef002-0002-4000-a000-000000000005'::uuid,
       'Cross-Agency Video Injection'
