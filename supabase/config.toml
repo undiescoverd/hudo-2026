@@ -62,18 +62,13 @@ file_size_limit = 5368709120  # 5GB in bytes
 # Enable Supabase Realtime for websocket subscriptions
 enabled = true
 
-# List of topics to allow subscriptions
-# Scoped to video_version_id to prevent cross-agency realtime leaks
-# Production topic: video_version_id:*
-max_bytes_per_second = 1048576  # 1MB/s
-
 # ============================================================
 # Development
 # ============================================================
 
-[functions]
-# JavaScript runtime for edge functions
-verify_jwt = true
+# No edge functions in Sprint 0. Per-function config added here as needed:
+# [functions.my-function]
+# verify_jwt = true
 
 # ============================================================
 # Environment-Specific Notes
