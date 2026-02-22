@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 /**
  * Public paths that do not require authentication.
+ * TODO: PR-REVIEW: Add password reset and email confirmation paths here when
+ * S0-AUTH-007 (password reset flow) is implemented.
  */
 const PUBLIC_PATHS = ['/sign-in', '/sign-up']
 
@@ -51,8 +53,10 @@ export async function middleware(request: NextRequest) {
   })
 
   // Refresh session — required for Server Components to pick up the session.
-  // On Supabase failure, fail closed: redirect protected routes to sign-in so
-  // unauthenticated users cannot access protected content while auth is down.
+  // On Supabase failure, fail closed: protected routes redirect to sign-in
+  // (user does not receive the protected content — this IS fail-closed behaviour).
+  // TODO: PR-REVIEW: Rate limiting on auth endpoints is handled in S0-AUTH-004
+  // via Upstash Redis; not implemented here to avoid Edge Runtime Redis dependency.
   const { pathname } = request.nextUrl
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))
 
@@ -60,6 +64,9 @@ export async function middleware(request: NextRequest) {
   try {
     const { data } = await supabase.auth.getUser()
     user = data.user
+    // TODO: PR-REVIEW: Membership validation (ensuring authenticated user belongs to
+    // an agency) belongs in S0-AUTH-006 (role-based middleware) after S0-DB-002 (RLS
+    // policies) is complete. This middleware only checks authentication, not authorisation.
   } catch (err) {
     console.error('[middleware] supabase.auth.getUser() failed', err)
     if (isPublic) return response
