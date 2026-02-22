@@ -383,7 +383,7 @@ TASK_ID: S0-AUTH-002
 TITLE: Build registration flow
 BRANCH: feat/s0-auth-002-registration
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: in_progress
 BLOCKED_BY: S0-DB-001, S0-AUTH-001
 ACCEPTANCE_CRITERIA:
   - Registration page accepts email and password
