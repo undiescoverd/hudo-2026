@@ -10,7 +10,12 @@ type FieldError = { fullName?: string; email?: string; password?: string }
 function validate(fullName: string, email: string, password: string): FieldError {
   const errors: FieldError = {}
   if (!fullName.trim()) errors.fullName = 'Full name is required'
-  if (!email.trim()) errors.email = 'Email is required'
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!email.trim()) {
+    errors.email = 'Email is required'
+  } else if (!EMAIL_RE.test(email.trim())) {
+    errors.email = 'Please enter a valid email address'
+  }
   const passwordError = !password ? 'Password is required' : validatePassword(password)
   if (passwordError) errors.password = passwordError
   return errors

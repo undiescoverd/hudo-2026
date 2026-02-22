@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
 
   const { email, password, fullName } = body as Record<string, unknown>
 
-  if (typeof email !== 'string' || !email.trim()) {
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (typeof email !== 'string' || !email.trim() || !EMAIL_RE.test(email.trim())) {
     return NextResponse.json({ error: 'Valid email is required' }, { status: 400 })
   }
   if (typeof fullName !== 'string' || !fullName.trim()) {
@@ -61,13 +62,8 @@ export async function POST(request: NextRequest) {
   })
 
   if (error) {
-    if (error.message.toLowerCase().includes('already registered')) {
-      return NextResponse.json(
-        { error: 'An account with this email already exists' },
-        { status: 409 }
-      )
-    }
-    return NextResponse.json({ error: error.message }, { status: 400 })
+    console.error('[register] auth.signUp failed:', error.message)
+    return NextResponse.json({ error: 'Registration failed. Please try again.' }, { status: 400 })
   }
 
   // Insert into public.users via service role (bypasses RLS — this route is server-side only).

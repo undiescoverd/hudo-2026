@@ -69,7 +69,7 @@ jobs:
     if: always()
     steps:
       - name: Notify success
-        if: needs.ci.result == 'success' && needs.rls-tests.result == 'success'
+        if: needs.ci.result == 'success' && needs.rls-tests.result == 'success' && secrets.SLACK_WEBHOOK_URL != ''
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -85,7 +85,7 @@ jobs:
           "
 
       - name: Notify failure
-        if: needs.ci.result == 'failure' || needs.rls-tests.result == 'failure'
+        if: failure() && (needs.ci.result == 'failure' || needs.rls-tests.result == 'failure') && secrets.SLACK_WEBHOOK_URL != ''
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
