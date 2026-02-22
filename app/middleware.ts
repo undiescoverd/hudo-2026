@@ -15,37 +15,44 @@ const PUBLIC_PATHS = ['/sign-in', '/sign-up']
  * - Passes through requests to public paths and static assets.
  */
 export async function middleware(request: NextRequest) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Missing required Supabase environment variables')
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          response = NextResponse.next({
-            request,
-          })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          )
-        },
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll()
       },
-    }
-  )
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+        response = NextResponse.next({
+          request,
+        })
+        cookiesToSet.forEach(({ name, value, options }) =>
+          response.cookies.set(name, value, options)
+        )
+      },
+    },
+  })
 
   // Refresh session — required for Server Components to pick up the session.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // On network/Supabase failure, allow the request through rather than blocking all traffic.
+  let user = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  } catch {
+    return response
+  }
 
   const { pathname } = request.nextUrl
 
@@ -54,10 +61,11 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  // Redirect unauthenticated users to the sign-in page.
+  // Redirect unauthenticated users to the sign-in page, preserving the intended destination.
   if (!user) {
     const signInUrl = request.nextUrl.clone()
     signInUrl.pathname = '/sign-in'
+    signInUrl.searchParams.set('redirect', pathname)
     return NextResponse.redirect(signInUrl)
   }
 
