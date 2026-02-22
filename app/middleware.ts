@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from 'next/server'
  * TODO: PR-REVIEW: Add password reset and email confirmation paths here when
  * S0-AUTH-007 (password reset flow) is implemented.
  */
-const PUBLIC_PATHS = ['/sign-in', '/sign-up']
+const PUBLIC_PATHS = ['/auth/signin', '/auth/register']
 
 // Validate at module load time so a missing env var surfaces immediately
 // rather than silently on the first request. Next.js Edge Runtime loads the
@@ -24,7 +24,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
  *
  * - Refreshes the Supabase session cookie on every request so auth state
  *   persists across page reloads without requiring a client-side hydration step.
- * - Redirects unauthenticated users to /sign-in for protected routes.
+ * - Redirects unauthenticated users to /auth/signin for protected routes.
  * - Passes through requests to public paths and static assets.
  */
 export async function middleware(request: NextRequest) {
@@ -73,7 +73,7 @@ export async function middleware(request: NextRequest) {
     console.error('[middleware] supabase.auth.getUser() failed', err)
     if (isPublic) return response
     const signInUrl = request.nextUrl.clone()
-    signInUrl.pathname = '/sign-in'
+    signInUrl.pathname = '/auth/signin'
     return NextResponse.redirect(signInUrl)
   }
 
@@ -85,7 +85,7 @@ export async function middleware(request: NextRequest) {
   // Redirect unauthenticated users to the sign-in page, preserving the intended destination.
   if (!user) {
     const signInUrl = request.nextUrl.clone()
-    signInUrl.pathname = '/sign-in'
+    signInUrl.pathname = '/auth/signin'
     signInUrl.searchParams.set('redirect', pathname)
     return NextResponse.redirect(signInUrl)
   }
