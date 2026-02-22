@@ -1,6 +1,6 @@
-import { Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 
-// Page Object for /sign-in and /sign-up — populated in S1-E2E-001
+// Page Object for /auth/signin and /auth/register — populated in S1-E2E-001
 //
 // Expected data-testid selectors:
 //   sign-in-email       — email input on sign-in form
