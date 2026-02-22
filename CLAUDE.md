@@ -38,8 +38,7 @@ orchestrate.md         # Orchestrator documentation and workflow guide
 tasks/sprint-0.md      # Sprint 0 task list (STATUS tracked here)
 tasks/sprint-N.md      # Future sprint task lists (added per sprint)
 scripts/
-  update-linear-task.sh   # Update Linear task status
-  linear-id-map.json      # Maps TASK_ID → Linear UUID
+  update-linear-task.sh   # Update or query Linear task status
 docs/
   hudo-prd-v1.1.md        # Product requirements
   hudo-sprint-plan.md     # Full sprint plan v1.2 (task reference)
@@ -61,6 +60,9 @@ node orchestrate.js start <TASK_ID>     # Set in_progress
 node orchestrate.js review <TASK_ID>    # Set in_review (on PR open)
 node orchestrate.js done <TASK_ID>      # Set done, shows newly unblocked
 node orchestrate.js gate sprint-0       # Verify sprint gate checklist
+node orchestrate.js blocked <ID> "why"  # Mark blocked (syncs to Linear)
+node orchestrate.js sync-check          # Compare markdown vs Linear
+node orchestrate.js sync-fix            # Push markdown statuses to Linear
 ```
 
 Task format requires: `TASK_ID`, `TITLE`, `BRANCH`, `MODEL`, `STATUS`, `BLOCKED_BY`, `ACCEPTANCE_CRITERIA`, `FILES`, `NOTES`. Model defaults to `sonnet-4.6` if omitted.
