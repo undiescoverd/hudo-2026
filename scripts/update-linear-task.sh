@@ -29,23 +29,15 @@ if [[ -z "$LINEAR_API_KEY" ]]; then
   exit 1
 fi
 
-ID_MAP="$SCRIPT_DIR/linear-id-map.json"
-if [[ ! -f "$ID_MAP" ]]; then
-  echo "Error: linear-id-map.json not found at $ID_MAP"
-  exit 1
-fi
-
 LINEAR_API_KEY="$LINEAR_API_KEY" \
 TASK_ID="$TASK_ID" \
 NEW_STATUS="$NEW_STATUS" \
-ID_MAP="$ID_MAP" \
 python3 - << 'PYEOF'
 import os, json, urllib.request, sys
 
 api_key    = os.environ["LINEAR_API_KEY"]
 task_id    = os.environ["TASK_ID"]
 new_status = os.environ["NEW_STATUS"]
-id_map_path = os.environ["ID_MAP"]
 
 # Validate status
 status_name_map = {
@@ -56,15 +48,6 @@ status_name_map = {
 status_name = status_name_map.get(new_status)
 if not status_name:
     print(f"Error: Unknown status '{new_status}'. Use: 'In Progress', 'In Review', 'Done'")
-    sys.exit(1)
-
-# Look up Linear UUID
-with open(id_map_path) as f:
-    id_map = json.load(f)
-
-issue_id = id_map.get(task_id)
-if not issue_id:
-    print(f"Error: Task '{task_id}' not found in linear-id-map.json")
     sys.exit(1)
 
 headers = {
@@ -84,6 +67,19 @@ def gql(query, variables=None):
     if data.get("errors"):
         raise RuntimeError(f"GraphQL error: {data['errors']}")
     return data["data"]
+
+# Resolve task ID to Linear issue via API search (no static mapping file needed)
+search = gql(
+    "query($q: String!) { issueSearch(query: $q) { nodes { id identifier title } } }",
+    {"q": task_id},
+)
+nodes = search["issueSearch"]["nodes"]
+matching = [n for n in nodes if n["title"].upper().startswith(task_id)]
+if not matching:
+    print(f"Error: No Linear issue found for '{task_id}'")
+    sys.exit(1)
+issue_id = matching[0]["id"]
+print(f"Found: {matching[0]['identifier']} — {matching[0]['title']}")
 
 # Get team ID from the issue
 data = gql(
