@@ -18,6 +18,9 @@ export function createClient() {
 /**
  * Returns the current session, or null if unauthenticated.
  * Must be called in a Client Component or after createClient().
+ *
+ * A new client is created per call intentionally — createBrowserClient is
+ * lightweight and stateless; memoisation would introduce shared mutable state.
  */
 export async function getSession(): Promise<Session | null> {
   const supabase = createClient()

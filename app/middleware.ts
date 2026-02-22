@@ -50,14 +50,16 @@ export async function middleware(request: NextRequest) {
   try {
     const { data } = await supabase.auth.getUser()
     user = data.user
-  } catch {
+  } catch (err) {
+    console.error('[middleware] supabase.auth.getUser() failed — allowing request through', err)
     return response
   }
 
   const { pathname } = request.nextUrl
 
   // Allow public paths through without auth check.
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  // Match exact path or subpath (e.g. /sign-in/confirm) but not /sign-in-something.
+  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     return response
   }
 
