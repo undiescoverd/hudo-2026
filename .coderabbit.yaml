@@ -1,0 +1,118 @@
+# CodeRabbit configuration for Hudo
+# Docs: https://docs.coderabbit.ai/guides/configure-coderabbit
+
+language: 'en-US'
+
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  instructions: |
+    You are reviewing code for Hudo, a multi-tenant video review SaaS.
+    Stack: Next.js 14 App Router, TypeScript strict, Tailwind, Shadcn UI,
+    Supabase (Auth + DB + RLS + Realtime), Cloudflare R2, Upstash Redis,
+    Stripe, Resend, Sentry, PostHog. Hosted on Vercel.
+
+    === CRITICAL (block merge) ===
+    - R2 object URLs must NEVER be returned to any client. Only signed URLs
+      via /api/videos/:id/playback-url. Flag any direct R2 URL exposure.
+    - Stripe secret key must never appear in any client-side file or bundle.
+      Only the publishable key is permitted on the client.
+    - Guests have zero Supabase access. All guest data must flow through
+      authenticated API routes only. No direct Supabase calls from guest paths.
+    - Guest tokens: 32-byte random, SHA-256 hashed in DB. Plaintext never stored.
+    - audit_log is insert-only. No UPDATE or DELETE policy or query ever.
+    - Comments use soft-delete only (deleted_at timestamp). No hard deletes
+      on the comments table — no DELETE statement or .delete() call.
+    - Video must never touch Vercel. Browser → R2 via presigned URL only.
+
+    === HIGH (should fix before merge) ===
+    - Multi-tenancy via memberships table only. Agency context must never be
+      derived from agency_id on users. All RLS must join through memberships.
+    - Every new Supabase table must have RLS enabled and policies defined.
+    - RLS policies must use get_current_user_agency_ids() or equivalent
+      SECURITY DEFINER function — not inline memberships subqueries (causes
+      infinite recursion).
+    - Auth, upload, comment, and guest endpoints must apply Upstash Redis
+      rate limiting before any business logic.
+    - Rate-limited responses must return HTTP 429 with a Retry-After header.
+    - Version numbers must be assigned via Postgres RPC (create_video_version),
+      not application logic, to prevent race conditions.
+    - PostHog script must not load (not just be blocked) before cookie consent.
+
+    === MEDIUM ===
+    - No unsafe `any` casts without an explanatory comment.
+    - Every acceptance criterion in the task must have a corresponding test.
+    - No unused imports, dead code, or premature abstractions introduced.
+    - Server Components must not import client-only code.
+    - API routes must validate input at the system boundary.
+    - No direct DB access from Client Components.
+    - Error responses must not leak internal details (stack traces, DB errors,
+      file paths, internal IDs).
+
+  path_instructions:
+    - path: 'supabase/migrations/**'
+      instructions: |
+        Migration review — apply maximum strictness:
+        - Every new table must have RLS explicitly enabled:
+          ALTER TABLE ... ENABLE ROW LEVEL SECURITY;
+        - Every new table needs policies for all roles that require access.
+        - No UPDATE or DELETE policy on audit_log under any circumstances.
+        - SECURITY DEFINER functions must include a comment explaining why
+          RLS bypass is necessary. Verify the function is owned by postgres
+          and has restricted search_path.
+        - Check for missing indexes on all foreign key columns and any column
+          that appears in WHERE clauses of RLS policies.
+        - Migrations must be non-destructive. Flag any DROP COLUMN or DROP
+          TABLE without an explicit justification comment.
+        - Enum additions are fine; enum removals or renames are breaking changes.
+
+    - path: 'app/api/**'
+      instructions: |
+        API route review:
+        - Verify agency membership is checked (not just authentication) for
+          any endpoint that touches tenant data.
+        - Rate limiting via Upstash Redis must be applied before business logic.
+        - No direct R2 URLs in responses — signed URLs only.
+        - Guest endpoints must not call Supabase directly.
+        - Input validation must happen at the route boundary.
+        - Error responses: never expose stack traces, DB error messages,
+          internal file paths, or raw Supabase/Stripe error objects.
+
+    - path: 'tests/rls/**'
+      instructions: |
+        RLS test review:
+        - Tests must cover both allowed and denied cases for each policy.
+        - UUID literals must use hex-only characters in all 5 segments
+          (a-f and 0-9 only — no prefixes like 'vid-', 'cmnt-', etc.).
+        - throws_ok must use the 4-argument form:
+          throws_ok(sql, errcode, errmsg, description)
+          The 3-arg form treats arg 3 as the expected message, not description.
+        - RESET ROLE must be called between user context switches.
+        - set_config for JWT claims must be called before SET LOCAL ROLE.
+
+    - path: 'lib/storage.ts'
+      instructions: |
+        This is the single interface for all Cloudflare R2 operations.
+        No R2 SDK calls should exist anywhere else in the codebase.
+        Verify signed URL expiry is appropriate (never open-ended).
+
+    - path: 'lib/redis.ts'
+      instructions: |
+        This client is for rate limiting only — not for caching business data.
+        Verify no business-logic caching is being added here.
+
+    - path: 'components/**'
+      instructions: |
+        Client Component review:
+        - No direct Supabase queries — data must come from server props or
+          API routes.
+        - No Stripe secret key usage.
+        - PostHog calls must be wrapped in a consent check before firing.
+
+chat:
+  auto_reply: true
