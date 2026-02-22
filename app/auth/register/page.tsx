@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { validatePassword } from '@/lib/auth-validation'
 
 type FieldError = { fullName?: string; email?: string; password?: string }
 
@@ -10,13 +11,8 @@ function validate(fullName: string, email: string, password: string): FieldError
   const errors: FieldError = {}
   if (!fullName.trim()) errors.fullName = 'Full name is required'
   if (!email.trim()) errors.email = 'Email is required'
-  if (!password) errors.password = 'Password is required'
-  else if (password.length < 8) errors.password = 'Password must be at least 8 characters'
-  else if (!/[A-Z]/.test(password))
-    errors.password = 'Password must contain at least one uppercase letter'
-  else if (!/[a-z]/.test(password))
-    errors.password = 'Password must contain at least one lowercase letter'
-  else if (!/[0-9]/.test(password)) errors.password = 'Password must contain at least one number'
+  const passwordError = !password ? 'Password is required' : validatePassword(password)
+  if (passwordError) errors.password = passwordError
   return errors
 }
 
