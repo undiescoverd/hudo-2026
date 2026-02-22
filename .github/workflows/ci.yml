@@ -52,8 +52,8 @@ jobs:
           version: latest
 
       - name: Start local Supabase
-        # Exclude heavyweight services not needed for DB tests
-        run: supabase start -x imgproxy,inbucket,studio,edge-runtime,logflare,vector,pgadmin-lite
+        # Keep only db (PostgreSQL) + gotrue (auth schema); exclude everything else
+        run: supabase start -x realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
 
       - name: Run RLS pgTAP tests
         run: supabase test db tests/rls

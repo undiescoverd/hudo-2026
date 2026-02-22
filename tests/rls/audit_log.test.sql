@@ -19,7 +19,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(5);
+SELECT plan(6);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -116,13 +116,30 @@ SELECT throws_ok(
 );
 
 
--- ── Test 5: No DELETE policy — audit_log records are immutable ────────
+-- ── Test 5: No UPDATE policy — audit_log records are immutable ───────
 -- PRD: audit_log is insert-only. No update/delete policy. Period.
---      Without a DELETE policy, the DELETE silently affects 0 rows.
+--      Without an UPDATE policy, the UPDATE silently affects 0 rows.
 RESET ROLE;
 SELECT set_config('request.jwt.claims',
   '{"sub":"dbeef004-0004-4000-a000-000000000001","role":"authenticated"}', true);
 SET LOCAL ROLE authenticated;
+
+-- Owner attempts to tamper with the actor_name (should silently fail)
+UPDATE audit_log SET actor_name = 'TAMPERED'
+ WHERE id = 'a1090004-0004-4000-a000-000000000001'::uuid;
+
+-- Entry must still have the original actor_name — owner can SELECT to verify
+SELECT is(
+  (SELECT actor_name FROM audit_log
+    WHERE id = 'a1090004-0004-4000-a000-000000000001'::uuid),
+  'Owner Oscar',
+  'No UPDATE policy: audit_log actor_name is immutable (update silently blocked)'
+);
+
+
+-- ── Test 6: No DELETE policy — audit_log records are immutable ────────
+-- PRD: audit_log is insert-only. No update/delete policy. Period.
+--      Without a DELETE policy, the DELETE silently affects 0 rows.
 
 -- Owner attempts to delete the audit entry (should silently fail)
 DELETE FROM audit_log WHERE id = 'a1090004-0004-4000-a000-000000000001'::uuid;
