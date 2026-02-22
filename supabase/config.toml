@@ -66,9 +66,9 @@ enabled = true
 # Development
 # ============================================================
 
-[functions]
-# JavaScript runtime for edge functions
-verify_jwt = true
+# No edge functions in Sprint 0. Per-function config added here as needed:
+# [functions.my-function]
+# verify_jwt = true
 
 # ============================================================
 # Environment-Specific Notes
