@@ -236,6 +236,8 @@ node orchestrate.js start S0-INFRA-002
 node orchestrate.js review S0-INFRA-002
 ```
 
+The `linear-update.yml` workflow fires automatically on PR open: it marks the Linear issue In Review and patches the PR description with `Resolves HUD-XX` so Linear attaches the PR to the issue card.
+
 **7. Code review agent reviews the PR. Human approves.**
 
 **8. Merge PR. Mark task done.**
@@ -261,6 +263,9 @@ node orchestrate.js gate sprint-0
 | `orchestrate-audit.log` | Append-only log of start/done/blocked events with timestamps |
 | `tasks/sprint-0.md` | Sprint 0 task list |
 | `tasks/sprint-N.md` | Future sprint task lists (added as sprints are planned) |
+| `scripts/linear-id-map.json` | Maps TASK_IDs (e.g. S0-INFRA-001) to Linear UUIDs |
+| `scripts/update-linear-task.sh` | Local helper — update Linear task status from the CLI |
+| `.github/workflows/linear-update.yml` | GitHub Actions — marks In Review on PR open (and patches PR description with `Resolves HUD-XX`), marks Done on merge |
 
 The audit log is created automatically on first use. Do not delete it — it provides a record of who started and completed what.
 
