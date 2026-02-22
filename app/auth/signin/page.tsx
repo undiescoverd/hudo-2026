@@ -11,18 +11,28 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function validate(email: string, password: string): FieldError {
   const errors: FieldError = {}
-  if (!email.trim()) {
+  if (!email) {
     errors.email = 'Email is required'
-  } else if (!EMAIL_RE.test(email.trim())) {
+  } else if (!EMAIL_RE.test(email)) {
     errors.email = 'Please enter a valid email address'
   }
   if (!password) errors.password = 'Password is required'
   return errors
 }
 
+/**
+ * Validates redirect target is a same-origin path to prevent open redirect attacks.
+ */
+function safeRedirect(target: string | null): string {
+  if (!target) return '/'
+  // Must start with / and not // (protocol-relative URL)
+  if (target.startsWith('/') && !target.startsWith('//')) return target
+  return '/'
+}
+
 export default function SignInPage() {
   const searchParams = useSearchParams()
-  const redirect = searchParams.get('redirect') || '/'
+  const redirect = safeRedirect(searchParams.get('redirect'))
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -34,7 +44,8 @@ export default function SignInPage() {
     e.preventDefault()
     setServerError(null)
 
-    const errors = validate(email, password)
+    const trimmedEmail = email.trim()
+    const errors = validate(trimmedEmail, password)
     setFieldErrors(errors)
     if (Object.keys(errors).length > 0) return
 
@@ -43,7 +54,7 @@ export default function SignInPage() {
       const res = await fetch('/api/auth/signin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: trimmedEmail, password }),
       })
       const data = await res.json()
       if (!res.ok) {
