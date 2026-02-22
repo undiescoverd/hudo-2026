@@ -352,7 +352,7 @@ NOTES: Indexes should be created after schema is stable.
 
 ---
 
-### AUTH (7 tasks: 0 done, 7 not started)
+### AUTH (7 tasks: 2 done, 1 in review, 4 not started)
 
 ---
 

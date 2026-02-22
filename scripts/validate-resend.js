@@ -16,7 +16,7 @@ async function validateResend() {
   }
 
   console.log('Validating Resend configuration...\n');
-  console.log(`  API Key: ${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}`);
+  console.log(`  API Key: ${apiKey.substring(0, 3)}${'*'.repeat(apiKey.length - 3)}`);
   console.log(`  From:    ${fromEmail}`);
 
   // Verify API key by listing domains
