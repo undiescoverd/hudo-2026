@@ -162,7 +162,59 @@ Marks a task as blocked, records the reason in `orchestrate-audit.log`.
 node orchestrate.js blocked S0-STORAGE-001 "Cloudflare account access not yet granted"
 ```
 
-Always quote the reason. The audit log entry includes a timestamp.
+Always quote the reason. The audit log entry includes a timestamp. Also syncs the `Blocked` state to Linear.
+
+---
+
+### `sync-check`
+Compares markdown task statuses with their Linear counterparts (read-only). Prints a table showing each task's markdown status, Linear status, and whether they match.
+
+```
+node orchestrate.js sync-check
+```
+
+Example output:
+```
+=== Linear Sync Check ===
+
+  TASK                 MARKDOWN       LINEAR         STATUS
+  ────────────────────────────────────────────────────────────
+  S0-INFRA-001         done           Done           ✓ in sync
+  S0-DB-003            in_review      Todo           ✗ DRIFTED
+
+⚠  1 task(s) drifted.
+   Run: node orchestrate.js sync-fix to repair drift
+```
+
+Only checks tasks with a trackable status (`in_progress`, `in_review`, `done`, `blocked`). Tasks that are `not_started` are skipped.
+
+---
+
+### `sync-fix`
+Pushes markdown statuses to Linear for any drifted tasks. Runs `sync-check` internally first to identify drift, then fixes each drifted task. Idempotent — safe to run repeatedly.
+
+```
+node orchestrate.js sync-fix
+```
+
+Logs results to `orchestrate-audit.log`: `SYNC-FIX: N fixed, N failed`.
+
+---
+
+## Self-Healing Architecture
+
+Linear sync is automated at multiple levels to prevent drift:
+
+| Trigger | What happens |
+|---|---|
+| `orchestrate.js start/review/done/blocked` | Syncs to Linear immediately (with 1 retry) |
+| Push to `feat/s*-*` branch | GitHub Actions marks Linear → In Progress (only from Backlog/Todo) |
+| PR opened | GitHub Actions marks Linear → In Review + patches PR description |
+| PR merged | GitHub Actions marks Linear → Done |
+| Daily cron (08:00 UTC) | `linear-sync-check.yml` detects drift, auto-fixes, notifies Slack |
+| Manual check | `node orchestrate.js sync-check` / `sync-fix` |
+
+If `syncLinear()` fails, the warning message directs you to run `sync-fix` to repair.
 
 ---
 
@@ -236,7 +288,7 @@ node orchestrate.js start S0-INFRA-002
 node orchestrate.js review S0-INFRA-002
 ```
 
-The `linear-update.yml` workflow fires automatically on PR open: it marks the Linear issue In Review and patches the PR description with `Resolves HUD-XX` so Linear attaches the PR to the issue card.
+The `linear-update.yml` workflow fires automatically on push (marks In Progress if the Linear issue is in Backlog/Todo) and on PR open (marks In Review and patches the PR description with `Resolves HUD-XX` so Linear attaches the PR to the issue card).
 
 **7. Code review agent reviews the PR. Human approves.**
 
@@ -263,9 +315,9 @@ node orchestrate.js gate sprint-0
 | `orchestrate-audit.log` | Append-only log of start/done/blocked events with timestamps |
 | `tasks/sprint-0.md` | Sprint 0 task list |
 | `tasks/sprint-N.md` | Future sprint task lists (added as sprints are planned) |
-| `scripts/linear-id-map.json` | Maps TASK_IDs (e.g. S0-INFRA-001) to Linear UUIDs |
-| `scripts/update-linear-task.sh` | Local helper — update Linear task status from the CLI |
-| `.github/workflows/linear-update.yml` | GitHub Actions — marks In Review on PR open (and patches PR description with `Resolves HUD-XX`), marks Done on merge |
+| `scripts/update-linear-task.sh` | Local helper — update or query (`--status`) Linear task status from the CLI |
+| `.github/workflows/linear-update.yml` | GitHub Actions — marks In Progress on push, In Review on PR open (patches PR description), Done on merge |
+| `.github/workflows/linear-sync-check.yml` | Daily cron — detects markdown↔Linear drift, auto-fixes, notifies Slack |
 
 The audit log is created automatically on first use. Do not delete it — it provides a record of who started and completed what.
 

@@ -1,0 +1,55 @@
+name: Linear Sync Check
+
+on:
+  schedule:
+    - cron: '0 8 * * *' # Daily at 08:00 UTC
+  workflow_dispatch:
+
+jobs:
+  sync-check:
+    name: Check and fix Linear drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run sync-check
+        id: check
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: |
+          # Create .env.baserow for the script
+          echo "LINEAR_API_KEY=$LINEAR_API_KEY" > .env.baserow
+
+          output=$(node orchestrate.js sync-check 2>&1) || true
+          echo "$output"
+
+          if echo "$output" | grep -q "DRIFTED"; then
+            echo "drifted=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "drifted=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run sync-fix (if drifted)
+        if: steps.check.outputs.drifted == 'true'
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: |
+          echo "LINEAR_API_KEY=$LINEAR_API_KEY" > .env.baserow
+          node orchestrate.js sync-fix
+
+      - name: Notify Slack (if drifted)
+        if: steps.check.outputs.drifted == 'true' && vars.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-type: application/json' \
+            -d '{"text":"Linear sync drift detected and auto-fixed. Run `node orchestrate.js sync-check` to verify."}'
+
+      - name: Cleanup
+        if: always()
+        run: rm -f .env.baserow

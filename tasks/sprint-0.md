@@ -289,13 +289,13 @@ NOTES: Copy SQL from Build Foundation exactly. Migration must be idempotent.
 
 ---
 
-- [ ] **S0-DB-002** — Write RLS policies for multi-tenant isolation
+- [x] **S0-DB-002** — Write RLS policies for multi-tenant isolation
 
 TASK_ID: S0-DB-002
 TITLE: Write RLS policies for multi-tenant isolation
 BRANCH: feat/s0-db-002-rls
 MODEL: opus-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-DB-001
 ACCEPTANCE_CRITERIA:
   - RLS policies enforce: cross-agency data access is impossible
@@ -310,13 +310,13 @@ NOTES: RLS must be bulletproof — this is the primary isolation mechanism for m
 
 ---
 
-- [ ] **S0-DB-003** — Write RLS policy test suite
+- [x] **S0-DB-003** — Write RLS policy test suite
 
 TASK_ID: S0-DB-003
 TITLE: Write RLS policy test suite
 BRANCH: feat/s0-db-003-rls-tests
 MODEL: opus-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-DB-002
 ACCEPTANCE_CRITERIA:
   - Test suite in `tests/rls/` using pgTAP or equivalent
@@ -356,13 +356,13 @@ NOTES: Indexes should be created after schema is stable.
 
 ---
 
-- [ ] **S0-AUTH-001** — Implement Supabase Auth
+- [x] **S0-AUTH-001** — Implement Supabase Auth
 
 TASK_ID: S0-AUTH-001
 TITLE: Implement Supabase Auth
 BRANCH: feat/s0-auth-001-auth
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Supabase Auth client initialized in app

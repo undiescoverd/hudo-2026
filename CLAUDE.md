@@ -101,21 +101,22 @@ Guest: read-only via signed link, no Supabase access.
 
 ## Linear Sprint Tracker
 
-All sprint tasks are tracked live in Linear. Task ID → Linear UUID map lives in `scripts/linear-id-map.json`.
+All sprint tasks are tracked live in Linear. The orchestrator syncs statuses automatically.
 
-**When starting a task:**
+**Automated sync (no manual action needed):**
+- `orchestrate.js start/review/done/blocked` → syncs to Linear with 1 retry
+- Push to `feat/s*-*` branch → GitHub Actions marks In Progress (only from Backlog/Todo)
+- PR open → GitHub Actions marks In Review + patches PR description
+- PR merge → GitHub Actions marks Done
+- Daily cron (08:00 UTC) → `linear-sync-check.yml` detects drift, auto-fixes, notifies Slack
+
+**Manual sync commands:**
 ```bash
-./scripts/update-linear-task.sh <TASK_ID> "In Progress"
+node orchestrate.js sync-check          # Compare markdown vs Linear (read-only)
+node orchestrate.js sync-fix            # Push markdown statuses to Linear for drifted tasks
+./scripts/update-linear-task.sh --status <TASK_ID>  # Query a task's Linear state
 ```
 
-**When a task is complete (PR merged / acceptance criteria met):**
-```bash
-./scripts/update-linear-task.sh <TASK_ID> "Done"
-```
+**Linear workflow states:** Backlog, Todo, In Progress, In Review, Blocked, Done, Canceled, Duplicate
 
-**When a PR is open and in review:**
-```bash
-./scripts/update-linear-task.sh <TASK_ID> "In Review"
-```
-
-`LINEAR_API_KEY` lives in `.env.baserow`. `orchestrate.js start/review/done` calls the script automatically. The `.github/workflows/linear-update.yml` workflow updates Linear on PR open → In Review and PR merge → Done via the GitHub Actions `LINEAR_API_KEY` secret.
+`LINEAR_API_KEY` lives in `.env.baserow`. The `.github/workflows/linear-update.yml` and `linear-sync-check.yml` workflows use the `LINEAR_API_KEY` GitHub Actions secret.

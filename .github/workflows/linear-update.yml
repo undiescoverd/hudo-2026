@@ -1,13 +1,89 @@
-name: Update Linear on PR
+name: Update Linear on PR / Push
 
 on:
+  push:
+    branches:
+      - 'feat/s*-*'
   pull_request:
     types: [closed, opened, reopened]
 
 jobs:
+  mark-in-progress:
+    # Only on push to feature branches (not PR events)
+    if: github.event_name == 'push'
+    name: Mark task In Progress in Linear
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Linear to In Progress (if pre-work state)
+        env:
+          BRANCH: ${{ github.ref_name }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: |
+          python3 - << 'PYEOF'
+          import re, os, json, sys, urllib.request
+
+          branch  = os.environ["BRANCH"]
+          api_key = os.environ["LINEAR_API_KEY"]
+
+          m = re.search(r's(\d+)-([a-z0-9]+)-(\d+)', branch)
+          if not m:
+              print(f"No task ID found in branch '{branch}' — skipping")
+              sys.exit(0)
+
+          task_id = f"S{m.group(1)}-{m.group(2).upper()}-{m.group(3)}"
+          print(f"Task ID: {task_id}")
+
+          headers = {"Authorization": api_key, "Content-Type": "application/json"}
+
+          def gql(query, variables=None):
+              payload = json.dumps({"query": query, "variables": variables or {}}).encode()
+              req = urllib.request.Request("https://api.linear.app/graphql", data=payload, headers=headers)
+              with urllib.request.urlopen(req) as resp:
+                  data = json.loads(resp.read())
+              if data.get("errors"):
+                  raise RuntimeError(f"GraphQL error: {data['errors']}")
+              return data["data"]
+
+          search_result = gql(
+              'query($q: String!) { searchIssues(term: $q) { nodes { id identifier title } } }',
+              {"q": task_id}
+          )
+          nodes = search_result["searchIssues"]["nodes"]
+          matching = [n for n in nodes if n["title"].upper().startswith(task_id)]
+          if not matching:
+              print(f"No Linear issue found for '{task_id}' — skipping")
+              sys.exit(0)
+          issue_id = matching[0]["id"]
+          print(f"Found: {matching[0]['identifier']} — {matching[0]['title']}")
+
+          # Check current state — only upgrade from pre-work states
+          issue_data = gql("query($id: String!) { issue(id: $id) { team { id } state { name } } }", {"id": issue_id})
+          current_state = issue_data["issue"]["state"]["name"].lower()
+          team_id = issue_data["issue"]["team"]["id"]
+
+          pre_work_states = {"backlog", "todo"}
+          if current_state not in pre_work_states:
+              print(f"Current state is '{issue_data['issue']['state']['name']}' — not downgrading to In Progress")
+              sys.exit(0)
+
+          states = gql("query($t: ID!) { workflowStates(filter: { team: { id: { eq: $t } } }) { nodes { id name } } }", {"t": team_id})["workflowStates"]["nodes"]
+          target = next((s for s in states if s["name"].lower() == "in progress"), None)
+          if not target:
+              print(f"'In Progress' state not found. Available: {[s['name'] for s in states]}")
+              sys.exit(1)
+
+          result = gql(
+              "mutation($id: String!, $sid: String!) { issueUpdate(id: $id, input: { stateId: $sid }) { issue { identifier state { name } } } }",
+              {"id": issue_id, "sid": target["id"]}
+          )
+          issue = result["issueUpdate"]["issue"]
+          print(f"✓ {task_id} ({issue['identifier']}) → {issue['state']['name']}")
+          PYEOF
+
   mark-in-review:
-    # Skip fork PRs — secrets are not available and the workflow would fail
+    # Only on PR open/reopen, skip fork PRs
     if: |
+      github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.action == 'opened' || github.event.action == 'reopened')
     name: Mark task In Review in Linear
@@ -49,13 +125,11 @@ jobs:
                   raise RuntimeError(f"GraphQL error: {data['errors']}")
               return data["data"]
 
-          # Find the Linear issue by searching for the task ID — no static mapping file needed
           search_result = gql(
-              'query($q: String!) { issueSearch(query: $q) { nodes { id identifier title } } }',
+              'query($q: String!) { searchIssues(term: $q) { nodes { id identifier title } } }',
               {"q": task_id}
           )
-          nodes = search_result["issueSearch"]["nodes"]
-          # Match issues whose title starts with the task ID (e.g. "S0-AUTH-001:")
+          nodes = search_result["searchIssues"]["nodes"]
           matching = [n for n in nodes if n["title"].upper().startswith(task_id)]
           if not matching:
               print(f"No Linear issue found for '{task_id}' — skipping")
@@ -109,8 +183,9 @@ jobs:
           PYEOF
 
   mark-done:
-    # Skip fork PRs — secrets are not available and the workflow would fail
+    # Only on PR merge, skip fork PRs
     if: |
+      github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.merged == true
     name: Mark task Done in Linear
@@ -146,13 +221,11 @@ jobs:
                   raise RuntimeError(f"GraphQL error: {data['errors']}")
               return data["data"]
 
-          # Find the Linear issue by searching for the task ID — no static mapping file needed
           search_result = gql(
-              'query($q: String!) { issueSearch(query: $q) { nodes { id identifier title } } }',
+              'query($q: String!) { searchIssues(term: $q) { nodes { id identifier title } } }',
               {"q": task_id}
           )
-          nodes = search_result["issueSearch"]["nodes"]
-          # Match issues whose title starts with the task ID (e.g. "S0-AUTH-001:")
+          nodes = search_result["searchIssues"]["nodes"]
           matching = [n for n in nodes if n["title"].upper().startswith(task_id)]
           if not matching:
               print(f"No Linear issue found for '{task_id}' — skipping")

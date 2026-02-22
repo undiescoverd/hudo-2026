@@ -77,6 +77,7 @@ function syncLinear(taskId, orchestratorStatus) {
     'in_progress': 'In Progress',
     'in_review':   'In Review',
     'done':        'Done',
+    'blocked':     'Blocked',
   };
   const linearStatus = statusMap[orchestratorStatus];
   if (!linearStatus) return;
@@ -86,19 +87,41 @@ function syncLinear(taskId, orchestratorStatus) {
     console.warn(col(c.grey, `  ⚠  Linear sync skipped — script not found`));
     return;
   }
-  try {
-    execFileSync('bash', [script, taskId, linearStatus], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 10000,
-    });
-    console.log(col(c.grey, `  ↗  Linear: ${taskId} → ${linearStatus}`));
-  } catch (err) {
-    const stderr = err.stderr ? err.stderr.toString().trim() : '';
-    if (stderr.includes('not found in linear-id-map')) {
-      console.warn(col(c.yellow, `  ⚠  Linear: '${taskId}' not in id-map — skipping sync`));
-    } else {
-      console.warn(col(c.grey, `  ⚠  Linear sync failed: ${stderr || err.message}`));
+
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      execFileSync('bash', [script, taskId, linearStatus], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 15000,
+      });
+      console.log(col(c.grey, `  ↗  Linear: ${taskId} → ${linearStatus}`));
+      return;
+    } catch (err) {
+      const stderr = err.stderr ? err.stderr.toString().trim() : '';
+      if (attempt < maxAttempts) {
+        // Wait 2s before retry
+        execFileSync('sleep', ['2']);
+        continue;
+      }
+      console.warn(col(c.yellow, `  ⚠  Linear sync failed: ${stderr || err.message}`));
+      console.warn(col(c.yellow, `      Run: node orchestrate.js sync-fix to repair drift`));
     }
+  }
+}
+
+/** Query a task's current Linear status. Returns state name string or null on error. */
+function queryLinearStatus(taskId) {
+  const script = path.join(__dirname, 'scripts', 'update-linear-task.sh');
+  if (!fs.existsSync(script)) return null;
+  try {
+    const result = execFileSync('bash', [script, '--status', taskId], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 15000,
+    });
+    return result.toString().trim();
+  } catch {
+    return null;
   }
 }
 
@@ -590,6 +613,128 @@ function cmdBlocked(taskId, reason) {
   const msg = `BLOCKED ${taskId} — ${reason}`;
   auditLog(msg);
   console.log(col(c.red, `✗  ${taskId} marked blocked: ${reason}`));
+  syncLinear(taskId, 'blocked');
+}
+
+// ─── Sync commands ────────────────────────────────────────────────────────────
+
+function cmdSyncCheck() {
+  const { tasks } = loadAllTasks();
+
+  // Map markdown status → expected Linear state name
+  const statusToLinear = {
+    'in_progress': 'In Progress',
+    'in_review':   'In Review',
+    'done':        'Done',
+    'blocked':     'Blocked',
+  };
+
+  // Only check tasks that have a meaningful status
+  const checkable = tasks.filter(t => statusToLinear[t.status]);
+
+  if (checkable.length === 0) {
+    console.log(col(c.grey, '\nNo tasks with trackable status to check.\n'));
+    return { results: [], driftCount: 0, errorCount: 0 };
+  }
+
+  console.log('\n' + bold('=== Linear Sync Check ===') + '\n');
+  console.log(
+    `  ${'TASK'.padEnd(20)} ${'MARKDOWN'.padEnd(14)} ${'LINEAR'.padEnd(14)} STATUS`
+  );
+  console.log('  ' + '─'.repeat(60));
+
+  const results = [];
+  let driftCount = 0;
+  let errorCount = 0;
+
+  for (const t of checkable) {
+    const expectedLinear = statusToLinear[t.status];
+    const actualLinear = queryLinearStatus(t.id);
+
+    if (actualLinear === null) {
+      results.push({ id: t.id, markdown: t.status, expected: expectedLinear, actual: null, status: 'error' });
+      errorCount++;
+      console.log(
+        `  ${t.id.padEnd(20)} ${t.status.padEnd(14)} ${col(c.red, '? (error)'.padEnd(14))} ${col(c.red, '⚠ ERROR')}`
+      );
+      continue;
+    }
+
+    const inSync = actualLinear.toLowerCase() === expectedLinear.toLowerCase();
+    if (inSync) {
+      results.push({ id: t.id, markdown: t.status, expected: expectedLinear, actual: actualLinear, status: 'ok' });
+      console.log(
+        `  ${t.id.padEnd(20)} ${t.status.padEnd(14)} ${actualLinear.padEnd(14)} ${col(c.green, '✓ in sync')}`
+      );
+    } else {
+      results.push({ id: t.id, markdown: t.status, expected: expectedLinear, actual: actualLinear, status: 'drifted' });
+      driftCount++;
+      console.log(
+        `  ${t.id.padEnd(20)} ${t.status.padEnd(14)} ${col(c.red, actualLinear.padEnd(14))} ${col(c.red, '✗ DRIFTED')}`
+      );
+    }
+  }
+
+  console.log();
+  if (driftCount === 0 && errorCount === 0) {
+    console.log(col(c.green, `✓  All ${checkable.length} tasks in sync with Linear.\n`));
+  } else {
+    if (driftCount > 0) console.log(col(c.yellow, `⚠  ${driftCount} task(s) drifted.`));
+    if (errorCount > 0) console.log(col(c.red, `⚠  ${errorCount} task(s) could not be queried.`));
+    console.log(col(c.yellow, `   Run: node orchestrate.js sync-fix to repair drift\n`));
+  }
+
+  return { results, driftCount, errorCount };
+}
+
+function cmdSyncFix() {
+  const { results, driftCount } = cmdSyncCheck();
+
+  if (driftCount === 0) {
+    console.log(col(c.green, 'Nothing to fix.\n'));
+    return;
+  }
+
+  console.log(bold('=== Fixing Drift ===') + '\n');
+
+  let fixed = 0;
+  let failed = 0;
+
+  const drifted = results.filter(r => r.status === 'drifted');
+  for (const r of drifted) {
+    // Map expected Linear name back to orchestrator status for syncLinear()
+    const reverseMap = {
+      'In Progress': 'in_progress',
+      'In Review':   'in_review',
+      'Done':        'done',
+      'Blocked':     'blocked',
+    };
+    const orchStatus = reverseMap[r.expected];
+    if (!orchStatus) {
+      console.log(col(c.red, `  ✗  ${r.id}: no mapping for '${r.expected}'`));
+      failed++;
+      continue;
+    }
+
+    // Try to push the markdown status to Linear
+    const script = path.join(__dirname, 'scripts', 'update-linear-task.sh');
+    try {
+      execFileSync('bash', [script, r.id, r.expected], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 15000,
+      });
+      console.log(col(c.green, `  ✓  ${r.id}: ${r.actual} → ${r.expected}`));
+      fixed++;
+    } catch (err) {
+      const stderr = err.stderr ? err.stderr.toString().trim() : '';
+      console.log(col(c.red, `  ✗  ${r.id}: ${stderr || err.message}`));
+      failed++;
+    }
+  }
+
+  console.log();
+  auditLog(`SYNC-FIX: ${fixed} fixed, ${failed} failed`);
+  console.log(col(fixed > 0 ? c.green : c.yellow, `Sync-fix complete: ${fixed} fixed, ${failed} failed.\n`));
 }
 
 // ─── CLI entry point ──────────────────────────────────────────────────────────
@@ -605,6 +750,8 @@ switch (command) {
   case 'done':                 cmdDone(args[0]);               break;
   case 'gate':                 cmdGate(args[0]);               break;
   case 'blocked':              cmdBlocked(args[0], args[1]);   break;
+  case 'sync-check':           cmdSyncCheck();                 break;
+  case 'sync-fix':             cmdSyncFix();                   break;
   default:
     console.log(`
 Usage: node orchestrate.js <command> [args]
@@ -618,5 +765,7 @@ Commands:
   done   <TASK_ID>           — Set task STATUS to done; show newly unblocked tasks
   gate   <sprint-name>       — Sprint gate checklist (e.g. gate sprint-0)
   blocked <TASK_ID> "reason" — Mark task blocked with reason (logged to orchestrate-audit.log)
+  sync-check                 — Compare markdown task statuses with Linear (read-only)
+  sync-fix                   — Push markdown statuses to Linear for any drifted tasks
 `);
 }

@@ -1,18 +1,32 @@
 #!/bin/bash
 # Usage: ./scripts/update-linear-task.sh <TASK_ID> <status>
-# Status values: "In Progress" | "In Review" | "Done"
+#        ./scripts/update-linear-task.sh --status <TASK_ID>
+# Status values: "In Progress" | "In Review" | "Done" | "Blocked"
 #
 # Example: ./scripts/update-linear-task.sh S0-INFRA-001 "In Progress"
+# Query:   ./scripts/update-linear-task.sh --status S0-INFRA-001
 
 set -euo pipefail
 
-TASK_ID="${1:-}"
-NEW_STATUS="${2:-}"
-
-if [[ -z "$TASK_ID" || -z "$NEW_STATUS" ]]; then
-  echo "Usage: $0 <TASK_ID> <status>"
-  echo "  Status values: 'In Progress' | 'In Review' | 'Done'"
-  exit 1
+# Detect query mode
+MODE="update"
+if [[ "${1:-}" == "--status" ]]; then
+  MODE="query"
+  TASK_ID="${2:-}"
+  NEW_STATUS=""
+  if [[ -z "$TASK_ID" ]]; then
+    echo "Usage: $0 --status <TASK_ID>"
+    exit 1
+  fi
+else
+  TASK_ID="${1:-}"
+  NEW_STATUS="${2:-}"
+  if [[ -z "$TASK_ID" || -z "$NEW_STATUS" ]]; then
+    echo "Usage: $0 <TASK_ID> <status>"
+    echo "       $0 --status <TASK_ID>"
+    echo "  Status values: 'In Progress' | 'In Review' | 'Done' | 'Blocked'"
+    exit 1
+  fi
 fi
 
 # Load credentials from .env.baserow (project root)
@@ -32,23 +46,28 @@ fi
 LINEAR_API_KEY="$LINEAR_API_KEY" \
 TASK_ID="$TASK_ID" \
 NEW_STATUS="$NEW_STATUS" \
+MODE="$MODE" \
 python3 - << 'PYEOF'
 import os, json, urllib.request, sys
 
 api_key    = os.environ["LINEAR_API_KEY"]
 task_id    = os.environ["TASK_ID"]
 new_status = os.environ["NEW_STATUS"]
+mode       = os.environ["MODE"]
 
-# Validate status
+# Validate status (only in update mode)
 status_name_map = {
     "In Progress": "In Progress",
     "In Review":   "In Review",
     "Done":        "Done",
+    "Blocked":     "Blocked",
 }
-status_name = status_name_map.get(new_status)
-if not status_name:
-    print(f"Error: Unknown status '{new_status}'. Use: 'In Progress', 'In Review', 'Done'")
-    sys.exit(1)
+
+if mode == "update":
+    status_name = status_name_map.get(new_status)
+    if not status_name:
+        print(f"Error: Unknown status '{new_status}'. Use: 'In Progress', 'In Review', 'Done', 'Blocked'")
+        sys.exit(1)
 
 headers = {
     "Authorization": api_key,
@@ -70,15 +89,27 @@ def gql(query, variables=None):
 
 # Resolve task ID to Linear issue via API search (no static mapping file needed)
 search = gql(
-    "query($q: String!) { issueSearch(query: $q) { nodes { id identifier title } } }",
+    "query($q: String!) { searchIssues(term: $q) { nodes { id identifier title } } }",
     {"q": task_id},
 )
-nodes = search["issueSearch"]["nodes"]
+nodes = search["searchIssues"]["nodes"]
 matching = [n for n in nodes if n["title"].upper().startswith(task_id)]
 if not matching:
     print(f"Error: No Linear issue found for '{task_id}'")
     sys.exit(1)
 issue_id = matching[0]["id"]
+
+# --- Query mode: print current state and exit ---
+if mode == "query":
+    data = gql(
+        "query($id: String!) { issue(id: $id) { state { name } } }",
+        {"id": issue_id},
+    )
+    state_name = data["issue"]["state"]["name"]
+    print(state_name)
+    sys.exit(0)
+
+# --- Update mode ---
 print(f"Found: {matching[0]['identifier']} — {matching[0]['title']}")
 
 # Get team ID from the issue
