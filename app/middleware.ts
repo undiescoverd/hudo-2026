@@ -6,6 +6,15 @@ import { NextResponse, type NextRequest } from 'next/server'
  */
 const PUBLIC_PATHS = ['/sign-in', '/sign-up']
 
+// Validate at module load time so a missing env var surfaces immediately
+// rather than silently on the first request. Next.js Edge Runtime loads the
+// middleware module once per worker, so this acts as a startup check.
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error('Missing required Supabase environment variables: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY')
+}
+
 /**
  * Next.js middleware for route protection.
  *
@@ -15,19 +24,16 @@ const PUBLIC_PATHS = ['/sign-in', '/sign-up']
  * - Passes through requests to public paths and static assets.
  */
 export async function middleware(request: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Missing required Supabase environment variables')
-  }
-
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   })
 
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+  // Cookie handling pattern from @supabase/ssr docs: mutating request.cookies
+  // alongside response.cookies is required so both server components and the
+  // response cookie header stay in sync within the same request lifecycle.
+  const supabase = createServerClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
     cookies: {
       getAll() {
         return request.cookies.getAll()
@@ -45,21 +51,25 @@ export async function middleware(request: NextRequest) {
   })
 
   // Refresh session — required for Server Components to pick up the session.
-  // On network/Supabase failure, allow the request through rather than blocking all traffic.
+  // On Supabase failure, fail closed: redirect protected routes to sign-in so
+  // unauthenticated users cannot access protected content while auth is down.
+  const { pathname } = request.nextUrl
+  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))
+
   let user = null
   try {
     const { data } = await supabase.auth.getUser()
     user = data.user
   } catch (err) {
-    console.error('[middleware] supabase.auth.getUser() failed — allowing request through', err)
-    return response
+    console.error('[middleware] supabase.auth.getUser() failed', err)
+    if (isPublic) return response
+    const signInUrl = request.nextUrl.clone()
+    signInUrl.pathname = '/sign-in'
+    return NextResponse.redirect(signInUrl)
   }
 
-  const { pathname } = request.nextUrl
-
   // Allow public paths through without auth check.
-  // Match exact path or subpath (e.g. /sign-in/confirm) but not /sign-in-something.
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+  if (isPublic) {
     return response
   }
 
