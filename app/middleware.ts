@@ -3,10 +3,16 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 /**
  * Public paths that do not require authentication.
- * TODO: PR-REVIEW: Add password reset and email confirmation paths here when
- * S0-AUTH-007 (password reset flow) is implemented.
  */
-const PUBLIC_PATHS = ['/sign-in', '/sign-up', '/auth/register', '/auth/invite', '/guest']
+const PUBLIC_PATHS = [
+  '/sign-in',
+  '/sign-up',
+  '/auth/register',
+  '/auth/invite',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/guest',
+]
 
 // Validate at module load time so a missing env var surfaces immediately
 // rather than silently on the first request. Next.js Edge Runtime loads the
