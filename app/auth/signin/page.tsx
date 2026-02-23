@@ -1,55 +1,66 @@
 'use client'
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { validatePassword } from '@/lib/auth-validation'
 
-type FieldError = { fullName?: string; email?: string; password?: string }
+type FieldError = { email?: string; password?: string }
 
-function validate(fullName: string, email: string, password: string): FieldError {
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function validate(email: string, password: string): FieldError {
   const errors: FieldError = {}
-  if (!fullName.trim()) errors.fullName = 'Full name is required'
-  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!email.trim()) {
+  if (!email) {
     errors.email = 'Email is required'
-  } else if (!EMAIL_RE.test(email.trim())) {
+  } else if (!EMAIL_RE.test(email)) {
     errors.email = 'Please enter a valid email address'
   }
-  const passwordError = !password ? 'Password is required' : validatePassword(password)
-  if (passwordError) errors.password = passwordError
+  if (!password) errors.password = 'Password is required'
   return errors
 }
 
-export default function RegisterPage() {
-  const [fullName, setFullName] = useState('')
+/**
+ * Validates redirect target is a same-origin path to prevent open redirect attacks.
+ */
+function safeRedirect(target: string | null): string {
+  if (!target) return '/'
+  // Must start with / and not // (protocol-relative URL)
+  if (target.startsWith('/') && !target.startsWith('//')) return target
+  return '/'
+}
+
+export default function SignInPage() {
+  const searchParams = useSearchParams()
+  const redirect = safeRedirect(searchParams.get('redirect'))
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fieldErrors, setFieldErrors] = useState<FieldError>({})
   const [serverError, setServerError] = useState<string | null>(null)
-  const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setServerError(null)
 
-    const errors = validate(fullName, email, password)
+    const trimmedEmail = email.trim()
+    const errors = validate(trimmedEmail, password)
     setFieldErrors(errors)
     if (Object.keys(errors).length > 0) return
 
     setLoading(true)
     try {
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch('/api/auth/signin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName, email, password }),
+        body: JSON.stringify({ email: trimmedEmail, password }),
       })
       const data = await res.json()
       if (!res.ok) {
-        setServerError(data.error ?? 'Registration failed. Please try again.')
+        setServerError(data.error ?? 'Sign in failed. Please try again.')
       } else {
-        setSubmitted(true)
+        window.location.href = redirect
       }
     } catch {
       setServerError('An unexpected error occurred. Please try again.')
@@ -58,71 +69,23 @@ export default function RegisterPage() {
     }
   }
 
-  if (submitted) {
-    return (
-      <main className="flex min-h-screen items-center justify-center p-4">
-        <div className="w-full max-w-sm space-y-4 text-center">
-          <h1 className="text-2xl font-semibold">Check your email</h1>
-          <p className="text-sm text-muted-foreground">
-            We sent a confirmation link to <strong>{email}</strong>. Click the link to activate your
-            account.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Didn&apos;t receive it? Check your spam folder or{' '}
-            <button
-              onClick={() => setSubmitted(false)}
-              className="underline underline-offset-4 hover:text-foreground"
-            >
-              try again
-            </button>
-            .
-          </p>
-        </div>
-      </main>
-    )
-  }
-
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold">Create your account</h1>
+          <h1 className="text-2xl font-semibold">Sign in</h1>
           <p className="text-sm text-muted-foreground">
-            Already have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link
-              href="/auth/signin"
+              href="/auth/register"
               className="underline underline-offset-4 hover:text-foreground"
             >
-              Sign in
+              Create one
             </Link>
           </p>
         </div>
 
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
-          <div className="space-y-1">
-            <label htmlFor="fullName" className="text-sm font-medium">
-              Full name
-            </label>
-            <input
-              id="fullName"
-              type="text"
-              autoComplete="name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              aria-describedby={fieldErrors.fullName ? 'fullName-error' : undefined}
-              className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
-                'focus:ring-2 focus:ring-ring focus:ring-offset-2',
-                fieldErrors.fullName ? 'border-destructive' : 'border-input'
-              )}
-            />
-            {fieldErrors.fullName && (
-              <p id="fullName-error" className="text-xs text-destructive">
-                {fieldErrors.fullName}
-              </p>
-            )}
-          </div>
-
           <div className="space-y-1">
             <label htmlFor="email" className="text-sm font-medium">
               Email
@@ -154,23 +117,19 @@ export default function RegisterPage() {
             <input
               id="password"
               type="password"
-              autoComplete="new-password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              aria-describedby={fieldErrors.password ? 'password-error' : 'password-hint'}
+              aria-describedby={fieldErrors.password ? 'password-error' : undefined}
               className={cn(
                 'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
                 'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                 fieldErrors.password ? 'border-destructive' : 'border-input'
               )}
             />
-            {fieldErrors.password ? (
+            {fieldErrors.password && (
               <p id="password-error" className="text-xs text-destructive">
                 {fieldErrors.password}
-              </p>
-            ) : (
-              <p id="password-hint" className="text-xs text-muted-foreground">
-                Min 8 characters with uppercase, lowercase, and a number.
               </p>
             )}
           </div>
@@ -186,7 +145,7 @@ export default function RegisterPage() {
             disabled={loading}
             className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            {loading ? 'Creating account…' : 'Create account'}
+            {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
       </div>

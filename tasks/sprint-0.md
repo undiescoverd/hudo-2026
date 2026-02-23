@@ -8,7 +8,7 @@
 
 ## Tasks
 
-### INFRA (12 tasks: 8 done, 4 not started)
+### INFRA (12 tasks: 11 done, 1 not started)
 
 ---
 
@@ -83,13 +83,13 @@ NOTES: Do not store any secrets in the repo.
 
 ---
 
-- [ ] **S0-INFRA-004** — Create Supabase projects
+- [x] **S0-INFRA-004** — Create Supabase projects
 
 TASK_ID: S0-INFRA-004
 TITLE: Create Supabase projects
 BRANCH: feat/s0-infra-004-supabase
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - Three Supabase projects created: hudo-dev, hudo-staging, hudo-prod
@@ -102,13 +102,13 @@ NOTES: Service role key must never appear in client-side code or be committed to
 
 ---
 
-- [ ] **S0-INFRA-005** — Configure Cloudflare R2
+- [x] **S0-INFRA-005** — Configure Cloudflare R2
 
 TASK_ID: S0-INFRA-005
 TITLE: Configure Cloudflare R2
 BRANCH: feat/s0-infra-005-r2
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - Three R2 buckets created: hudo-dev, hudo-staging, hudo-prod (separate from S0-STORAGE-001)
@@ -264,7 +264,7 @@ NOTES: Required before any auth email flows (confirmation, invitation, password 
 
 ---
 
-### DB (4 tasks: 1 done, 3 not started)
+### DB (4 tasks: 4 done, 0 not started)
 
 ---
 
@@ -334,13 +334,13 @@ NOTES: Any future deletion of an RLS policy must cause at least one test to fail
 
 ---
 
-- [ ] **S0-DB-004** — Create database indexes
+- [x] **S0-DB-004** — Create database indexes
 
 TASK_ID: S0-DB-004
 TITLE: Create database indexes
 BRANCH: feat/s0-db-004-indexes
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-DB-001
 ACCEPTANCE_CRITERIA:
   - All indexes from PRD Section 4.3 are created and tested
@@ -352,7 +352,7 @@ NOTES: Indexes should be created after schema is stable.
 
 ---
 
-### AUTH (7 tasks: 0 done, 7 not started)
+### AUTH (7 tasks: 2 done, 1 in review, 4 not started)
 
 ---
 
