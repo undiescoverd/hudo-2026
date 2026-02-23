@@ -16,6 +16,8 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.996.0",
+    "@aws-sdk/s3-request-presigner": "^3.996.0",
     "@radix-ui/react-slot": "^1.1.0",
     "@sentry/nextjs": "^10.39.0",
     "@supabase/ssr": "^0.8.0",
