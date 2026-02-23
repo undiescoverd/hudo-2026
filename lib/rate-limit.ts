@@ -10,14 +10,17 @@ export interface RateLimitResult {
 
 /**
  * Extract client IP from request headers.
- * Vercel sets x-forwarded-for; falls back to x-real-ip, then 'unknown'.
+ * Uses the rightmost x-forwarded-for entry (appended by the last trusted proxy,
+ * e.g. Vercel's edge), which cannot be spoofed by the client.
+ * Falls back to x-real-ip, then 'unknown'.
  */
 export function getClientIp(request: NextRequest): string {
-  return (
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    request.headers.get('x-real-ip') ??
-    'unknown'
-  )
+  const forwarded = request.headers.get('x-forwarded-for')
+  if (forwarded) {
+    const ips = forwarded.split(',')
+    return ips[ips.length - 1].trim()
+  }
+  return request.headers.get('x-real-ip') ?? 'unknown'
 }
 
 /**
@@ -37,15 +40,17 @@ export async function checkAuthRateLimit(
   // allowing pure exports (constants, getClientIp) to be tested without Redis.
   const { rateLimit } = await import('@/lib/redis')
 
-  const [ipRemaining, emailRemaining] = await Promise.all([
-    rateLimit(ipKey, AUTH_RATE_LIMIT, AUTH_RATE_WINDOW),
-    rateLimit(emailKey, AUTH_RATE_LIMIT, AUTH_RATE_WINDOW),
-  ])
+  // Check IP first; only check email if IP is not exhausted.
+  // Prevents a blocked IP from burning the email key's quota.
+  const ipRemaining = await rateLimit(ipKey, AUTH_RATE_LIMIT, AUTH_RATE_WINDOW)
+  if (ipRemaining === -1) {
+    return { limited: true, retryAfter: AUTH_RATE_WINDOW }
+  }
 
-  const limited = ipRemaining === -1 || emailRemaining === -1
+  const emailRemaining = await rateLimit(emailKey, AUTH_RATE_LIMIT, AUTH_RATE_WINDOW)
 
   return {
-    limited,
-    retryAfter: limited ? AUTH_RATE_WINDOW : 0,
+    limited: emailRemaining === -1,
+    retryAfter: emailRemaining === -1 ? AUTH_RATE_WINDOW : 0,
   }
 }

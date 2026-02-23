@@ -35,9 +35,9 @@ describe('AUTH_RATE_WINDOW constant', () => {
 })
 
 describe('getClientIp', () => {
-  it('extracts IP from x-forwarded-for (first entry)', () => {
+  it('extracts rightmost IP from x-forwarded-for (trusted proxy appends last)', () => {
     const req = fakeRequest({ 'x-forwarded-for': '1.2.3.4, 5.6.7.8' })
-    assert.equal(getClientIp(req), '1.2.3.4')
+    assert.equal(getClientIp(req), '5.6.7.8')
   })
 
   it('extracts single IP from x-forwarded-for', () => {
@@ -45,9 +45,9 @@ describe('getClientIp', () => {
     assert.equal(getClientIp(req), '10.0.0.1')
   })
 
-  it('trims whitespace from x-forwarded-for', () => {
-    const req = fakeRequest({ 'x-forwarded-for': '  1.2.3.4 , 5.6.7.8' })
-    assert.equal(getClientIp(req), '1.2.3.4')
+  it('trims whitespace from rightmost x-forwarded-for entry', () => {
+    const req = fakeRequest({ 'x-forwarded-for': '1.2.3.4 , 5.6.7.8 ' })
+    assert.equal(getClientIp(req), '5.6.7.8')
   })
 
   it('falls back to x-real-ip when x-forwarded-for is absent', () => {
@@ -56,8 +56,8 @@ describe('getClientIp', () => {
   })
 
   it('prefers x-forwarded-for over x-real-ip', () => {
-    const req = fakeRequest({ 'x-forwarded-for': '1.1.1.1', 'x-real-ip': '2.2.2.2' })
-    assert.equal(getClientIp(req), '1.1.1.1')
+    const req = fakeRequest({ 'x-forwarded-for': '1.1.1.1, 3.3.3.3', 'x-real-ip': '2.2.2.2' })
+    assert.equal(getClientIp(req), '3.3.3.3')
   })
 
   it('returns "unknown" when no IP headers present', () => {

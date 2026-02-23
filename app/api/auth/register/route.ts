@@ -30,19 +30,6 @@ export async function POST(request: NextRequest) {
   if (typeof email !== 'string' || !email.trim() || !EMAIL_RE.test(email.trim())) {
     return NextResponse.json({ error: 'Valid email is required' }, { status: 400 })
   }
-  // Rate limit — fail-open on Redis error
-  try {
-    const { limited } = await checkAuthRateLimit(ip, email.trim(), 'register')
-    if (limited) {
-      return NextResponse.json(
-        { error: 'Too many registration attempts. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': String(AUTH_RATE_WINDOW) } }
-      )
-    }
-  } catch (err) {
-    console.error('[register] Rate limit check failed, allowing request:', err)
-  }
-
   if (typeof fullName !== 'string' || !fullName.trim()) {
     return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
   }
@@ -53,6 +40,19 @@ export async function POST(request: NextRequest) {
   const passwordError = validatePassword(password)
   if (passwordError) {
     return NextResponse.json({ error: passwordError }, { status: 400 })
+  }
+
+  // Rate limit after all input validation — don't burn quota on malformed requests
+  try {
+    const { limited } = await checkAuthRateLimit(ip, email.trim(), 'register')
+    if (limited) {
+      return NextResponse.json(
+        { error: 'Too many registration attempts. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(AUTH_RATE_WINDOW) } }
+      )
+    }
+  } catch (err) {
+    console.error('[register] Rate limit check failed, allowing request:', err)
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
