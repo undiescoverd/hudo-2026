@@ -20,11 +20,12 @@ Each bucket is **private** with no public bucket policy and no public fallback.
 
 ### Privacy & Access Control
 
-All buckets must be **private** — no public read/write access:
+All buckets are **private by default** — no action needed:
 
-- **Object CANNED ACL**: Private
-- **Bucket Policy**: None (no public access)
-- **Public Fallback**: Disabled
+- Cloudflare R2 buckets are private by default
+- Public Development URL is disabled by default
+- No public access via r2.dev subdomain unless explicitly enabled
+- All access is via presigned URLs (server-signed, time-limited)
 
 ### CORS Policy
 
@@ -57,11 +58,7 @@ CORS must be configured on **all three buckets** to allow browser-based PUT uplo
 
 ### Object Versioning
 
-Object versioning must be **enabled** on all buckets to support video version history:
-
-- **Enable**: Object Versioning → On
-
-Versioning allows multiple versions of the same object to be stored independently, enabling the version history feature.
+**Note**: Cloudflare R2 does not currently support native object versioning. This is a requested feature but not yet available in the dashboard or API. Video version history is managed at the application level via the `video_versions` table in the database, not via R2 object versions.
 
 ## Environment Variables & Credentials
 
@@ -87,13 +84,12 @@ For local development, copy `.env.example` to `.env.local` and fill in the `hudo
 2. **Create bucket**: Click "Create bucket"
    - Name: `hudo-dev`, `hudo-staging`, or `hudo-prod`
    - Region: Auto (default)
-3. **Disable public access**:
-   - Settings → Permissions → Block public access: **On**
-4. **Enable object versioning**:
-   - Settings → Object versioning: **On**
-5. **Configure CORS**:
+3. **Verify public access is disabled** (default):
+   - Settings → Public Development URL should show "disabled"
+   - No action needed; buckets are private by default
+4. **Configure CORS**:
    - Settings → CORS → Paste the CORS JSON above
-6. **Create API token** (if not already created):
+5. **Create API token** (if not already created):
    - R2 → Manage API tokens → Create API token
    - Permissions: `Edit (all)` (includes object read/write)
    - Resources: Select all buckets or specific bucket
