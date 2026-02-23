@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
-import { generateSignedUrl } from '@/lib/storage'
+import { getStorage } from '@/lib/storage'
 
 const SIGNED_URL_EXPIRY_SECONDS = 900 // 15 minutes
 
@@ -95,7 +95,10 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
   // Generate the signed URL — the only URL type ever returned to clients
   let signedUrl: string
   try {
-    signedUrl = await generateSignedUrl(version.r2_object_key, SIGNED_URL_EXPIRY_SECONDS)
+    signedUrl = await getStorage().generateSignedUrl(
+      version.r2_object_key,
+      SIGNED_URL_EXPIRY_SECONDS
+    )
   } catch (err) {
     console.error(
       '[playback-url] Failed to generate signed URL:',

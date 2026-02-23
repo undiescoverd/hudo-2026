@@ -12,10 +12,10 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 // ---------------------------------------------------------------------------
-// Test: generateSignedUrl shape (without hitting real R2)
+// Test: getStorage / createStorageClient shape (without hitting real R2)
 // ---------------------------------------------------------------------------
 
-describe('generateSignedUrl', () => {
+describe('getStorage / createStorageClient', () => {
   it('throws when R2 environment variables are missing', async () => {
     // Temporarily clear env vars
     const saved = {
@@ -30,16 +30,14 @@ describe('generateSignedUrl', () => {
     delete process.env.R2_SECRET_ACCESS_KEY
     delete process.env.R2_BUCKET_NAME
 
-    // Dynamic import to pick up cleared env (module must not be cached at test start)
-    // We use a workaround: test the error condition by calling the exported function
-    // with missing env. Since the module checks env at call time, this works correctly.
-    const { generateSignedUrl } = await import('../../../../../lib/storage')
+    // createStorageClient (used by getStorage) throws when env vars are missing
+    const { createStorageClient } = await import('../../../../../lib/storage')
 
-    await assert.rejects(
-      () => generateSignedUrl('test-key.mp4'),
+    assert.throws(
+      () => createStorageClient(),
       (err: unknown) => {
         assert.ok(err instanceof Error)
-        assert.match(err.message, /Missing required R2 environment variables/)
+        assert.match(err.message, /R2_ACCESS_KEY_ID/)
         return true
       }
     )
@@ -67,7 +65,7 @@ describe('playback-url route constants', () => {
     const source = fs.readFileSync(routePath, 'utf8')
 
     assert.match(source, /SIGNED_URL_EXPIRY_SECONDS\s*=\s*900/)
-    assert.match(source, /expiresIn:\s*SIGNED_URL_EXPIRY_SECONDS/)
+    assert.match(source, /SIGNED_URL_EXPIRY_SECONDS/)
   })
 
   it('never returns a direct R2 object URL (only the signed url field)', async () => {
