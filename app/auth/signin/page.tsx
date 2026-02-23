@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { safeRedirect } from '@/lib/auth-validation'
 import { cn } from '@/lib/utils'
 
 type FieldError = { email?: string; password?: string }
@@ -18,16 +19,6 @@ function validate(email: string, password: string): FieldError {
   }
   if (!password) errors.password = 'Password is required'
   return errors
-}
-
-/**
- * Validates redirect target is a same-origin path to prevent open redirect attacks.
- */
-function safeRedirect(target: string | null): string {
-  if (!target) return '/'
-  // Must start with / and not // (protocol-relative URL)
-  if (target.startsWith('/') && !target.startsWith('//')) return target
-  return '/'
 }
 
 export default function SignInPage() {

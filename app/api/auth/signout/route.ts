@@ -1,13 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 
 /**
  * POST /api/auth/signout
  *
- * Signs out the current user and clears session cookies.
+ * Signs out the current user, clears session cookies, and redirects to sign-in.
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -36,5 +36,5 @@ export async function POST() {
     return NextResponse.json({ error: 'Sign out failed' }, { status: 500 })
   }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.redirect(new URL('/auth/signin', request.url))
 }
