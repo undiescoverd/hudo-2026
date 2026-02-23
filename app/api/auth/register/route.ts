@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { validatePassword } from '@/lib/auth-validation'
+import { checkAuthRateLimit, getClientIp, AUTH_RATE_WINDOW } from '@/lib/rate-limit'
 
 /**
  * POST /api/auth/register
@@ -10,6 +11,8 @@ import { validatePassword } from '@/lib/auth-validation'
  * (Resend) is configured via S0-INFRA-012; local dev uses the built-in mailpit service.
  */
 export async function POST(request: NextRequest) {
+  const ip = getClientIp(request)
+
   let body: unknown
   try {
     body = await request.json()
@@ -27,6 +30,19 @@ export async function POST(request: NextRequest) {
   if (typeof email !== 'string' || !email.trim() || !EMAIL_RE.test(email.trim())) {
     return NextResponse.json({ error: 'Valid email is required' }, { status: 400 })
   }
+  // Rate limit — fail-open on Redis error
+  try {
+    const { limited } = await checkAuthRateLimit(ip, email.trim(), 'register')
+    if (limited) {
+      return NextResponse.json(
+        { error: 'Too many registration attempts. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(AUTH_RATE_WINDOW) } }
+      )
+    }
+  } catch (err) {
+    console.error('[register] Rate limit check failed, allowing request:', err)
+  }
+
   if (typeof fullName !== 'string' || !fullName.trim()) {
     return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
   }

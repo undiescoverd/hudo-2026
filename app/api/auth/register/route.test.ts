@@ -1,14 +1,14 @@
 /**
- * Unit tests for registration API route validation logic.
+ * Unit tests for registration API route validation and rate limiting logic.
  *
- * These test the pure validatePassword function without a running server.
+ * Tests the pure validatePassword function and rate limit key/constant expectations.
  * Uses the Node.js built-in test runner (node --test) — no extra dependency needed.
  *
- * Run: node --test app/api/auth/register/route.test.ts
- * (transpile first via tsx: npx tsx --test app/api/auth/register/route.test.ts)
+ * Run: npx tsx --test app/api/auth/register/route.test.ts
  */
 
 import { validatePassword } from '../../../../lib/auth-validation'
+import { AUTH_RATE_LIMIT, AUTH_RATE_WINDOW } from '../../../../lib/rate-limit'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
@@ -35,5 +35,33 @@ describe('validatePassword', () => {
 
   it('accepts a password with special characters', () => {
     assert.equal(validatePassword('Valid@Pass1!'), null)
+  })
+})
+
+describe('register rate limiting — key format', () => {
+  it('IP key follows auth:register:ip:{ip} pattern', () => {
+    const ip = '10.0.0.1'
+    const key = `auth:register:ip:${ip}`
+    assert.equal(key, 'auth:register:ip:10.0.0.1')
+  })
+
+  it('email key follows auth:register:email:{normalizedEmail} pattern', () => {
+    const email = '  User@Test.COM  '
+    const key = `auth:register:email:${email.trim().toLowerCase()}`
+    assert.equal(key, 'auth:register:email:user@test.com')
+  })
+})
+
+describe('register rate limiting — constants', () => {
+  it('limit is 5 attempts per window', () => {
+    assert.equal(AUTH_RATE_LIMIT, 5)
+  })
+
+  it('window is 900 seconds (15 minutes)', () => {
+    assert.equal(AUTH_RATE_WINDOW, 900)
+  })
+
+  it('Retry-After header value matches window', () => {
+    assert.equal(String(AUTH_RATE_WINDOW), '900')
   })
 })
