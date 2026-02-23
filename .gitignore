@@ -45,3 +45,4 @@ test-results/
 
 # Local utility scripts
 get-jwt.sh
+.env*.local

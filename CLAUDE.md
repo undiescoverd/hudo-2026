@@ -79,6 +79,7 @@ Task format requires: `TASK_ID`, `TITLE`, `BRANCH`, `MODEL`, `STATUS`, `BLOCKED_
 - Before committing, run `pnpm format:check && pnpm type-check && pnpm lint` to catch CI issues locally
 - Do not start a task while any `BLOCKED_BY` task is not `done`
 - After completing work, update CLAUDE.md with any learnings (new patterns, gotchas, tooling changes). Keep it concise — remove stale info, never duplicate, only add what future agents genuinely need. Prefer updating MEMORY.md for session-specific details and CLAUDE.md for durable project rules.
+- **When documenting errors/gotchas**: Use the format in `docs/gotchas-and-lessons.md` — Symptom (1 line) → Root Cause (1–2 lines) → Fix (1–3 lines) → Prevention (1 line). Max ~6–8 lines per issue. Brevity saves context for future agents.
 
 ## Code Quality
 
