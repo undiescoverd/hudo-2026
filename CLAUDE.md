@@ -38,7 +38,7 @@ orchestrate.md         # Orchestrator documentation and workflow guide
 tasks/sprint-0.md      # Sprint 0 task list (STATUS tracked here)
 tasks/sprint-N.md      # Future sprint task lists (added per sprint)
 scripts/
-  update-baserow-task.sh  # Update Baserow task status
+  update-linear-task.sh   # Update or query Linear task status
 docs/
   hudo-prd-v1.1.md        # Product requirements
   hudo-sprint-plan.md     # Full sprint plan v1.2 (task reference)
@@ -60,6 +60,9 @@ node orchestrate.js start <TASK_ID>     # Set in_progress
 node orchestrate.js review <TASK_ID>    # Set in_review (on PR open)
 node orchestrate.js done <TASK_ID>      # Set done, shows newly unblocked
 node orchestrate.js gate sprint-0       # Verify sprint gate checklist
+node orchestrate.js blocked <ID> "why"  # Mark blocked (syncs to Linear)
+node orchestrate.js sync-check          # Compare markdown vs Linear
+node orchestrate.js sync-fix            # Push markdown statuses to Linear
 ```
 
 Task format requires: `TASK_ID`, `TITLE`, `BRANCH`, `MODEL`, `STATUS`, `BLOCKED_BY`, `ACCEPTANCE_CRITERIA`, `FILES`, `NOTES`. Model defaults to `sonnet-4.6` if omitted.
@@ -70,15 +73,22 @@ Task format requires: `TASK_ID`, `TITLE`, `BRANCH`, `MODEL`, `STATUS`, `BLOCKED_
 - Write minimum code to satisfy acceptance criteria — nothing more
 - Write tests for every acceptance criterion
 - Do not add dependencies without flagging first
+- **Branch naming:** sprint tasks use `feat/s<N>-<TASK_ID>-<slug>`; chores/cleanup use `chore/<slug>`. Never commit directly to `main`.
 - Commit → push branch → open PR → run `orchestrate.js review`
 - After opening a PR, always run `/pr-fix` to start the Ralph Loop — do not wait for manual invocation
 - Before committing, run `pnpm format:check && pnpm type-check && pnpm lint` to catch CI issues locally
 - Do not start a task while any `BLOCKED_BY` task is not `done`
-- After completing work, update CLAUDE.md with any learnings (new patterns, gotchas, tooling changes). Keep it concise — remove stale info, never duplicate, only add what future agents genuinely need. Prefer updating MEMORY.md for session-specific details and CLAUDE.md for durable project rules.
+- After completing work, update CLAUDE.md with any learnings. If anything broke or surprised you, add an entry to the **Failure Log** section before closing the session — never defer it.
 
 ## Code Quality
 
 - **Pre-commit hooks** via Husky + lint-staged. Staged files are auto-formatted (Prettier) and linted (ESLint) on every commit. Config in `package.json` under `lint-staged`.
+
+## Failure Log
+
+When something breaks or surprises you mid-task, add an entry here before closing the session. Write only what's needed to understand the problem and fix — no more. One line if that's enough; a few lines if it isn't.
+
+Format: `- **[Area] Title (YYYY-MM-DD):** what broke + fix/workaround.`
 
 ## Environments
 
@@ -98,25 +108,24 @@ Guest: read-only via signed link, no Supabase access.
 - **S3** — Billing, Compliance, Security Hardening
 - **S4** — Accessibility, PWA, Launch Prep
 
-## Baserow Sprint Tracker
+## Linear Sprint Tracker
 
-All sprint tasks are tracked live in Baserow (workspace: Hudo → database: Hudo Sprint Tracker, table ID 849304).
+All sprint tasks are tracked live in Linear. The orchestrator syncs statuses automatically.
 
-**When starting a task:**
+**Automated sync (no manual action needed):**
+- `orchestrate.js start/review/done/blocked` → syncs to Linear with 1 retry
+- Push to `feat/s*-*` branch → GitHub Actions marks In Progress (only from Backlog/Todo)
+- PR open → GitHub Actions marks In Review + patches PR description
+- PR merge → GitHub Actions marks Done
+- Daily cron (08:00 UTC) → `linear-sync-check.yml` detects drift, auto-fixes, notifies Slack
+
+**Manual sync commands:**
 ```bash
-./scripts/update-baserow-task.sh <TASK_ID> "In Progress"
+node orchestrate.js sync-check          # Compare markdown vs Linear (read-only)
+node orchestrate.js sync-fix            # Push markdown statuses to Linear for drifted tasks
+./scripts/update-linear-task.sh --status <TASK_ID>  # Query a task's Linear state
 ```
 
-**When a task is complete (PR merged / acceptance criteria met):**
-```bash
-./scripts/update-baserow-task.sh <TASK_ID> "Done"
-```
+**Linear workflow states:** Backlog, Todo, In Progress, In Review, Blocked, Done, Canceled, Duplicate
 
-**When a PR is open and in review:**
-```bash
-./scripts/update-baserow-task.sh <TASK_ID> "In Review"
-```
-
-Credentials and table ID are in `.env.baserow`. A PostToolUse hook in `.claude/settings.json` attempts auto-update on Bash output — but always call the script explicitly when completing tasks.
-
-View tracker at: https://app.baserow.io (Hudo workspace → Hudo Sprint Tracker → Sprint Tasks)
+`LINEAR_API_KEY` lives in `.env.linear`. The `.github/workflows/linear-update.yml` and `linear-sync-check.yml` workflows use the `LINEAR_API_KEY` GitHub Actions secret.

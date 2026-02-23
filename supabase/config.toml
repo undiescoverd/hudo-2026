@@ -67,13 +67,14 @@ enabled = true
 # Production topic: video_version_id:*
 max_bytes_per_second = 1048576  # 1MB/s
 
+
 # ============================================================
 # Development
 # ============================================================
 
-[functions]
-# JavaScript runtime for edge functions
-verify_jwt = true
+# No edge functions in Sprint 0. Per-function config added here as needed:
+# [functions.my-function]
+# verify_jwt = true
 
 # ============================================================
 # Environment-Specific Notes
