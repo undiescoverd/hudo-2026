@@ -1,29 +1,32 @@
 import { Redis } from '@upstash/redis'
 
+const url = process.env.UPSTASH_REDIS_REST_URL
+const token = process.env.UPSTASH_REDIS_REST_TOKEN
+
+if (!url || !token) {
+  throw new Error('UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required')
+}
+
 /**
  * Upstash Redis client for rate limiting.
  * Uses REST API for serverless compatibility (Vercel).
  * Never used for persistent data — only ephemeral rate limit counters.
  */
-export const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL || '',
-  token: process.env.UPSTASH_REDIS_REST_TOKEN || '',
-})
+export const redis = new Redis({ url, token })
 
 /**
- * Rate limit: returns remaining quota or 0 if limit exceeded.
+ * Rate limit: returns remaining quota or -1 if limit exceeded.
  * @param key - Rate limit key (e.g., "auth:register:user@example.com")
  * @param limit - Max requests per window
  * @param window - Time window in seconds
  * @returns remaining quota (>= 0) or -1 if limit exceeded
  */
 export async function rateLimit(key: string, limit: number, window: number): Promise<number> {
-  const current = await redis.incr(key)
-
-  if (current === 1) {
-    // First request in this window: set expiry
-    await redis.expire(key, window)
-  }
+  const pipeline = redis.pipeline()
+  pipeline.incr(key)
+  pipeline.expire(key, window)
+  const results = await pipeline.exec<[number, number]>()
+  const current = results[0]
 
   if (current > limit) {
     return -1 // Limit exceeded

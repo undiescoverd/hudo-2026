@@ -12,7 +12,7 @@ Go to [console.upstash.com](https://console.upstash.com) and upgrade to **pay-as
    - Name: `hudo-dev`
    - Region: `eu-west-2` (UK, matches Supabase)
    - Type: Standard (not Cluster)
-   - Eviction Policy: `allkeys-lru` (rate limit keys expire naturally)
+   - Eviction Policy: `noeviction` (prevents silent rate limit bypass under memory pressure)
    - TLS Enabled: ✓
 
 2. **Create Database: hudo-staging**

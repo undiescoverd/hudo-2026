@@ -7,6 +7,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const VALID_ENVS = ['dev', 'staging'];
+
 async function validateRedis(env) {
   let url, token;
 
@@ -28,7 +30,7 @@ async function validateRedis(env) {
 
   if (!url || !token) {
     console.error(`❌ ${env}: Missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN`);
-    return;
+    return false;
   }
 
   try {
@@ -39,25 +41,44 @@ async function validateRedis(env) {
     if (response.ok) {
       const text = await response.text();
       console.log(`✅ ${env}: Connected. Response: ${text}`);
+      return true;
     } else {
       console.error(`❌ ${env}: HTTP ${response.status}`);
+      return false;
     }
   } catch (err) {
     console.error(`❌ ${env}: ${err.message}`);
+    return false;
   }
 }
 
 async function main() {
   const target = process.argv[2] || 'all';
-  const envs = target === 'all' ? ['dev', 'staging'] : [target];
+
+  if (target !== 'all' && !VALID_ENVS.includes(target)) {
+    console.error(`Invalid environment: ${target}. Use: dev, staging, or all`);
+    process.exit(1);
+  }
+
+  const envs = target === 'all' ? VALID_ENVS : [target];
 
   console.log('Validating Upstash Redis connections...\n');
 
+  let allPassed = true;
   for (const env of envs) {
-    await validateRedis(env);
+    const ok = await validateRedis(env);
+    if (!ok) allPassed = false;
   }
 
-  console.log('\n✓ Done');
+  if (allPassed) {
+    console.log('\n✓ Done');
+  } else {
+    console.error('\n✗ Some validations failed');
+    process.exit(1);
+  }
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
