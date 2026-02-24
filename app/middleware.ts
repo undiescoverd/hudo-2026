@@ -5,8 +5,7 @@ import { NextResponse, type NextRequest } from 'next/server'
  * Public paths that do not require authentication.
  */
 const PUBLIC_PATHS = [
-  '/sign-in',
-  '/sign-up',
+  '/auth/signin',
   '/auth/register',
   '/auth/invite',
   '/auth/forgot-password',
@@ -50,7 +49,7 @@ function requiredRolesFor(pathname: string): Set<string> | null {
  *
  * - Refreshes the Supabase session cookie on every request so auth state
  *   persists across page reloads without requiring a client-side hydration step.
- * - Redirects unauthenticated users to /sign-in for protected routes.
+ * - Redirects unauthenticated users to /auth/signin for protected routes.
  * - Passes through requests to public paths and static assets.
  * - Enforces role-based access on /admin, /agent, and /talent routes by
  *   querying the memberships table. Returns 403 for insufficient role.
@@ -106,14 +105,14 @@ export async function middleware(request: NextRequest) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[middleware] supabase.auth.getUser() failed:', message)
     const signInUrl = request.nextUrl.clone()
-    signInUrl.pathname = '/sign-in'
+    signInUrl.pathname = '/auth/signin'
     return NextResponse.redirect(signInUrl)
   }
 
   // Redirect unauthenticated users to the sign-in page, preserving the intended destination.
   if (!user) {
     const signInUrl = request.nextUrl.clone()
-    signInUrl.pathname = '/sign-in'
+    signInUrl.pathname = '/auth/signin'
     signInUrl.searchParams.set('redirect', pathname)
     return NextResponse.redirect(signInUrl)
   }
