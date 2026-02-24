@@ -1,6 +1,8 @@
 -- =============================================================
 -- tests/rls/guest_links.test.sql
 --
+-- Table & policies created in migrations 0001–0003.
+--
 -- PRD Policies enforced:
 --   guest_links_select — Agents/admin_agents/owners can read
 --                        guest links for their agency.
@@ -9,6 +11,7 @@
 --   guest_links_update — Agents+ can update (revoke) guest links.
 --   Talent exclusion   — Talent role has no access.
 --   Cross-agency       — No cross-agency access.
+--   No DELETE policy   — Hard delete intentionally forbidden.
 -- =============================================================
 
 BEGIN;

@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
   // This prevents TOCTOU race conditions where two concurrent requests could both
   // read accepted_at IS NULL, then both proceed to create memberships.
   // PostgREST correctly casts ISO 8601 strings to timestamptz for comparison.
+  // .gte() intentionally includes the exact expiry moment (invitations valid until expiry).
   const now = new Date().toISOString()
   const { data: claimed, error: claimError } = await admin
     .from('invitations')
