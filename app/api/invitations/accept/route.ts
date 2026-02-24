@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { validatePassword } from '@/lib/auth-validation'
 import crypto from 'crypto'
+import { getClientIp } from '@/lib/rate-limit'
 
 /**
  * POST /api/invitations/accept
@@ -11,6 +12,21 @@ import crypto from 'crypto'
  * Marks the invitation as accepted and logs to audit_log.
  */
 export async function POST(request: NextRequest) {
+  // Rate limit: 10 accepts per IP per hour
+  const ip = getClientIp(request)
+  try {
+    const { rateLimit } = await import('@/lib/redis')
+    const remaining = await rateLimit(`invitation:accept:ip:${ip}`, 10, 3600)
+    if (remaining === -1) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': '3600' } }
+      )
+    }
+  } catch (err) {
+    console.error('[invitations/accept] Rate limit check failed, allowing request:', err)
+  }
+
   let body: unknown
   try {
     body = await request.json()
