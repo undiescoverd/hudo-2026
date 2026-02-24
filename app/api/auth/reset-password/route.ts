@@ -12,7 +12,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  * Always returns a generic success message — no email enumeration.
  */
 export async function POST(request: NextRequest) {
-  // Rate limit by IP: 5 requests per hour
+  // Rate limit by IP: 5 requests per hour.
+  // Dynamic import + try/catch = fail-open: if Redis is unavailable, the request proceeds.
   const ip = getClientIp(request)
   try {
     const { rateLimit } = await import('@/lib/redis')

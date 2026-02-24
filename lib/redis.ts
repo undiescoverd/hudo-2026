@@ -24,7 +24,9 @@ export const redis = new Redis({ url, token })
 export async function rateLimit(key: string, limit: number, window: number): Promise<number> {
   const current = await redis.incr(key)
 
-  // Only set expiry on the first increment — prevents TTL reset on every request
+  // Only set expiry on the first increment — prevents TTL reset on every request.
+  // Redis INCR is atomic, so concurrent calls return sequential values (1, 2, 3...);
+  // only the first caller (current === 1) sets the TTL.
   if (current === 1) {
     await redis.expire(key, window)
   }
