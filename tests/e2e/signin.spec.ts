@@ -12,8 +12,15 @@
 
 import { test, expect } from '@playwright/test'
 
-const TEST_AGENCY_EMAIL = process.env.E2E_TEST_AGENCY_EMAIL || 'test@agency.local'
-const TEST_AGENCY_PASSWORD = process.env.E2E_TEST_AGENCY_PASSWORD || 'TestPass1'
+const TEST_AGENCY_EMAIL = process.env.E2E_TEST_AGENCY_EMAIL
+if (!TEST_AGENCY_EMAIL) {
+  throw new Error('E2E_TEST_AGENCY_EMAIL environment variable is required for E2E tests')
+}
+
+const TEST_AGENCY_PASSWORD = process.env.E2E_TEST_AGENCY_PASSWORD
+if (!TEST_AGENCY_PASSWORD) {
+  throw new Error('E2E_TEST_AGENCY_PASSWORD environment variable is required for E2E tests')
+}
 
 test.describe('S0-AUTH-003: Sign-in and sign-out flow', () => {
   test('allows unauthenticated access to /auth/signin', async ({ page }) => {

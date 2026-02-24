@@ -25,13 +25,15 @@ export default function ResetPasswordForm() {
   // We check for error_code in the query string which Supabase sets on invalid/expired links.
   useEffect(() => {
     const errorCode = searchParams.get('error_code')
-    const errorDescription = searchParams.get('error_description')
     if (errorCode) {
-      setTokenError(
-        errorDescription
-          ? decodeURIComponent(errorDescription.replace(/\+/g, ' '))
-          : 'This password reset link is invalid or has expired. Please request a new one.'
-      )
+      const errorDescription = searchParams.get('error_description')
+      if (errorDescription) {
+        console.error(
+          '[reset-password] Supabase error:',
+          decodeURIComponent(errorDescription.replace(/\+/g, ' '))
+        )
+      }
+      setTokenError('This password reset link is invalid or has expired. Please request a new one.')
       setPageState('error')
     }
   }, [searchParams])
