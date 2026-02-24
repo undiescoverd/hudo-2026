@@ -24,11 +24,11 @@
 **Severity:** CRITICAL
 **Details:**
 Next.js 14.2.5 is affected by:
-- **CVE-2024-XXXXX (Auth Bypass in Middleware)** — affects `>=14.0.0 <14.2.25`. Attackers can circumvent middleware-enforced auth checks, directly bypassing Hudo's RBAC layer (`/admin`, `/agent`, `/talent` guards collapse).
+- **CVE-2025-29927 (Auth Bypass in Middleware)** — affects `>=14.0.0 <14.2.25`. Attackers can circumvent middleware-enforced auth checks, directly bypassing Hudo's RBAC layer (`/admin`, `/agent`, `/talent` guards collapse).
 - Additional: DoS, cache poisoning vulnerabilities also present.
 
 **Impact:** Role-based access control entirely breakable by attackers.
-**Fix:** Upgrade `next` to `>=14.2.35` or `^15.0.0` immediately.
+**Fix:** Upgrade `next` to `>=14.2.25` or `^15.0.0` immediately.
 
 ```bash
 pnpm upgrade next@latest
@@ -368,7 +368,7 @@ Missing test coverage for these security-critical tables:
 
 Before S0 Gate, **all P1 issues must be fixed and verified:**
 
-- [ ] **P1.1:** Next.js upgraded to `>=14.2.35` → `pnpm install` → no build errors
+- [ ] **P1.1:** Next.js upgraded to `>=14.2.25` → `pnpm install` → no build errors
 - [ ] **P1.2:** Sentry consent-gated in `instrumentation-client.ts` and `app/global-error.tsx`
 - [ ] **P1.3:** Rate limiting added to `/invitations/accept`, `/invitations/send`, `/invitations/validate`
 - [ ] **P1.4:** Redis rate-limit algorithm fixed (EXPIRE only on first INCR)

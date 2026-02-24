@@ -82,7 +82,7 @@ Sentry is initialized in `instrumentation.ts` (server) and `next.config.js` (cli
 
 ### Key Settings
 
-- **Consent-gated**: Errors only sent if user consents (aligned with PostHog)
+- **Consent-gated**: Not yet implemented — see task S0-CODEREVIEW-P1-002. Sentry currently initializes unconditionally on page load.
 - **Source maps**: Uploaded during build via `sentry-cli` (requires `SENTRY_AUTH_TOKEN`)
 - **Release tracking**: Set to commit SHA for staging/prod deployments
 - **Environment**: Set to `staging` for Preview/main branch

@@ -8,7 +8,7 @@
 
 ## Tasks
 
-### INFRA (12 tasks: 8 done, 4 not started)
+### INFRA (12 tasks: 12 done, 0 not started)
 
 ---
 
@@ -264,7 +264,7 @@ NOTES: Required before any auth email flows (confirmation, invitation, password 
 
 ---
 
-### DB (4 tasks: 1 done, 3 not started)
+### DB (4 tasks: 4 done, 0 not started)
 
 ---
 
@@ -352,7 +352,7 @@ NOTES: Indexes should be created after schema is stable.
 
 ---
 
-### AUTH (7 tasks: 0 done, 7 not started)
+### AUTH (7 tasks: 7 done, 0 not started)
 
 ---
 
@@ -508,7 +508,7 @@ NOTES: Password reset is required for a complete auth flow before launch.
 
 ---
 
-### STORAGE (2 tasks: 1 done, 1 not started)
+### STORAGE (2 tasks: 2 done, 0 not started)
 
 ---
 
@@ -576,14 +576,14 @@ MODEL: haiku-4.5
 STATUS: not_started
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
-  - Next.js upgraded from 14.2.5 to >=14.2.35 or ^15.0.0
+  - Next.js upgraded from 14.2.5 to >=14.2.25 or ^15.0.0
   - pnpm install completes without errors
   - build succeeds (pnpm run build)
   - Middleware RBAC routes still protected (/admin, /agent, /talent)
   - Verified: no auth bypass possible in upgraded version
 FILES:
   - package.json
-NOTES: CVE-2024-XXXXX affects >=14.0.0 <14.2.25. Attackers can circumvent auth middleware. CRITICAL security issue.
+NOTES: CVE-2025-29927 affects >=14.0.0 <14.2.25. Attackers can circumvent auth middleware. CRITICAL security issue.
 
 ---
 
