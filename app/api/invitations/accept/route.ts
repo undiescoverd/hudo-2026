@@ -43,17 +43,19 @@ export async function POST(request: NextRequest) {
   // Atomically claim the invitation: UPDATE only if not already accepted and not expired.
   // This prevents TOCTOU race conditions where two concurrent requests could both
   // read accepted_at IS NULL, then both proceed to create memberships.
+  // PostgREST correctly casts ISO 8601 strings to timestamptz for comparison.
+  const now = new Date().toISOString()
   const { data: claimed, error: claimError } = await admin
     .from('invitations')
-    .update({ accepted_at: new Date().toISOString() })
+    .update({ accepted_at: now })
     .eq('token_hash', tokenHash)
     .is('accepted_at', null)
-    .gte('expires_at', new Date().toISOString())
+    .gte('expires_at', now)
     .select('id, email, role, agency_id')
 
   if (claimError) {
     console.error('[invitations/accept] claim failed:', claimError.message)
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to process invitation' }, { status: 500 })
   }
 
   const invitation = claimed?.[0]
