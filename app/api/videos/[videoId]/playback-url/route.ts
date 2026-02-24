@@ -82,7 +82,7 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
   // Fetch the latest video version's R2 object key
   const { data: version, error: versionError } = await admin
     .from('video_versions')
-    .select('r2_object_key')
+    .select('r2_key')
     .eq('video_id', videoId)
     .order('version_number', { ascending: false })
     .limit(1)
@@ -95,10 +95,7 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
   // Generate the signed URL — the only URL type ever returned to clients
   let signedUrl: string
   try {
-    signedUrl = await getStorage().generateSignedUrl(
-      version.r2_object_key,
-      SIGNED_URL_EXPIRY_SECONDS
-    )
+    signedUrl = await getStorage().generateSignedUrl(version.r2_key, SIGNED_URL_EXPIRY_SECONDS)
   } catch (err) {
     console.error(
       '[playback-url] Failed to generate signed URL:',
