@@ -48,12 +48,12 @@ export async function POST(request: NextRequest) {
     .update({ accepted_at: new Date().toISOString() })
     .eq('token_hash', tokenHash)
     .is('accepted_at', null)
-    .gt('expires_at', new Date().toISOString())
+    .gte('expires_at', new Date().toISOString())
     .select('id, email, role, agency_id')
 
   if (claimError) {
     console.error('[invitations/accept] claim failed:', claimError.message)
-    return NextResponse.json({ error: 'Invalid or expired invitation' }, { status: 410 })
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
 
   const invitation = claimed?.[0]

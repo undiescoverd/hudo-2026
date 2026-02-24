@@ -12,7 +12,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(6);
+SELECT plan(7);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -131,6 +131,24 @@ SELECT throws_ok(
   '42501',
   'new row violates row-level security policy for table "guest_links"',
   'guest_links_insert: Talent I cannot create guest links'
+);
+
+-- ── Test 7: No DELETE policy — hard delete silently affects 0 rows ──
+-- No DELETE policy exists on guest_links; hard DELETE is intentionally
+-- forbidden. RLS silently blocks the operation (0 rows affected).
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef006-0006-4000-a000-000000000001","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+DELETE FROM guest_links WHERE id = 'dead0006-0006-4000-a000-000000000001'::uuid;
+
+RESET ROLE;
+SELECT is(
+  (SELECT count(*)::int FROM guest_links
+    WHERE id = 'dead0006-0006-4000-a000-000000000001'::uuid),
+  1,
+  'No DELETE policy: hard delete on guest_links silently blocked (link still exists)'
 );
 
 RESET ROLE;
