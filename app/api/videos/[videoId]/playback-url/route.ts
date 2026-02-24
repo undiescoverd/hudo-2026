@@ -79,7 +79,7 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  // Fetch the latest video version's R2 object key
+  // Fetch the latest video version's R2 key (column is `r2_key` per migration 0001)
   const { data: version, error: versionError } = await admin
     .from('video_versions')
     .select('r2_key')
