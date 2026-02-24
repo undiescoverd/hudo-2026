@@ -11,7 +11,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(6);
+SELECT plan(8);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -141,6 +141,43 @@ SELECT throws_ok(
   'new row violates row-level security policy for table "invitations"',
   'invitations_insert: Agent H cannot insert invitation in Agency G (cross-agency)'
 );
+
+-- ── Test 7: invitations UPDATE blocked for agents (no UPDATE policy — service role only) ──
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef005-0005-4000-a000-000000000001","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+-- Agent G tries to UPDATE the invitation's accepted_at field.
+-- With no UPDATE policy, RLS silently blocks the change (0 rows affected).
+UPDATE invitations
+   SET accepted_at = now()
+ WHERE id = 'fade0005-0005-4000-a000-000000000001'::uuid;
+
+SELECT is(
+  (SELECT accepted_at IS NULL FROM invitations WHERE id = 'fade0005-0005-4000-a000-000000000001'::uuid),
+  true,
+  'invitations UPDATE blocked for agents (no UPDATE policy — service role only)'
+);
+
+
+-- ── Test 8: invitations DELETE blocked for agents (no DELETE policy) ──
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef005-0005-4000-a000-000000000001","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+-- Agent G tries to DELETE the invitation.
+-- With no DELETE policy, RLS silently blocks the delete (0 rows affected).
+DELETE FROM invitations
+ WHERE id = 'fade0005-0005-4000-a000-000000000001'::uuid;
+
+SELECT is(
+  (SELECT count(*)::int FROM invitations WHERE id = 'fade0005-0005-4000-a000-000000000001'::uuid),
+  1,
+  'invitations DELETE blocked for agents (no DELETE policy)'
+);
+
 
 RESET ROLE;
 SELECT * FROM finish();

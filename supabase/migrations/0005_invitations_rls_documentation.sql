@@ -1,0 +1,21 @@
+-- ============================================================
+-- HUDO — INVITATIONS RLS: DOCUMENT SERVICE-ROLE ASSUMPTION
+-- 0005_invitations_rls_documentation.sql
+--
+-- RES-168: The invitations table intentionally has no UPDATE or DELETE
+-- RLS policies. All invitation state changes (accepting, revoking)
+-- are handled via API routes using the Supabase service role,
+-- which bypasses RLS entirely.
+--
+-- This is a deliberate design decision:
+-- - Invitation accept (marking accepted_at) uses atomic conditional
+--   UPDATE via service role to prevent TOCTOU race conditions.
+-- - No client-side UPDATE or DELETE is ever permitted.
+-- - If client-facing invitation management is added in the future,
+--   appropriate RLS policies must be created first.
+-- ============================================================
+
+-- No-op migration: documentation only.
+-- This file exists to record the architectural decision in the
+-- migration history. No schema or policy changes are made.
+SELECT 1;
