@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
       )
     }
   } catch (err) {
+    // Fail-open: log error (captured by Sentry in production) and allow request
     console.error('[reset-password] Rate limit check failed, allowing request:', err)
   }
 
