@@ -40,22 +40,24 @@ export async function POST(request: NextRequest) {
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
-  // Look up invitation
-  const { data: invitation } = await admin
+  // Atomically claim the invitation: UPDATE only if not already accepted and not expired.
+  // This prevents TOCTOU race conditions where two concurrent requests could both
+  // read accepted_at IS NULL, then both proceed to create memberships.
+  const { data: claimed, error: claimError } = await admin
     .from('invitations')
-    .select('id, email, role, agency_id, expires_at, accepted_at')
+    .update({ accepted_at: new Date().toISOString() })
     .eq('token_hash', tokenHash)
-    .single()
+    .is('accepted_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .select('id, email, role, agency_id')
 
+  if (claimError) {
+    console.error('[invitations/accept] claim failed:', claimError.message)
+    return NextResponse.json({ error: 'Invalid or expired invitation' }, { status: 410 })
+  }
+
+  const invitation = claimed?.[0]
   if (!invitation) {
-    return NextResponse.json({ error: 'Invalid or expired invitation' }, { status: 410 })
-  }
-
-  // Check expired or already accepted
-  if (invitation.accepted_at) {
-    return NextResponse.json({ error: 'Invalid or expired invitation' }, { status: 410 })
-  }
-  if (new Date(invitation.expires_at) < new Date()) {
     return NextResponse.json({ error: 'Invalid or expired invitation' }, { status: 410 })
   }
 
@@ -130,18 +132,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to add to agency' }, { status: 500 })
   }
 
-  // Mark invitation as accepted
-  const { error: acceptError } = await admin
-    .from('invitations')
-    .update({ accepted_at: new Date().toISOString() })
-    .eq('id', invitation.id)
-
-  if (acceptError) {
-    console.error('[invitations/accept] mark accepted failed:', acceptError.message)
-    return NextResponse.json({ error: 'Failed to finalize invitation' }, { status: 500 })
-  }
-
-  // Insert audit log entry
+  // Insert audit log entry (invitation already marked accepted by the atomic claim above)
   const { data: inviter } = await admin.from('users').select('full_name').eq('id', userId).single()
 
   const { error: auditError } = await admin.from('audit_log').insert({
