@@ -22,11 +22,12 @@ export const redis = new Redis({ url, token })
  * @returns remaining quota (>= 0) or -1 if limit exceeded
  */
 export async function rateLimit(key: string, limit: number, window: number): Promise<number> {
-  const pipeline = redis.pipeline()
-  pipeline.incr(key)
-  pipeline.expire(key, window)
-  const results = await pipeline.exec<[number, number]>()
-  const current = results[0]
+  const current = await redis.incr(key)
+
+  // Only set expiry on the first increment — prevents TTL reset on every request
+  if (current === 1) {
+    await redis.expire(key, window)
+  }
 
   if (current > limit) {
     return -1 // Limit exceeded

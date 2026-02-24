@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
-import { rateLimit } from '@/lib/redis'
+import { getClientIp } from '@/lib/rate-limit'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -13,21 +13,22 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  */
 export async function POST(request: NextRequest) {
   // Rate limit by IP: 5 requests per hour
-  const ip =
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    request.headers.get('x-real-ip') ??
-    'unknown'
-  const rateLimitKey = `auth:reset-password:${ip}`
-  const remaining = await rateLimit(rateLimitKey, 5, 3600)
+  const ip = getClientIp(request)
+  try {
+    const { rateLimit } = await import('@/lib/redis')
+    const remaining = await rateLimit(`auth:reset-password:ip:${ip}`, 5, 3600)
 
-  if (remaining === -1) {
-    return NextResponse.json(
-      { error: 'Too many requests. Please try again in an hour.' },
-      {
-        status: 429,
-        headers: { 'Retry-After': '3600' },
-      }
-    )
+    if (remaining === -1) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again in an hour.' },
+        {
+          status: 429,
+          headers: { 'Retry-After': '3600' },
+        }
+      )
+    }
+  } catch (err) {
+    console.error('[reset-password] Rate limit check failed, allowing request:', err)
   }
 
   let body: unknown

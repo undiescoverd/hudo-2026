@@ -11,7 +11,9 @@ export default function GlobalError({
   reset: () => void
 }) {
   useEffect(() => {
-    Sentry.captureException(error)
+    if (localStorage.getItem('hudo_cookie_consent') === 'granted') {
+      Sentry.captureException(error)
+    }
   }, [error])
 
   return (
