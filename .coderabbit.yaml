@@ -10,6 +10,10 @@ reviews:
   poem: false
   review_status: true
   collapse_walkthrough: false
+  auto_review:
+    base_branches:
+      - main
+      - 'feat/s0-infra-001-repo-init'
 
   instructions: |
     You are reviewing code for Hudo, a multi-tenant video review SaaS.
