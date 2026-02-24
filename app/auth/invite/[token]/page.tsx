@@ -25,6 +25,7 @@ function validateFields(fullName: string, password: string, isNewUser: boolean):
   return errors
 }
 
+/** Page for accepting an agency invitation via a signed token link. */
 export default function InviteAcceptPage() {
   const params = useParams<{ token: string }>()
   const token = params.token

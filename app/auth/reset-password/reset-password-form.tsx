@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 
 type PageState = 'form' | 'success' | 'error'
 
+/** Controlled form for submitting a new password after reset link verification. */
 export default function ResetPasswordForm() {
   const searchParams = useSearchParams()
 

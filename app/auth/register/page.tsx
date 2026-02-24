@@ -21,6 +21,7 @@ function validate(fullName: string, email: string, password: string): FieldError
   return errors
 }
 
+/** Registration page for new users to create an account. */
 export default function RegisterPage() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')

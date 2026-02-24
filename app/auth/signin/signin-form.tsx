@@ -21,6 +21,7 @@ function validate(email: string, password: string): FieldError {
   return errors
 }
 
+/** Controlled form for email/password sign-in with client-side validation. */
 export default function SignInForm() {
   const searchParams = useSearchParams()
   const redirect = safeRedirect(searchParams.get('redirect'))

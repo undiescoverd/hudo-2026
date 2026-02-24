@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+/** Controlled form to submit a password-reset email request. */
 export default function ForgotPasswordForm() {
   const [email, setEmail] = useState('')
   const [emailError, setEmailError] = useState<string | null>(null)

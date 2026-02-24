@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { grantConsent, denyConsent } from '@/lib/posthog'
 
+/** Banner shown on first visit to collect PECR/GDPR cookie consent from the user. */
 export function CookieConsentBanner() {
   const [visible, setVisible] = useState(false)
 
