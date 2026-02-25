@@ -228,12 +228,16 @@ SELECT set_config('request.jwt.claims',
   '{"sub":"dbeef003-0003-4000-a000-000000000001","role":"authenticated"}', true);
 SET LOCAL ROLE authenticated;
 
-SELECT lives_ok(
-  $$UPDATE comments
-       SET resolved = true,
-           resolved_at = now(),
-           resolved_by = 'dbeef003-0003-4000-a000-000000000001'::uuid
-     WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid$$,
+UPDATE comments
+   SET resolved = true,
+       resolved_at = now(),
+       resolved_by = 'dbeef003-0003-4000-a000-000000000001'::uuid
+ WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid;
+
+-- Verify the resolve actually took effect (lives_ok only checks no exception)
+SELECT is(
+  (SELECT resolved FROM comments WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid),
+  true,
   'Agent Charlie can resolve Clara''s comment (comments_update_agents policy)'
 );
 
