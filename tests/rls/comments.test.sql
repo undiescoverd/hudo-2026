@@ -14,7 +14,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(6);
+SELECT plan(14);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -140,6 +140,161 @@ SELECT is(
   1,
   'No DELETE policy: hard delete on comments silently blocked (comment still exists)'
 );
+
+-- ── Test 7: Range comment insert (with end_timestamp_seconds) ────────
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef003-0003-4000-a000-000000000001","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT lives_ok(
+  $$INSERT INTO comments (id, video_version_id, agency_id, user_id, content, comment_type, timestamp_seconds, end_timestamp_seconds)
+    VALUES (
+      'c0de0003-0003-4000-a000-000000000010'::uuid,
+      'bee00003-0003-4000-a000-000000000001'::uuid,
+      'c0ffee03-0000-4000-a000-000000000001'::uuid,
+      'dbeef003-0003-4000-a000-000000000001'::uuid,
+      'Range comment: cut from here to here.',
+      'range',
+      5.0,
+      10.0
+    )$$,
+  'Range comment insert with end_timestamp_seconds succeeds'
+);
+
+
+-- ── Test 8: Reply insert (parent_id set to top-level comment) ────────
+SELECT lives_ok(
+  $$INSERT INTO comments (id, video_version_id, agency_id, user_id, content, comment_type, timestamp_seconds, parent_id)
+    VALUES (
+      'c0de0003-0003-4000-a000-000000000011'::uuid,
+      'bee00003-0003-4000-a000-000000000001'::uuid,
+      'c0ffee03-0000-4000-a000-000000000001'::uuid,
+      'dbeef003-0003-4000-a000-000000000001'::uuid,
+      'Reply to top-level comment.',
+      'point',
+      5.0,
+      'c0de0003-0003-4000-a000-000000000001'::uuid
+    )$$,
+  'Reply insert to top-level comment succeeds (depth 1)'
+);
+
+
+-- ── Test 9: Reply-to-reply blocked (max depth 1) ────────────────────
+-- The reply from Test 8 has parent_id set, so replying to it should fail.
+SELECT throws_ok(
+  $$INSERT INTO comments (id, video_version_id, agency_id, user_id, content, comment_type, timestamp_seconds, parent_id)
+    VALUES (
+      'c0de0003-0003-4000-a000-000000000012'::uuid,
+      'bee00003-0003-4000-a000-000000000001'::uuid,
+      'c0ffee03-0000-4000-a000-000000000001'::uuid,
+      'dbeef003-0003-4000-a000-000000000001'::uuid,
+      'Nested reply — should be blocked.',
+      'point',
+      5.0,
+      'c0de0003-0003-4000-a000-000000000011'::uuid
+    )$$,
+  '23514',
+  'Replies can only be made to top-level comments (max depth 1)',
+  'Reply-to-reply insert blocked by nesting depth trigger'
+);
+
+
+-- ── Test 10: Cross-agency INSERT blocked ─────────────────────────────
+-- Charlie (Agency C) tries to insert a comment into Agency D's video version.
+SELECT throws_ok(
+  $$INSERT INTO comments (id, video_version_id, agency_id, user_id, content, comment_type, timestamp_seconds)
+    VALUES (
+      'c0de0003-0003-4000-a000-000000000013'::uuid,
+      'bee00003-0003-4000-a000-000000000002'::uuid,
+      'c0ffee03-0000-4000-a000-000000000002'::uuid,
+      'dbeef003-0003-4000-a000-000000000001'::uuid,
+      'Cross-agency insert attempt.',
+      'point',
+      1.0
+    )$$,
+  '42501',
+  NULL,
+  'Cross-agency INSERT blocked by RLS (agent cannot insert into other agency)'
+);
+
+
+-- ── Test 11: Agent can resolve another user's comment ────────────────
+-- Charlie (agent, Agency C) resolves Clara's comment.
+-- First un-soft-delete Clara's comment C2 so we can test resolve
+RESET ROLE;
+UPDATE comments SET deleted_at = NULL WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef003-0003-4000-a000-000000000001","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+UPDATE comments
+   SET resolved = true,
+       resolved_at = now(),
+       resolved_by = 'dbeef003-0003-4000-a000-000000000001'::uuid
+ WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid;
+
+-- Verify the resolve actually took effect (lives_ok only checks no exception)
+SELECT is(
+  (SELECT resolved FROM comments WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid),
+  true,
+  'Agent Charlie can resolve Clara''s comment (comments_update_agents policy)'
+);
+
+
+-- ── Test 12: Talent cannot update another talent's comment ───────────
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef003-0003-4000-a000-000000000004","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+-- Diana (talent, Agency D) tries to update Dave's comment in Agency D
+-- This should silently update 0 rows (no error, but no effect)
+UPDATE comments
+   SET content = 'Hacked!'
+ WHERE id = 'c0de0003-0003-4000-a000-000000000003'::uuid;
+
+SELECT is(
+  (SELECT content FROM comments WHERE id = 'c0de0003-0003-4000-a000-000000000003'::uuid),
+  'Agency D comment.',
+  'Talent Diana cannot update Agent Dave''s comment (only own comments)'
+);
+
+
+-- ── Test 13: Soft-deleted comments excluded from SELECT ──────────────
+-- Clara's comment C2 was soft-deleted in Test 5, then un-deleted for Test 11.
+-- Let's soft-delete it again and verify it's excluded.
+RESET ROLE;
+UPDATE comments SET deleted_at = now() WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef003-0003-4000-a000-000000000002","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT is(
+  (SELECT count(*)::int FROM comments
+    WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid),
+  0,
+  'Soft-deleted comment excluded from SELECT (deleted_at IS NULL filter)'
+);
+
+
+-- ── Test 14: Content exceeding 2000 chars rejected by CHECK constraint ──
+SELECT throws_ok(
+  $$INSERT INTO comments (id, video_version_id, agency_id, user_id, content, comment_type, timestamp_seconds)
+    VALUES (
+      'c0de0003-0003-4000-a000-000000000014'::uuid,
+      'bee00003-0003-4000-a000-000000000001'::uuid,
+      'c0ffee03-0000-4000-a000-000000000001'::uuid,
+      'dbeef003-0003-4000-a000-000000000002'::uuid,
+      repeat('x', 2001),
+      'point',
+      1.0
+    )$$,
+  '23514',
+  NULL,
+  'Content exceeding 2000 chars rejected by CHECK constraint'
+);
+
 
 RESET ROLE;
 SELECT * FROM finish();
