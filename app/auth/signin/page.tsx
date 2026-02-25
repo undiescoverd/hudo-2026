@@ -3,7 +3,7 @@ import SignInForm from './signin-form'
 
 export default function SignInPage() {
   return (
-    <Suspense>
+    <Suspense fallback={null}>
       <SignInForm />
     </Suspense>
   )
