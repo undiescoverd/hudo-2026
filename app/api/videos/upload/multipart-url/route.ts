@@ -3,17 +3,16 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getStorage } from '@/lib/storage'
-import { PRESIGNED_URL_EXPIRY } from '@/lib/upload-validation'
+import { PRESIGNED_URL_EXPIRY, UPLOAD_RATE_WINDOW } from '@/lib/upload-validation'
 
 const MAX_PARTS_PER_REQUEST = 10
+const MULTIPART_URL_RATE_LIMIT = 60 // 60 part-URL requests per user per hour
 
 /**
  * POST /api/videos/upload/multipart-url
  *
  * Generates presigned PUT URLs for multipart upload parts.
  * Called when the client needs URLs for additional parts beyond the initial batch.
- *
- * No rate limit — already counted at presign time.
  */
 export async function POST(request: NextRequest) {
   let body: unknown
@@ -91,6 +90,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
+  // --- Rate limit ---
+
+  try {
+    const { rateLimit } = await import('@/lib/redis')
+    const remaining = await rateLimit(
+      `upload:multipart-url:user:${user.id}`,
+      MULTIPART_URL_RATE_LIMIT,
+      UPLOAD_RATE_WINDOW
+    )
+    if (remaining === -1) {
+      return NextResponse.json(
+        { error: 'Too many part URL requests. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(UPLOAD_RATE_WINDOW) } }
+      )
+    }
+  } catch (err) {
+    // Fail open: auth + membership + role checks are the primary security controls.
+    // Rate limiting is defense-in-depth; blocking all requests on Redis outage is worse.
+    // This matches the established pattern in invitations/send and other endpoints.
+    console.error('[upload/multipart-url] Rate limit check failed, allowing request:', err)
+  }
+
   // --- Membership check: derive agency from the R2 key (format: {agencyId}/{videoId}/{uploadId}.ext) ---
 
   const agencyId = r2Key.split('/')[0]
@@ -108,6 +129,14 @@ export async function POST(request: NextRequest) {
 
   if (!membership) {
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  }
+
+  const agentPlusRoles = ['owner', 'admin_agent', 'agent']
+  if (!agentPlusRoles.includes(membership.role)) {
+    return NextResponse.json(
+      { error: 'Only agents and above can request upload URLs' },
+      { status: 403 }
+    )
   }
 
   // --- Generate presigned URLs for each part ---
