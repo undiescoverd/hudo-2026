@@ -17,8 +17,16 @@ const SIGNED_URL_EXPIRY_SECONDS = 900 // 15 minutes
  * - Direct R2 object URLs are never returned — only signed URLs
  * - Signed URL expires after 15 minutes
  */
-export async function GET(_request: NextRequest, { params }: { params: { videoId: string } }) {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const PLAYBACK_RATE_LIMIT = 60 // max requests per window
+const PLAYBACK_RATE_WINDOW = 60 // 1 minute in seconds
+
+export async function GET(request: NextRequest, { params }: { params: { videoId: string } }) {
   const { videoId } = params
+
+  if (!UUID_RE.test(videoId)) {
+    return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -37,7 +45,9 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
         return cookieStore.getAll()
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+        for (const { name, value, options } of cookiesToSet) {
+          cookieStore.set(name, value, options)
+        }
       },
     },
   })
@@ -48,6 +58,24 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
 
   if (!user) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+  }
+
+  // Rate limit: 60 playback URL requests per user per minute
+  try {
+    const { rateLimit } = await import('@/lib/redis')
+    const remaining = await rateLimit(
+      `playback:get:user:${user.id}`,
+      PLAYBACK_RATE_LIMIT,
+      PLAYBACK_RATE_WINDOW
+    )
+    if (remaining === -1) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(PLAYBACK_RATE_WINDOW) } }
+      )
+    }
+  } catch (err) {
+    console.error('[playback-url] Rate limit check failed, allowing request:', err)
   }
 
   // Use service role to bypass RLS for the access check query
@@ -79,14 +107,28 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  // Fetch the latest video version's R2 key (column is `r2_key` per migration 0001)
-  const { data: version, error: versionError } = await admin
+  // Fetch version - specific version if versionId provided, otherwise latest
+  const versionId = request.nextUrl.searchParams.get('versionId')
+
+  if (
+    versionId &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(versionId)
+  ) {
+    return NextResponse.json({ error: 'Invalid version ID format' }, { status: 400 })
+  }
+
+  let versionQuery = admin
     .from('video_versions')
-    .select('r2_key')
+    .select('id, r2_key, version_number')
     .eq('video_id', videoId)
-    .order('version_number', { ascending: false })
-    .limit(1)
-    .single()
+
+  if (versionId) {
+    versionQuery = versionQuery.eq('id', versionId)
+  } else {
+    versionQuery = versionQuery.order('version_number', { ascending: false }).limit(1)
+  }
+
+  const { data: version, error: versionError } = await versionQuery.single()
 
   if (versionError || !version) {
     return NextResponse.json({ error: 'No video version found' }, { status: 404 })
@@ -106,6 +148,7 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
 
   return NextResponse.json({
     url: signedUrl,
+    versionNumber: version.version_number,
     expiresIn: SIGNED_URL_EXPIRY_SECONDS,
   })
 }
