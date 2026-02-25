@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hudo — Video Review v3</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+  <script>
+    tailwindcss.config = {
+      theme: {
+        extend: {
+          colors: {
+            hudo: {
+              bg: '#141414',
+              surface: '#1c1c1c',
+              surface2: '#242424',
+              border: '#2a2a2a',
+              accent: '#8b5cf6',
+              text: '#e5e5e5',
+              textMuted: '#737373',
+              green: '#22c55e',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+    * { font-family: 'Inter', system-ui, -apple-system, sans-serif; margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0a; color: #e5e5e5; overflow: hidden; height: 100vh; }
+    .scroll::-webkit-scrollbar { width: 4px; }
+    .scroll::-webkit-scrollbar-track { background: transparent; }
+    .scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+    .dot { transition: transform 0.12s ease, box-shadow 0.12s ease; }
+    .dot:hover { transform: scale(1.8); box-shadow: 0 0 10px rgba(139, 92, 246, 0.5); }
+    .range-seg { opacity: 0.25; border-radius: 2px; }
+    .range-seg:hover { opacity: 0.5; }
+  </style>
+</head>
+<body>
+
+  <div class="flex h-screen">
+
+    <!-- ═══ LEFT ICON SIDEBAR (like Frame.io) ═══ -->
+    <div class="w-[46px] bg-hudo-bg border-r border-white/[0.04] flex flex-col items-center py-4 gap-5 shrink-0">
+      <!-- Logo -->
+      <div class="w-7 h-7 rounded-lg bg-hudo-accent flex items-center justify-center mb-2">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 3l8 5-8 5V3z" fill="white"/></svg>
+      </div>
+      <!-- Nav icons -->
+      <button class="w-8 h-8 flex items-center justify-center text-white/20 hover:text-white/50 transition-colors rounded-lg hover:bg-white/5">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z"/></svg>
+      </button>
+      <button class="w-8 h-8 flex items-center justify-center text-white/20 hover:text-white/50 transition-colors rounded-lg hover:bg-white/5">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      </button>
+      <button class="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white/60 transition-colors rounded-lg bg-white/5">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+      </button>
+      <button class="w-8 h-8 flex items-center justify-center text-white/20 hover:text-white/50 transition-colors rounded-lg hover:bg-white/5">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+      </button>
+      <button class="w-8 h-8 flex items-center justify-center text-white/20 hover:text-white/50 transition-colors rounded-lg hover:bg-white/5">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      </button>
+
+      <div class="flex-1"></div>
+
+      <!-- User avatar at bottom -->
+      <div class="w-7 h-7 rounded-full bg-hudo-accent flex items-center justify-center text-[10px] font-bold text-white cursor-pointer">JR</div>
+    </div>
+
+    <!-- ═══ VIDEO + CONTROLS ═══ -->
+    <div class="flex-1 flex flex-col bg-black relative min-w-0">
+
+      <!-- Top bar — floats over video, gradient fade -->
+      <div class="absolute top-0 left-0 right-0 z-40 flex items-center px-5 h-12" style="background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 60%, transparent 100%);">
+        <!-- Back -->
+        <button class="w-8 h-8 flex items-center justify-center text-white/50 hover:text-white transition-colors">
+          <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7"/></svg>
+        </button>
+
+        <!-- Breadcrumb — low profile -->
+        <nav class="flex items-center gap-1 ml-1 text-[13px] text-white/35">
+          <span class="hover:text-white/60 cursor-pointer transition-colors">Demo Project</span>
+          <span>/</span>
+          <span class="hover:text-white/60 cursor-pointer transition-colors">Footage</span>
+          <span>/</span>
+          <span class="text-white/60 font-medium">Spring_Campaign_V3.mov</span>
+          <svg class="w-3 h-3 text-white/25 ml-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </nav>
+
+        <div class="flex-1"></div>
+
+        <!-- File nav -->
+        <div class="flex items-center gap-1.5 text-white/35 text-xs mr-4">
+          <button class="w-6 h-6 flex items-center justify-center hover:text-white/60 transition-colors rounded hover:bg-white/5">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7"/></svg>
+          </button>
+          <span class="font-medium text-white/45">1 of 4</span>
+          <button class="w-6 h-6 flex items-center justify-center hover:text-white/60 transition-colors rounded hover:bg-white/5">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+
+        <!-- Share -->
+        <button class="flex items-center gap-1.5 text-[13px] font-medium text-white bg-hudo-accent hover:bg-hudo-accent/90 px-4 py-1.5 rounded-md transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>
+          Share
+        </button>
+      </div>
+
+      <!-- ═══ Video viewport — FULL BLEED ═══ -->
+      <div class="flex-1 relative overflow-hidden">
+        <!-- Video fills entire space — simulated cinematic frame -->
+        <div class="absolute inset-0" style="background: #0d0d0d;">
+          <!-- Simulated footage — the video IS the background -->
+          <div class="absolute inset-0" style="background: linear-gradient(160deg, #18151e 0%, #1a1825 20%, #1e1a28 40%, #1a1e2a 60%, #1c1820 80%, #151318 100%);">
+            <!-- Subtle light source to simulate a face/subject -->
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[600px] opacity-[0.04]" style="background: radial-gradient(ellipse at center, white 0%, transparent 60%);"></div>
+            <!-- Faint horizontal film bars for cinematic feel -->
+            <div class="absolute top-0 left-0 right-0 h-[8%] bg-black/40"></div>
+            <div class="absolute bottom-0 left-0 right-0 h-[8%] bg-black/40"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Bottom controls ═══ -->
+      <div class="relative z-30">
+
+        <!-- Timeline bar with comment dots -->
+        <div class="relative h-7 px-4 group cursor-pointer">
+          <!-- Track -->
+          <div class="absolute top-3 left-4 right-4 h-[3px] bg-white/10 rounded-full">
+            <!-- Buffered -->
+            <div class="absolute inset-y-0 left-0 bg-white/[0.06] rounded-full" style="width: 78%;"></div>
+            <!-- Progress — accent colour -->
+            <div class="absolute inset-y-0 left-0 bg-hudo-accent rounded-full" style="width: 60.7%;"></div>
+          </div>
+
+          <!-- Playhead — appears on hover -->
+          <div class="absolute top-1.5 w-3 h-3 bg-white rounded-full shadow-md shadow-white/20 -translate-x-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity" style="left: 60.7%;"></div>
+
+          <!-- Range bars -->
+          <div class="range-seg absolute top-2 h-[5px] bg-blue-400 z-10" style="left: 18%; width: 14%;"></div>
+          <div class="range-seg absolute top-2 h-[5px] bg-purple-400 z-10" style="left: 55%; width: 13%;"></div>
+
+          <!-- Comment dots — 10px, colour-coded -->
+          <div class="dot absolute top-[6px] w-[10px] h-[10px] rounded-full bg-hudo-green z-30 cursor-pointer -translate-x-1/2" style="left: 8%;"></div>
+          <div class="dot absolute top-[6px] w-[10px] h-[10px] rounded-full bg-blue-400 z-30 cursor-pointer -translate-x-1/2" style="left: 18%;"></div>
+          <div class="dot absolute top-[6px] w-[10px] h-[10px] rounded-full bg-hudo-accent z-30 cursor-pointer -translate-x-1/2" style="left: 35%;"></div>
+          <div class="dot absolute top-[6px] w-[10px] h-[10px] rounded-full bg-hudo-green z-30 cursor-pointer -translate-x-1/2" style="left: 42%;"></div>
+          <div class="dot absolute top-[6px] w-[10px] h-[10px] rounded-full bg-purple-400 z-30 cursor-pointer -translate-x-1/2" style="left: 55%;"></div>
+          <div class="dot absolute top-[6px] w-[10px] h-[10px] rounded-full bg-rose-400 z-30 cursor-pointer -translate-x-1/2" style="left: 78%;"></div>
+          <div class="dot absolute top-[6px] w-[10px] h-[10px] rounded-full bg-blue-400 z-30 cursor-pointer -translate-x-1/2" style="left: 91%;"></div>
+        </div>
+
+        <!-- Transport row — BIGGER icons, taller bar -->
+        <div class="flex items-center h-[52px] px-5 bg-hudo-bg/90" style="backdrop-filter: blur(16px);">
+          <!-- Left: play, loop, speed, volume -->
+          <div class="flex items-center gap-2">
+            <!-- Play -->
+            <button class="w-9 h-9 flex items-center justify-center text-white/70 hover:text-white transition-colors">
+              <svg class="w-[22px] h-[22px]" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <!-- Loop -->
+            <button class="w-9 h-9 flex items-center justify-center text-white/35 hover:text-white/60 transition-colors">
+              <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
+            </button>
+            <!-- Speed -->
+            <button class="text-[13px] font-medium text-white/35 hover:text-white/60 transition-colors px-1">1.0x</button>
+            <!-- Volume -->
+            <button class="w-9 h-9 flex items-center justify-center text-white/35 hover:text-white/60 transition-colors">
+              <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+            </button>
+          </div>
+
+          <!-- Center: large timecode -->
+          <div class="flex-1 flex justify-center">
+            <button class="flex items-center gap-2 text-white/50 hover:text-white/70 transition-colors">
+              <span class="text-base font-mono tracking-wider">12:54:16:08</span>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+
+          <!-- Right: quality, scrub bar handle, fullscreen -->
+          <div class="flex items-center gap-2">
+            <!-- HD badge (like Frame.io) -->
+            <div class="relative">
+              <div class="w-7 h-7 rounded-full bg-hudo-accent/20 flex items-center justify-center">
+                <span class="text-[9px] font-bold text-hudo-accent">HD</span>
+              </div>
+            </div>
+            <!-- Scrub handle indicator -->
+            <div class="w-12 h-1.5 bg-white/10 rounded-full mx-2"></div>
+            <!-- Fullscreen -->
+            <button class="w-9 h-9 flex items-center justify-center text-white/35 hover:text-white/60 transition-colors">
+              <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ COMMENT PANEL ═══ -->
+    <aside class="w-[300px] flex flex-col bg-hudo-bg border-l border-white/[0.06] shrink-0">
+
+      <!-- Panel header -->
+      <div class="flex items-center h-11 px-4 border-b border-white/[0.06]">
+        <div class="flex items-center gap-3">
+          <button class="text-[13px] font-medium text-white pb-0.5 border-b border-white">Comments</button>
+          <button class="text-[13px] font-medium text-white/30 hover:text-white/50 transition-colors">Fields</button>
+        </div>
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-0.5">
+          <button class="w-6 h-6 flex items-center justify-center text-white/25 hover:text-white/50 transition-colors rounded">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l2.5 2.5"/></svg>
+          </button>
+          <button class="w-6 h-6 flex items-center justify-center text-white/25 hover:text-white/50 transition-colors rounded">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M3 4h18M3 8h12M3 12h18M3 16h12M3 20h18"/></svg>
+          </button>
+          <button class="w-6 h-6 flex items-center justify-center text-white/25 hover:text-white/50 transition-colors rounded">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          </button>
+          <button class="w-6 h-6 flex items-center justify-center text-white/25 hover:text-white/50 transition-colors rounded">
+            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Filter -->
+      <div class="flex items-center h-9 px-4 border-b border-white/[0.04]">
+        <button class="text-[12px] text-white/40 hover:text-white/60 transition-colors flex items-center gap-1">
+          All comments
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+
+      <!-- Comment list -->
+      <div class="flex-1 overflow-y-auto scroll">
+
+        <!-- Comment 1 — resolved -->
+        <div class="px-4 py-3 opacity-40">
+          <div class="flex items-start gap-2.5">
+            <div class="w-6 h-6 rounded-full bg-hudo-green flex items-center justify-center text-[9px] font-bold text-white shrink-0 mt-0.5">SL</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-[13px] font-medium">Sarah L</span>
+                <span class="text-[11px] text-white/25">2h</span>
+                <div class="flex-1"></div>
+                <span class="text-[11px] text-white/20">#1</span>
+                <svg class="w-3.5 h-3.5 text-hudo-green/60" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+              </div>
+              <div class="mt-1.5">
+                <span class="text-[11px] font-mono text-hudo-green bg-hudo-green/10 px-1.5 py-0.5 rounded">0:22</span>
+                <span class="text-[13px] text-white/40 ml-2 line-through">Opening shot too dark — talent's face in shadow.</span>
+              </div>
+              <button class="text-[11px] text-white/20 mt-2 hover:text-white/40 transition-colors">Reply</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Comment 2 — range, with reply -->
+        <div class="px-4 py-3">
+          <div class="flex items-start gap-2.5">
+            <div class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0 mt-0.5">MC</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-[13px] font-medium">Marcus C</span>
+                <span class="text-[11px] text-white/25">57m</span>
+                <div class="flex-1"></div>
+                <span class="text-[11px] text-white/20">#2</span>
+              </div>
+              <div class="mt-1.5">
+                <span class="text-[11px] font-mono text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded">0:49 – 1:24</span>
+                <span class="text-[13px] text-white/70 ml-2">This section feels slow — tighten the cuts between 0:55 and 1:15.</span>
+              </div>
+              <button class="text-[11px] text-white/25 mt-2 hover:text-white/40 transition-colors">Reply</button>
+            </div>
+          </div>
+          <!-- Reply -->
+          <div class="ml-8 mt-3 pl-3 border-l border-white/[0.06]">
+            <div class="flex items-start gap-2">
+              <div class="w-5 h-5 rounded-full bg-hudo-accent flex items-center justify-center text-[8px] font-bold text-white shrink-0 mt-0.5">JR</div>
+              <div class="flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-[12px] font-medium text-white/70">Jane R</span>
+                  <span class="text-[10px] text-white/20">42m</span>
+                </div>
+                <p class="text-[12px] text-white/50 mt-0.5">Agreed — asking editor to cut 10s. Updated version tomorrow.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Comment 3 -->
+        <div class="px-4 py-3">
+          <div class="flex items-start gap-2.5">
+            <div class="w-6 h-6 rounded-full bg-hudo-accent flex items-center justify-center text-[9px] font-bold text-white shrink-0 mt-0.5">JR</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-[13px] font-medium">Jane R</span>
+                <span class="text-[11px] text-white/25">42m</span>
+                <div class="flex-1"></div>
+                <span class="text-[11px] text-white/20">#3</span>
+              </div>
+              <div class="mt-1.5">
+                <span class="text-[11px] font-mono text-hudo-accent bg-hudo-accent/10 px-1.5 py-0.5 rounded">1:32</span>
+                <span class="text-[13px] text-white/70 ml-2">Love this transition. Colour grade is perfect.</span>
+              </div>
+              <button class="text-[11px] text-white/25 mt-2 hover:text-white/40 transition-colors">Reply</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Comment 4 — near current playhead -->
+        <div class="px-4 py-3 bg-white/[0.02]">
+          <div class="flex items-start gap-2.5">
+            <div class="w-6 h-6 rounded-full bg-hudo-green flex items-center justify-center text-[9px] font-bold text-white shrink-0 mt-0.5">SL</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-[13px] font-medium">Sarah L</span>
+                <span class="text-[11px] text-white/25">30m</span>
+                <div class="flex-1"></div>
+                <span class="text-[11px] text-white/20">#4</span>
+              </div>
+              <div class="mt-1.5">
+                <span class="text-[11px] font-mono text-hudo-green bg-hudo-green/10 px-1.5 py-0.5 rounded">1:55</span>
+                <span class="text-[13px] text-white/70 ml-2">Audio dips here — intentional or mic issue? Quick level tweak needed.</span>
+              </div>
+              <button class="text-[11px] text-white/25 mt-2 hover:text-white/40 transition-colors">Reply</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Comment 5 — range -->
+        <div class="px-4 py-3">
+          <div class="flex items-start gap-2.5">
+            <div class="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0 mt-0.5">JR</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-[13px] font-medium">Jane R</span>
+                <span class="text-[11px] text-white/25">18m</span>
+                <div class="flex-1"></div>
+                <span class="text-[11px] text-white/20">#5</span>
+              </div>
+              <div class="mt-1.5">
+                <span class="text-[11px] font-mono text-purple-400 bg-purple-400/10 px-1.5 py-0.5 rounded">2:30 – 3:06</span>
+                <span class="text-[13px] text-white/70 ml-2">Background music overwhelms voiceover. Drop 3-4dB.</span>
+              </div>
+              <button class="text-[11px] text-white/25 mt-2 hover:text-white/40 transition-colors">Reply</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Comment 6 -->
+        <div class="px-4 py-3">
+          <div class="flex items-start gap-2.5">
+            <div class="w-6 h-6 rounded-full bg-rose-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0 mt-0.5">AW</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-[13px] font-medium">Alex W</span>
+                <span class="text-[11px] text-white/25">12m</span>
+                <div class="flex-1"></div>
+                <span class="text-[11px] text-white/20">#6</span>
+              </div>
+              <div class="mt-1.5">
+                <span class="text-[11px] font-mono text-rose-400 bg-rose-400/10 px-1.5 py-0.5 rounded">3:32</span>
+                <span class="text-[13px] text-white/70 ml-2">End card needs updated logo — sending asset shortly.</span>
+              </div>
+              <button class="text-[11px] text-white/25 mt-2 hover:text-white/40 transition-colors">Reply</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Comment 7 -->
+        <div class="px-4 py-3">
+          <div class="flex items-start gap-2.5">
+            <div class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0 mt-0.5">MC</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-[13px] font-medium">Marcus C</span>
+                <span class="text-[11px] text-white/25">Just now</span>
+                <div class="flex-1"></div>
+                <span class="text-[11px] text-white/20">#7</span>
+              </div>
+              <div class="mt-1.5">
+                <span class="text-[11px] font-mono text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded">4:18</span>
+                <span class="text-[13px] text-white/70 ml-2">Looking great overall. Few tweaks then ready for client.</span>
+              </div>
+              <button class="text-[11px] text-white/25 mt-2 hover:text-white/40 transition-colors">Reply</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="h-4"></div>
+      </div>
+
+      <!-- ═══ Always-visible comment input ═══ -->
+      <div class="border-t border-white/[0.06] bg-hudo-bg">
+        <div class="flex items-center gap-2.5 px-4 py-3">
+          <span class="text-[12px] font-mono text-hudo-green bg-hudo-green/10 px-2 py-0.5 rounded shrink-0">12:54:16:08</span>
+          <div class="flex-1 text-[13px] text-white/25">Leave your comment...</div>
+          <button class="w-8 h-8 flex items-center justify-center text-white/30 hover:text-hudo-accent transition-colors">
+            <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          </button>
+        </div>
+        <!-- Toolbar -->
+        <div class="flex items-center gap-1.5 px-4 pb-3">
+          <button class="w-7 h-7 flex items-center justify-center text-white/20 hover:text-white/40 transition-colors rounded">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+          </button>
+          <button class="w-7 h-7 flex items-center justify-center text-white/20 hover:text-white/40 transition-colors rounded">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <button class="w-7 h-7 flex items-center justify-center text-white/20 hover:text-white/40 transition-colors rounded">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          <button class="w-7 h-7 flex items-center justify-center text-white/20 hover:text-white/40 transition-colors rounded">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z"/></svg>
+          </button>
+          <div class="flex-1"></div>
+          <button class="flex items-center gap-1 text-[11px] text-white/25 hover:text-white/40 transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Public
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+</body>
+</html>

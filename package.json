@@ -16,6 +16,8 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.996.0",
+    "@aws-sdk/s3-request-presigner": "^3.996.0",
     "@radix-ui/react-slot": "^1.1.0",
     "@sentry/nextjs": "^10.39.0",
     "@supabase/ssr": "^0.8.0",
@@ -24,7 +26,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.400.0",
-    "next": "14.2.5",
+    "next": "^14.2.25",
     "posthog-js": "^1.352.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -40,7 +42,7 @@
     "@typescript-eslint/parser": "^7.16.1",
     "autoprefixer": "^10.4.19",
     "eslint": "^8.57.0",
-    "eslint-config-next": "14.2.5",
+    "eslint-config-next": "^14.2.25",
     "eslint-config-prettier": "^9.1.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",

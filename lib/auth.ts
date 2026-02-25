@@ -2,6 +2,25 @@ import { createBrowserClient } from '@supabase/ssr'
 import type { Session, User } from '@supabase/supabase-js'
 
 /**
+ * Role hierarchy for Hudo.
+ * Ordered highest-privilege first.
+ */
+export type UserRole = 'owner' | 'admin_agent' | 'agent' | 'talent'
+
+/** Ordered role hierarchy — index 0 is the highest-privilege role. */
+const ROLE_HIERARCHY: UserRole[] = ['owner', 'admin_agent', 'agent', 'talent']
+
+/**
+ * Returns true if `role` meets the minimum required privilege level.
+ *
+ * Example: `roleAtLeast('agent', 'admin_agent')` → false
+ *          `roleAtLeast('owner', 'admin_agent')` → true
+ */
+export function roleAtLeast(role: UserRole, minimum: UserRole): boolean {
+  return ROLE_HIERARCHY.indexOf(role) <= ROLE_HIERARCHY.indexOf(minimum)
+}
+
+/**
  * Creates a Supabase browser client for use in Client Components.
  * Uses @supabase/ssr to handle session persistence via cookies,
  * ensuring auth state persists across page reloads.

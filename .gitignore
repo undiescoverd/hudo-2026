@@ -45,3 +45,6 @@ test-results/
 
 # Local utility scripts
 get-jwt.sh
+
+# MCP config (local/personal)
+.mcp.json
