@@ -11,6 +11,8 @@
 CREATE OR REPLACE FUNCTION check_comment_nesting_depth()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 BEGIN
   -- Only check if parent_id is set (i.e., this is a reply)
@@ -18,7 +20,7 @@ BEGIN
   IF NEW.parent_id IS NOT NULL
      AND (TG_OP = 'INSERT' OR OLD.parent_id IS DISTINCT FROM NEW.parent_id) THEN
     -- The parent must be a top-level comment (parent_id IS NULL)
-    IF (SELECT parent_id FROM comments WHERE id = NEW.parent_id) IS NOT NULL THEN
+    IF (SELECT parent_id FROM public.comments WHERE id = NEW.parent_id) IS NOT NULL THEN
       RAISE EXCEPTION 'Replies can only be made to top-level comments (max depth 1)'
         USING ERRCODE = '23514'; -- check_violation
     END IF;
