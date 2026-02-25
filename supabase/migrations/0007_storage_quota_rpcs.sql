@@ -26,6 +26,16 @@ BEGIN
       USING ERRCODE = '42501'; -- insufficient_privilege
   END IF;
 
+  -- Verify caller is a member of the target agency (defense-in-depth)
+  IF NOT EXISTS (
+    SELECT 1 FROM memberships
+     WHERE user_id = auth.uid()
+       AND agency_id = p_agency_id
+  ) THEN
+    RAISE EXCEPTION 'Access denied: not a member of this agency'
+      USING ERRCODE = '42501';
+  END IF;
+
   -- Lock agency row to prevent concurrent quota races
   SELECT storage_usage_bytes, storage_limit_bytes
     INTO v_current, v_limit
@@ -38,8 +48,8 @@ BEGIN
       USING ERRCODE = 'P0404';
   END IF;
 
-  -- Check quota
-  IF v_current + p_bytes > v_limit THEN
+  -- Check quota (NULL limit = unlimited storage)
+  IF v_limit IS NOT NULL AND v_current + p_bytes > v_limit THEN
     RAISE EXCEPTION 'Storage quota exceeded'
       USING ERRCODE = 'P0402';
   END IF;
@@ -65,6 +75,16 @@ BEGIN
   IF auth.uid() IS NULL THEN
     RAISE EXCEPTION 'Authentication required'
       USING ERRCODE = '42501'; -- insufficient_privilege
+  END IF;
+
+  -- Verify caller is a member of the target agency (defense-in-depth)
+  IF NOT EXISTS (
+    SELECT 1 FROM memberships
+     WHERE user_id = auth.uid()
+       AND agency_id = p_agency_id
+  ) THEN
+    RAISE EXCEPTION 'Access denied: not a member of this agency'
+      USING ERRCODE = '42501';
   END IF;
 
   -- Lock and decrement with floor at 0

@@ -5,7 +5,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(5);
+SELECT plan(8);
 
 -- ── Setup ──────────────────────────────────────────────────────
 
@@ -20,6 +20,19 @@ INSERT INTO users (id, email, full_name) VALUES
 
 INSERT INTO memberships (user_id, agency_id, role) VALUES
   ('dbeef008-0008-4000-a000-000000000001'::uuid, 'c0ffee08-0000-4000-a000-000000000001'::uuid, 'agent');
+
+-- Second agency + user for cross-agency test
+INSERT INTO agencies (id, name, slug, storage_usage_bytes, storage_limit_bytes) VALUES
+  ('c0ffee08-0000-4000-a000-000000000002'::uuid, 'Other Agency', 'rls-quota-other', 0, 1000);
+
+INSERT INTO auth.users (instance_id, id, email, role, aud, created_at, updated_at, email_confirmed_at, raw_user_meta_data, raw_app_meta_data) VALUES
+  ('00000000-0000-0000-0000-000000000000'::uuid, 'dbeef008-0008-4000-a000-000000000002'::uuid, 'outsider@test.rls', 'authenticated', 'authenticated', now(), now(), now(), '{}', '{}');
+
+INSERT INTO users (id, email, full_name) VALUES
+  ('dbeef008-0008-4000-a000-000000000002'::uuid, 'outsider@test.rls', 'Outsider');
+
+INSERT INTO memberships (user_id, agency_id, role) VALUES
+  ('dbeef008-0008-4000-a000-000000000002'::uuid, 'c0ffee08-0000-4000-a000-000000000002'::uuid, 'agent');
 
 
 -- ── Test 1: Increment within quota succeeds ──
@@ -68,7 +81,7 @@ SELECT lives_ok(
 );
 
 
--- ── Test 5: Unauthenticated call fails ──
+-- ── Test 5: Unauthenticated increment fails ──
 RESET ROLE;
 SELECT set_config('request.jwt.claims', '', true);
 SET LOCAL ROLE anon;
@@ -81,6 +94,47 @@ SELECT throws_ok(
   '42501',
   'Authentication required',
   'increment_storage_usage: unauthenticated call fails'
+);
+
+
+-- ── Test 6: Unauthenticated decrement fails ──
+SELECT throws_ok(
+  $$SELECT decrement_storage_usage(
+    'c0ffee08-0000-4000-a000-000000000001'::uuid,
+    100
+  )$$,
+  '42501',
+  'Authentication required',
+  'decrement_storage_usage: unauthenticated call fails'
+);
+
+
+-- ── Test 7: Non-member cannot increment another agency's quota ──
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef008-0008-4000-a000-000000000002","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT throws_ok(
+  $$SELECT increment_storage_usage(
+    'c0ffee08-0000-4000-a000-000000000001'::uuid,
+    100
+  )$$,
+  '42501',
+  'Access denied: not a member of this agency',
+  'increment_storage_usage: non-member access blocked'
+);
+
+
+-- ── Test 8: Non-member cannot decrement another agency's quota ──
+SELECT throws_ok(
+  $$SELECT decrement_storage_usage(
+    'c0ffee08-0000-4000-a000-000000000001'::uuid,
+    100
+  )$$,
+  '42501',
+  'Access denied: not a member of this agency',
+  'decrement_storage_usage: non-member access blocked'
 );
 
 
