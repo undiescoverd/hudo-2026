@@ -1,8 +1,13 @@
 import {
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
+  CreateMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
+  UploadPartCommand,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
@@ -19,6 +24,12 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 /** Default signed URL expiry: 15 minutes (in seconds). */
 const DEFAULT_SIGNED_URL_EXPIRY = 15 * 60
+
+/** Completed multipart part — ETag + part number pair. */
+export interface CompletedPart {
+  ETag: string
+  PartNumber: number
+}
 
 /** Storage interface — single abstraction for all R2 operations. */
 export interface StorageClient {
@@ -37,6 +48,34 @@ export interface StorageClient {
 
   /** Generate a presigned GET URL. Default expiry: 15 minutes. */
   generateSignedUrl(key: string, expiresIn?: number): Promise<string>
+
+  /** Generate a presigned PUT URL for direct browser upload. */
+  generateUploadUrl(
+    key: string,
+    contentType: string,
+    contentLength: number,
+    expiresIn?: number
+  ): Promise<string>
+
+  /** Initiate a multipart upload. Returns the R2 upload ID. */
+  createMultipartUpload(key: string, contentType: string): Promise<string>
+
+  /** Generate a presigned PUT URL for a single multipart part. */
+  generatePartUploadUrl(
+    key: string,
+    uploadId: string,
+    partNumber: number,
+    expiresIn?: number
+  ): Promise<string>
+
+  /** Complete a multipart upload by combining all parts. */
+  completeMultipartUpload(key: string, uploadId: string, parts: CompletedPart[]): Promise<void>
+
+  /** Abort a multipart upload and clean up parts. */
+  abortMultipartUpload(key: string, uploadId: string): Promise<void>
+
+  /** Check if an object exists and return its size. Returns null if not found. */
+  headObject(key: string): Promise<{ contentLength: number } | null>
 }
 
 /**
@@ -65,10 +104,11 @@ function createR2Client(): { client: S3Client; bucket: string } {
   return { client, bucket }
 }
 
-/** Presigner function type — matches the signature of getSignedUrl from @aws-sdk/s3-request-presigner. */
+/** Presigner function type — accepts any S3 command (GET, PUT, UploadPart). */
 type PresignerFn = (
   client: S3Client,
-  command: GetObjectCommand,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  command: any,
   options: { expiresIn: number }
 ) => Promise<string>
 
@@ -127,6 +167,93 @@ export function createStorageClient(overrides?: {
         Key: key,
       })
       return presigner(client, command, { expiresIn })
+    },
+
+    async generateUploadUrl(
+      key: string,
+      contentType: string,
+      contentLength: number,
+      expiresIn: number = DEFAULT_SIGNED_URL_EXPIRY
+    ): Promise<string> {
+      const command = new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        ContentType: contentType,
+        ContentLength: contentLength,
+      })
+      return presigner(client, command, { expiresIn })
+    },
+
+    async createMultipartUpload(key: string, contentType: string): Promise<string> {
+      const command = new CreateMultipartUploadCommand({
+        Bucket: bucket,
+        Key: key,
+        ContentType: contentType,
+      })
+      const response = await client.send(command)
+      if (!response.UploadId) {
+        throw new Error('Failed to initiate multipart upload: no UploadId returned')
+      }
+      return response.UploadId
+    },
+
+    async generatePartUploadUrl(
+      key: string,
+      uploadId: string,
+      partNumber: number,
+      expiresIn: number = DEFAULT_SIGNED_URL_EXPIRY
+    ): Promise<string> {
+      const command = new UploadPartCommand({
+        Bucket: bucket,
+        Key: key,
+        UploadId: uploadId,
+        PartNumber: partNumber,
+      })
+      return presigner(client, command, { expiresIn })
+    },
+
+    async completeMultipartUpload(
+      key: string,
+      uploadId: string,
+      parts: CompletedPart[]
+    ): Promise<void> {
+      const command = new CompleteMultipartUploadCommand({
+        Bucket: bucket,
+        Key: key,
+        UploadId: uploadId,
+        MultipartUpload: { Parts: parts },
+      })
+      await client.send(command)
+    },
+
+    async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+      const command = new AbortMultipartUploadCommand({
+        Bucket: bucket,
+        Key: key,
+        UploadId: uploadId,
+      })
+      await client.send(command)
+    },
+
+    async headObject(key: string): Promise<{ contentLength: number } | null> {
+      try {
+        const command = new HeadObjectCommand({
+          Bucket: bucket,
+          Key: key,
+        })
+        const response = await client.send(command)
+        return { contentLength: response.ContentLength ?? 0 }
+      } catch (err: unknown) {
+        if (
+          err &&
+          typeof err === 'object' &&
+          'name' in err &&
+          (err as { name: string }).name === 'NotFound'
+        ) {
+          return null
+        }
+        throw err
+      }
     },
   }
 }

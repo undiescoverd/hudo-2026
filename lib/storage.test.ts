@@ -25,7 +25,11 @@ interface PresignerCall {
   expiresIn: number
 }
 
-function createMockS3Client(options?: { returnUndefinedBody?: boolean }): {
+function createMockS3Client(options?: {
+  returnUndefinedBody?: boolean
+  headNotFound?: boolean
+  headContentLength?: number
+}): {
   client: S3Client
   calls: SendCall[]
 } {
@@ -47,6 +51,17 @@ function createMockS3Client(options?: { returnUndefinedBody?: boolean }): {
             transformToWebStream: () => new ReadableStream(),
           },
         }
+      }
+      if (command.constructor.name === 'CreateMultipartUploadCommand') {
+        return { UploadId: 'mock-upload-id-123' }
+      }
+      if (command.constructor.name === 'HeadObjectCommand') {
+        if (options?.headNotFound) {
+          const err = new Error('NotFound')
+          ;(err as Error & { name: string }).name = 'NotFound'
+          throw err
+        }
+        return { ContentLength: options?.headContentLength ?? 1024 }
       }
       return {}
     },
@@ -199,12 +214,138 @@ describe('storage module', () => {
     })
   })
 
+  describe('generateUploadUrl', () => {
+    it('returns a presigned URL via the presigner', async () => {
+      const url = await storage.generateUploadUrl('uploads/test.mp4', 'video/mp4', 1024)
+
+      assert.equal(typeof url, 'string')
+      assert.ok(url.length > 0)
+      assert.equal(presignerCalls.length, 1)
+    })
+
+    it('passes content type and content length to presigner command', async () => {
+      await storage.generateUploadUrl('uploads/test.mp4', 'video/mp4', 2048, 3600)
+
+      assert.equal(presignerCalls.length, 1)
+      assert.equal(presignerCalls[0].commandInput.Bucket, TEST_BUCKET)
+      assert.equal(presignerCalls[0].commandInput.Key, 'uploads/test.mp4')
+      assert.equal(presignerCalls[0].commandInput.ContentType, 'video/mp4')
+      assert.equal(presignerCalls[0].commandInput.ContentLength, 2048)
+      assert.equal(presignerCalls[0].expiresIn, 3600)
+    })
+
+    it('uses default 15-minute expiry when not specified', async () => {
+      await storage.generateUploadUrl('k', 'video/mp4', 1)
+
+      assert.equal(presignerCalls[0].expiresIn, 900)
+    })
+  })
+
+  describe('createMultipartUpload', () => {
+    it('sends CreateMultipartUploadCommand and returns the upload ID', async () => {
+      const uploadId = await storage.createMultipartUpload('uploads/big.mp4', 'video/mp4')
+
+      assert.equal(uploadId, 'mock-upload-id-123')
+      assert.equal(sendCalls.length, 1)
+      assert.equal(sendCalls[0].commandName, 'CreateMultipartUploadCommand')
+      assert.equal(sendCalls[0].input.Bucket, TEST_BUCKET)
+      assert.equal(sendCalls[0].input.Key, 'uploads/big.mp4')
+      assert.equal(sendCalls[0].input.ContentType, 'video/mp4')
+    })
+  })
+
+  describe('generatePartUploadUrl', () => {
+    it('returns a presigned URL for the specified part', async () => {
+      const url = await storage.generatePartUploadUrl('uploads/big.mp4', 'upload-123', 3)
+
+      assert.equal(typeof url, 'string')
+      assert.equal(presignerCalls.length, 1)
+      assert.equal(presignerCalls[0].commandInput.Bucket, TEST_BUCKET)
+      assert.equal(presignerCalls[0].commandInput.Key, 'uploads/big.mp4')
+      assert.equal(presignerCalls[0].commandInput.UploadId, 'upload-123')
+      assert.equal(presignerCalls[0].commandInput.PartNumber, 3)
+    })
+
+    it('accepts custom expiry', async () => {
+      await storage.generatePartUploadUrl('k', 'u', 1, 7200)
+      assert.equal(presignerCalls[0].expiresIn, 7200)
+    })
+  })
+
+  describe('completeMultipartUpload', () => {
+    it('sends CompleteMultipartUploadCommand with parts', async () => {
+      const parts = [
+        { ETag: '"etag1"', PartNumber: 1 },
+        { ETag: '"etag2"', PartNumber: 2 },
+      ]
+      await storage.completeMultipartUpload('uploads/big.mp4', 'upload-123', parts)
+
+      assert.equal(sendCalls.length, 1)
+      assert.equal(sendCalls[0].commandName, 'CompleteMultipartUploadCommand')
+      assert.equal(sendCalls[0].input.Bucket, TEST_BUCKET)
+      assert.equal(sendCalls[0].input.Key, 'uploads/big.mp4')
+      assert.equal(sendCalls[0].input.UploadId, 'upload-123')
+      assert.deepEqual((sendCalls[0].input.MultipartUpload as { Parts: typeof parts }).Parts, parts)
+    })
+  })
+
+  describe('abortMultipartUpload', () => {
+    it('sends AbortMultipartUploadCommand', async () => {
+      await storage.abortMultipartUpload('uploads/big.mp4', 'upload-123')
+
+      assert.equal(sendCalls.length, 1)
+      assert.equal(sendCalls[0].commandName, 'AbortMultipartUploadCommand')
+      assert.equal(sendCalls[0].input.Bucket, TEST_BUCKET)
+      assert.equal(sendCalls[0].input.Key, 'uploads/big.mp4')
+      assert.equal(sendCalls[0].input.UploadId, 'upload-123')
+    })
+  })
+
+  describe('headObject', () => {
+    it('returns contentLength when object exists', async () => {
+      const mock = createMockS3Client({ headContentLength: 5000 })
+      const mockPresigner = createMockPresigner()
+      const s = createStorageClient({
+        client: mock.client,
+        bucket: TEST_BUCKET,
+        presigner: mockPresigner.presigner,
+      })
+
+      const result = await s.headObject('uploads/test.mp4')
+
+      assert.deepEqual(result, { contentLength: 5000 })
+      assert.equal(mock.calls.length, 1)
+      assert.equal(mock.calls[0].commandName, 'HeadObjectCommand')
+      assert.equal(mock.calls[0].input.Bucket, TEST_BUCKET)
+      assert.equal(mock.calls[0].input.Key, 'uploads/test.mp4')
+    })
+
+    it('returns null when object is not found', async () => {
+      const mock = createMockS3Client({ headNotFound: true })
+      const mockPresigner = createMockPresigner()
+      const s = createStorageClient({
+        client: mock.client,
+        bucket: TEST_BUCKET,
+        presigner: mockPresigner.presigner,
+      })
+
+      const result = await s.headObject('missing/file.mp4')
+      assert.equal(result, null)
+    })
+  })
+
   describe('StorageClient interface', () => {
-    it('exports all required operations: put, get, delete, generateSignedUrl', () => {
+    it('exports all required operations', () => {
       assert.equal(typeof storage.putObject, 'function')
       assert.equal(typeof storage.getObject, 'function')
       assert.equal(typeof storage.deleteObject, 'function')
       assert.equal(typeof storage.generateSignedUrl, 'function')
+      assert.equal(typeof storage.generateUploadUrl, 'function')
+      assert.equal(typeof storage.createMultipartUpload, 'function')
+      assert.equal(typeof storage.generatePartUploadUrl, 'function')
+      assert.equal(typeof storage.completeMultipartUpload, 'function')
+      assert.equal(typeof storage.abortMultipartUpload, 'function')
+      assert.equal(typeof storage.headObject, 'function')
     })
   })
 })
