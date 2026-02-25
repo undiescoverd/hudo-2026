@@ -99,8 +99,9 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
     )
   }
 
-  // Validate content type
-  const contentType = request.headers.get('content-type')
+  // Validate content type (strip parameters like charset)
+  const rawContentType = request.headers.get('content-type')
+  const contentType = rawContentType?.split(';')[0].trim() ?? ''
   if (!contentType || !ALLOWED_CONTENT_TYPES.includes(contentType)) {
     return NextResponse.json(
       {
