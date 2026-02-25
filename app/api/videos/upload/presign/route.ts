@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Only agents and above can upload videos' }, { status: 403 })
   }
 
-  // --- Quota check (best-effort) ---
+  // --- Quota check (best-effort; authoritative check in complete route) ---
 
   const { data: agency } = await admin
     .from('agencies')
