@@ -43,5 +43,7 @@ BEGIN
 EXCEPTION
   WHEN undefined_object THEN
     RAISE NOTICE 'supabase_realtime publication does not exist — skipping';
+  WHEN duplicate_object THEN
+    RAISE NOTICE 'comments already in supabase_realtime publication — skipping';
 END;
 $$;
