@@ -20,7 +20,7 @@ export function isQuotaExceededError(error: { message?: string; code?: string })
 }
 
 /**
- * Increment storage usage for an agency. Returns true on success, throws on error.
+ * Increment storage usage for an agency. Throws on error.
  * Uses the user-scoped client so auth.uid() is available in the RPC.
  */
 export async function incrementStorageUsage(

@@ -14,6 +14,7 @@ CREATE OR REPLACE FUNCTION increment_storage_usage(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_current bigint;
@@ -57,6 +58,7 @@ CREATE OR REPLACE FUNCTION decrement_storage_usage(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
   -- Require authenticated caller

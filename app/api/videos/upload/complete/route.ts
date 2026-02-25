@@ -216,9 +216,9 @@ export async function POST(request: NextRequest) {
 
   if (rpcError) {
     console.error('[upload/complete] RPC create_video_version failed:', rpcError.message)
-    // Rollback quota increment — uses admin client (service role) because the
-    // user-scoped client's auth.uid() may not match after an RPC failure.
-    const { error: rollbackError } = await admin.rpc('decrement_storage_usage', {
+    // Rollback quota increment — uses user-scoped client because the
+    // decrement RPC validates auth.uid() (service-role client has no JWT).
+    const { error: rollbackError } = await supabase.rpc('decrement_storage_usage', {
       p_agency_id: agencyId,
       p_bytes: actualFileSize,
     })
