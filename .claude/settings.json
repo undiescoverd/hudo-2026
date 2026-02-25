@@ -1,3 +1,26 @@
 {
-  "hooks": {}
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // \"\"'); if echo \"$FILE\" | grep -qE '\\.env'; then echo \"BLOCKED: Direct .env edit detected. Update credential values manually.\"; exit 2; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // \"\"'); if echo \"$FILE\" | grep -qE '\\.(ts|tsx)$'; then cd /Users/ianvincent/workspace/hudo-2026 && pnpm type-check 2>&1 | tail -20; fi"
+          }
+        ]
+      }
+    ]
+  }
 }
