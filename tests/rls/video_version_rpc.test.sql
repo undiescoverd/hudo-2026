@@ -5,7 +5,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(5);
+SELECT plan(6);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -95,12 +95,22 @@ SELECT lives_ok(
 );
 
 
--- ── Test 5: After version 2, active_version_id points to version 2 and version 1 still exists ──
+-- ── Test 5: Both versions exist after second call ──
 SELECT is(
   (SELECT count(*)::int FROM video_versions
    WHERE video_id = 'b1de0007-0007-4000-a000-000000000001'::uuid),
   2,
-  'Both version 1 and version 2 exist; active_version_id updated'
+  'Both version 1 and version 2 exist after two create_video_version calls'
+);
+
+
+-- ── Test 6: active_version_id points to version 2 ──
+SELECT is(
+  (SELECT vv.version_number FROM videos v
+   JOIN video_versions vv ON v.active_version_id = vv.id
+   WHERE v.id = 'b1de0007-0007-4000-a000-000000000001'::uuid),
+  2,
+  'active_version_id points to version 2 after second create_video_version call'
 );
 
 RESET ROLE;
