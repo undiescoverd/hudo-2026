@@ -31,6 +31,8 @@ const DEFAULT_OPTIONS: Required<CaptureOptions> = {
  * Note: The video source must support CORS (crossOrigin = 'anonymous')
  * for canvas access to work. R2 signed URLs need proper CORS headers.
  */
+const CAPTURE_TIMEOUT_MS = 15_000 // 15 seconds max for thumbnail capture
+
 export async function captureVideoThumbnail(
   videoSrc: string,
   options?: CaptureOptions
@@ -38,6 +40,7 @@ export async function captureVideoThumbnail(
   const opts = { ...DEFAULT_OPTIONS, ...options }
 
   return new Promise<Blob>((resolve, reject) => {
+    let settled = false
     const video = document.createElement('video')
     video.crossOrigin = 'anonymous'
     video.muted = true
@@ -48,6 +51,21 @@ export async function captureVideoThumbnail(
       video.removeAttribute('src')
       video.load()
     }
+
+    const settle = (fn: () => void) => {
+      if (!settled) {
+        settled = true
+        fn()
+      }
+    }
+
+    // Timeout guard — reject if capture stalls
+    const timer = setTimeout(() => {
+      settle(() => {
+        cleanup()
+        reject(new Error('Thumbnail capture timed out'))
+      })
+    }, CAPTURE_TIMEOUT_MS)
 
     video.addEventListener('loadedmetadata', () => {
       // Clamp seek time to prevent seeking past the end of short videos
@@ -66,8 +84,11 @@ export async function captureVideoThumbnail(
 
         const ctx = canvas.getContext('2d')
         if (!ctx) {
-          cleanup()
-          reject(new Error('Failed to get canvas 2D context'))
+          settle(() => {
+            clearTimeout(timer)
+            cleanup()
+            reject(new Error('Failed to get canvas 2D context'))
+          })
           return
         }
 
@@ -75,25 +96,34 @@ export async function captureVideoThumbnail(
 
         canvas.toBlob(
           (blob) => {
-            cleanup()
-            if (!blob) {
-              reject(new Error('Failed to export canvas to blob'))
-              return
-            }
-            resolve(blob)
+            settle(() => {
+              clearTimeout(timer)
+              cleanup()
+              if (!blob) {
+                reject(new Error('Failed to export canvas to blob'))
+                return
+              }
+              resolve(blob)
+            })
           },
           'image/jpeg',
           opts.quality
         )
       } catch (err) {
-        cleanup()
-        reject(err)
+        settle(() => {
+          clearTimeout(timer)
+          cleanup()
+          reject(err)
+        })
       }
     })
 
     video.addEventListener('error', () => {
-      cleanup()
-      reject(new Error('Failed to load video for thumbnail capture'))
+      settle(() => {
+        clearTimeout(timer)
+        cleanup()
+        reject(new Error('Failed to load video for thumbnail capture'))
+      })
     })
 
     video.src = videoSrc

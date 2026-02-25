@@ -9,6 +9,7 @@ const ALLOWED_CONTENT_TYPES = ['image/jpeg', 'image/png']
 const SIGNED_URL_EXPIRY_SECONDS = 900 // 15 minutes
 const THUMBNAIL_RATE_LIMIT = 20 // max uploads per window
 const THUMBNAIL_RATE_WINDOW = 3600 // 1 hour in seconds
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * POST /api/videos/:videoId/thumbnail
@@ -18,6 +19,10 @@ const THUMBNAIL_RATE_WINDOW = 3600 // 1 hour in seconds
  */
 export async function POST(request: NextRequest, { params }: { params: { videoId: string } }) {
   const { videoId } = params
+
+  if (!UUID_RE.test(videoId)) {
+    return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -35,7 +40,9 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
         return cookieStore.getAll()
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+        for (const { name, value, options } of cookiesToSet) {
+          cookieStore.set(name, value, options)
+        }
       },
     },
   })
@@ -168,6 +175,10 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
 export async function GET(_request: NextRequest, { params }: { params: { videoId: string } }) {
   const { videoId } = params
 
+  if (!UUID_RE.test(videoId)) {
+    return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -184,7 +195,9 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
         return cookieStore.getAll()
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+        for (const { name, value, options } of cookiesToSet) {
+          cookieStore.set(name, value, options)
+        }
       },
     },
   })
