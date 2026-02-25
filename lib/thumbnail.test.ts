@@ -126,4 +126,8 @@ describe('thumbnail — source invariants', () => {
     assert.match(source, /method:\s*['"]POST['"]/)
     assert.match(source, /blob\.type\s*\|\|\s*['"]image\/jpeg['"]/)
   })
+
+  it('encodes videoId in the upload URL path', () => {
+    assert.match(source, /encodeURIComponent\(videoId\)/)
+  })
 })

@@ -138,7 +138,7 @@ export async function captureVideoThumbnail(
  * Upload a thumbnail blob to the server.
  */
 export async function uploadThumbnail(videoId: string, blob: Blob): Promise<{ success: boolean }> {
-  const response = await fetch(`/api/videos/${videoId}/thumbnail`, {
+  const response = await fetch(`/api/videos/${encodeURIComponent(videoId)}/thumbnail`, {
     method: 'POST',
     headers: {
       'Content-Type': blob.type || 'image/jpeg',
