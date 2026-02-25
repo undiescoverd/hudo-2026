@@ -9,8 +9,14 @@ import { type NextRequest, NextResponse } from 'next/server'
  * Returns all versions for a video, ordered by version number descending.
  * No R2 keys are exposed — only metadata.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function GET(_request: NextRequest, { params }: { params: { videoId: string } }) {
   const { videoId } = params
+
+  if (!UUID_RE.test(videoId)) {
+    return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -28,7 +34,9 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
         return cookieStore.getAll()
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+        for (const { name, value, options } of cookiesToSet) {
+          cookieStore.set(name, value, options)
+        }
       },
     },
   })
