@@ -7,6 +7,10 @@
 -- decrement_storage_usage: called on delete (future)
 -- ============================================================
 
+-- SECURITY DEFINER: the quota RPCs must SELECT/UPDATE agencies rows regardless
+-- of the caller's RLS visibility. Without definer privileges, RLS on agencies
+-- would filter out agencies the user doesn't own, preventing quota enforcement.
+
 CREATE OR REPLACE FUNCTION increment_storage_usage(
   p_agency_id uuid,
   p_bytes     bigint
@@ -14,7 +18,7 @@ CREATE OR REPLACE FUNCTION increment_storage_usage(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_current bigint;
@@ -61,6 +65,8 @@ BEGIN
 END;
 $$;
 
+ALTER FUNCTION public.increment_storage_usage(uuid, bigint) OWNER TO postgres;
+
 CREATE OR REPLACE FUNCTION decrement_storage_usage(
   p_agency_id uuid,
   p_bytes     bigint
@@ -68,7 +74,7 @@ CREATE OR REPLACE FUNCTION decrement_storage_usage(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 BEGIN
   -- Require authenticated caller
@@ -98,3 +104,5 @@ BEGIN
   END IF;
 END;
 $$;
+
+ALTER FUNCTION public.decrement_storage_usage(uuid, bigint) OWNER TO postgres;
