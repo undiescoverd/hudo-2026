@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getStorage } from '@/lib/storage'
 import type { CompletedPart } from '@/lib/storage'
+import { isQuotaExceededError } from '@/lib/storage-quota'
 
 /**
  * POST /api/videos/upload/complete
@@ -183,8 +184,9 @@ export async function POST(request: NextRequest) {
   // --- Authoritative quota check (atomic via row-level lock) ---
   // The presign route does a best-effort quota check; this is the authoritative one.
   // Uses actual R2 file size (head.contentLength) rather than client-declared fileSizeBytes.
+  // `head` is guaranteed non-null here (early return above if null).
 
-  const actualFileSize = head?.contentLength ?? fileSizeBytes
+  const actualFileSize = head.contentLength
 
   const { error: quotaError } = await supabase.rpc('increment_storage_usage', {
     p_agency_id: agencyId,
@@ -192,8 +194,7 @@ export async function POST(request: NextRequest) {
   })
 
   if (quotaError) {
-    // P0402 = custom "quota exceeded" error code from the RPC
-    if (quotaError.message?.includes('Storage quota exceeded') || quotaError.code === 'P0402') {
+    if (isQuotaExceededError(quotaError)) {
       return NextResponse.json(
         { error: 'Storage quota exceeded. Please upgrade your plan or delete unused videos.' },
         { status: 402 }
@@ -202,8 +203,6 @@ export async function POST(request: NextRequest) {
     console.error('[upload/complete] Quota increment failed:', quotaError.message)
     return NextResponse.json({ error: 'Failed to verify storage quota' }, { status: 500 })
   }
-
-  const quotaIncremented = true
 
   // --- Create video version via RPC (user-scoped client for auth.uid() check) ---
 
@@ -217,18 +216,17 @@ export async function POST(request: NextRequest) {
 
   if (rpcError) {
     console.error('[upload/complete] RPC create_video_version failed:', rpcError.message)
-    // Rollback quota increment via admin client (service role bypasses auth.uid() check)
-    if (quotaIncremented) {
-      const { error: rollbackError } = await admin.rpc('decrement_storage_usage', {
-        p_agency_id: agencyId,
-        p_bytes: actualFileSize,
-      })
-      if (rollbackError) {
-        console.error(
-          '[upload/complete] CRITICAL: Quota rollback failed — usage may be inflated:',
-          rollbackError.message
-        )
-      }
+    // Rollback quota increment — uses admin client (service role) because the
+    // user-scoped client's auth.uid() may not match after an RPC failure.
+    const { error: rollbackError } = await admin.rpc('decrement_storage_usage', {
+      p_agency_id: agencyId,
+      p_bytes: actualFileSize,
+    })
+    if (rollbackError) {
+      console.error(
+        '[upload/complete] CRITICAL: Quota rollback failed — usage may be inflated:',
+        rollbackError.message
+      )
     }
     return NextResponse.json({ error: 'Failed to create video version' }, { status: 500 })
   }

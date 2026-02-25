@@ -118,8 +118,14 @@ describe('complete route — storage quota invariants', () => {
     const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
     const source = fs.readFileSync(routePath, 'utf8')
 
-    // Should reference head/contentLength for the quota call
-    assert.match(source, /head\?\.contentLength|head\.contentLength/)
+    // actualFileSize must use head.contentLength (not optional chaining — head is guaranteed non-null)
+    assert.match(source, /head\.contentLength/)
+    // Must NOT fall back to client-declared fileSizeBytes
+    assert.doesNotMatch(
+      source,
+      /actualFileSize\s*=\s*head\?\.contentLength/,
+      'Must not use optional chaining fallback to client-declared size'
+    )
   })
 
   it('rolls back quota on version creation failure via decrement_storage_usage', async () => {
