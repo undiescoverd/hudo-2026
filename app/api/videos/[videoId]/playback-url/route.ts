@@ -82,6 +82,13 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
   // Fetch version - specific version if versionId provided, otherwise latest
   const versionId = request.nextUrl.searchParams.get('versionId')
 
+  if (
+    versionId &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(versionId)
+  ) {
+    return NextResponse.json({ error: 'Invalid version ID format' }, { status: 400 })
+  }
+
   let versionQuery = admin
     .from('video_versions')
     .select('id, r2_key, version_number')
