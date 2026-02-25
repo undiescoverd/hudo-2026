@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { describe, it } from 'node:test'
+import { before, describe, it } from 'node:test'
 
 describe('complete route — access control invariants', () => {
   it('returns 401 when user is null', () => {
@@ -55,52 +55,45 @@ describe('complete route — input validation', () => {
 })
 
 describe('complete route — source code invariants', () => {
-  it('uses user-scoped Supabase client for RPC call (not service role)', async () => {
+  let source: string
+
+  before(async () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
     const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
+    source = fs.readFileSync(routePath, 'utf8')
+  })
 
+  it('uses user-scoped Supabase client for RPC call (not service role)', () => {
     // RPC must be called via `supabase.rpc` (user-scoped), not `admin.rpc`
     assert.match(source, /supabase\.rpc\('create_video_version'/)
     assert.doesNotMatch(source, /admin\.rpc\('create_video_version'/)
   })
 
-  it('route file contains POST handler', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
-
+  it('route file contains POST handler', () => {
     assert.match(source, /export async function POST/)
   })
 
-  it('calls headObject to verify upload before creating version', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
-
+  it('calls headObject to verify upload before creating version', () => {
     assert.match(source, /headObject/)
   })
 
-  it('passes p_uploaded_by as user.id to the RPC', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
-
+  it('passes p_uploaded_by as user.id to the RPC', () => {
     assert.match(source, /p_uploaded_by:\s*user\.id/)
   })
 })
 
 describe('complete route — storage quota invariants', () => {
-  it('calls increment_storage_usage RPC before create_video_version', async () => {
+  let source: string
+
+  before(async () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
     const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
+    source = fs.readFileSync(routePath, 'utf8')
+  })
 
+  it('calls increment_storage_usage RPC before create_video_version', () => {
     // Use .rpc(' prefix to match actual RPC calls, not comments
     const incrementPos = source.indexOf(".rpc('increment_storage_usage'")
     const createVersionPos = source.indexOf(".rpc('create_video_version'")
@@ -112,12 +105,7 @@ describe('complete route — storage quota invariants', () => {
     )
   })
 
-  it('uses headObject contentLength for quota (not client-declared size)', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
-
+  it('uses headObject contentLength for quota (not client-declared size)', () => {
     // actualFileSize must use head.contentLength (not optional chaining — head is guaranteed non-null)
     assert.match(source, /head\.contentLength/)
     // Must NOT fall back to client-declared fileSizeBytes
@@ -128,12 +116,7 @@ describe('complete route — storage quota invariants', () => {
     )
   })
 
-  it('rolls back quota on version creation failure via decrement_storage_usage', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
-
+  it('rolls back quota on version creation failure via decrement_storage_usage', () => {
     assert.match(source, /decrement_storage_usage/)
   })
 })
