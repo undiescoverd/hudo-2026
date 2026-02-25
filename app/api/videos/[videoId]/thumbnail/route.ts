@@ -7,8 +7,10 @@ import { getStorage } from '@/lib/storage'
 const MAX_THUMBNAIL_SIZE = 2 * 1024 * 1024 // 2MB
 const ALLOWED_CONTENT_TYPES = ['image/jpeg', 'image/png']
 const SIGNED_URL_EXPIRY_SECONDS = 900 // 15 minutes
-const THUMBNAIL_RATE_LIMIT = 20 // max uploads per window
-const THUMBNAIL_RATE_WINDOW = 3600 // 1 hour in seconds
+const THUMBNAIL_UPLOAD_RATE_LIMIT = 20 // max uploads per window
+const THUMBNAIL_UPLOAD_RATE_WINDOW = 3600 // 1 hour in seconds
+const THUMBNAIL_GET_RATE_LIMIT = 60 // max GET requests per window
+const THUMBNAIL_GET_RATE_WINDOW = 60 // 1 minute in seconds
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
@@ -60,13 +62,13 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
     const { rateLimit } = await import('@/lib/redis')
     const remaining = await rateLimit(
       `thumbnail:upload:user:${user.id}`,
-      THUMBNAIL_RATE_LIMIT,
-      THUMBNAIL_RATE_WINDOW
+      THUMBNAIL_UPLOAD_RATE_LIMIT,
+      THUMBNAIL_UPLOAD_RATE_WINDOW
     )
     if (remaining === -1) {
       return NextResponse.json(
         { error: 'Too many thumbnail upload requests. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': String(THUMBNAIL_RATE_WINDOW) } }
+        { status: 429, headers: { 'Retry-After': String(THUMBNAIL_UPLOAD_RATE_WINDOW) } }
       )
     }
   } catch (err) {
@@ -208,6 +210,24 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
 
   if (!user) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+  }
+
+  // Rate limit: 60 thumbnail reads per user per minute
+  try {
+    const { rateLimit } = await import('@/lib/redis')
+    const remaining = await rateLimit(
+      `thumbnail:get:user:${user.id}`,
+      THUMBNAIL_GET_RATE_LIMIT,
+      THUMBNAIL_GET_RATE_WINDOW
+    )
+    if (remaining === -1) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(THUMBNAIL_GET_RATE_WINDOW) } }
+      )
+    }
+  } catch (err) {
+    console.error('[thumbnail] Rate limit check failed, allowing request:', err)
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
