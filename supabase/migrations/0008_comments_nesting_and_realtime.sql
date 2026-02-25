@@ -7,8 +7,12 @@
 -- ============================================================
 
 -- ── Nesting Depth Trigger ──────────────────────────────────────
+-- SECURITY DEFINER: the depth check must resolve the parent comment's real
+-- parent_id regardless of the caller's agency visibility. Without definer
+-- privileges the SELECT is filtered by caller RLS, allowing a cross-agency
+-- parent_id to return NULL and silently bypass the depth guard.
 
-CREATE OR REPLACE FUNCTION check_comment_nesting_depth()
+CREATE OR REPLACE FUNCTION public.check_comment_nesting_depth()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -29,6 +33,8 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+ALTER FUNCTION public.check_comment_nesting_depth() OWNER TO postgres;
 
 DROP TRIGGER IF EXISTS enforce_comment_nesting_depth ON comments;
 CREATE TRIGGER enforce_comment_nesting_depth
