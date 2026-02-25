@@ -38,6 +38,10 @@ export async function captureVideoThumbnail(
   options?: CaptureOptions
 ): Promise<Blob> {
   const opts = { ...DEFAULT_OPTIONS, ...options }
+  // Clamp options to valid ranges
+  opts.seekTime = Math.max(0, opts.seekTime)
+  opts.maxWidth = Math.max(1, Math.round(opts.maxWidth))
+  opts.quality = Math.max(0, Math.min(1, opts.quality))
 
   return new Promise<Blob>((resolve, reject) => {
     let settled = false
