@@ -106,6 +106,9 @@ export async function POST(request: NextRequest) {
       )
     }
   } catch (err) {
+    // Fail open: auth + membership + role checks are the primary security controls.
+    // Rate limiting is defense-in-depth; blocking all requests on Redis outage is worse.
+    // This matches the established pattern in invitations/send and other endpoints.
     console.error('[upload/multipart-url] Rate limit check failed, allowing request:', err)
   }
 
