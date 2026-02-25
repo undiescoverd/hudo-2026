@@ -17,7 +17,7 @@ const SIGNED_URL_EXPIRY_SECONDS = 900 // 15 minutes
  * - Direct R2 object URLs are never returned — only signed URLs
  * - Signed URL expires after 15 minutes
  */
-export async function GET(_request: NextRequest, { params }: { params: { videoId: string } }) {
+export async function GET(request: NextRequest, { params }: { params: { videoId: string } }) {
   const { videoId } = params
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -79,14 +79,21 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  // Fetch the latest video version's R2 key (column is `r2_key` per migration 0001)
-  const { data: version, error: versionError } = await admin
+  // Fetch version - specific version if versionId provided, otherwise latest
+  const versionId = request.nextUrl.searchParams.get('versionId')
+
+  let versionQuery = admin
     .from('video_versions')
-    .select('r2_key')
+    .select('id, r2_key, version_number')
     .eq('video_id', videoId)
-    .order('version_number', { ascending: false })
-    .limit(1)
-    .single()
+
+  if (versionId) {
+    versionQuery = versionQuery.eq('id', versionId)
+  } else {
+    versionQuery = versionQuery.order('version_number', { ascending: false }).limit(1)
+  }
+
+  const { data: version, error: versionError } = await versionQuery.single()
 
   if (versionError || !version) {
     return NextResponse.json({ error: 'No video version found' }, { status: 404 })
@@ -106,6 +113,7 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
 
   return NextResponse.json({
     url: signedUrl,
+    versionNumber: version.version_number,
     expiresIn: SIGNED_URL_EXPIRY_SECONDS,
   })
 }

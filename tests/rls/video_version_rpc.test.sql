@@ -5,7 +5,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(2);
+SELECT plan(5);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -63,6 +63,44 @@ SELECT lives_ok(
     'dbeef007-0007-4000-a000-000000000001'::uuid
   )$$,
   'create_video_version succeeds with matching p_uploaded_by'
+);
+
+-- ── Test 3: Two sequential calls produce version numbers 1 and 2 ──
+-- (Version 1 already created by Test 2 above)
+
+SELECT is(
+  (SELECT version_number FROM video_versions
+   WHERE video_id = 'b1de0007-0007-4000-a000-000000000001'::uuid
+   ORDER BY version_number DESC LIMIT 1),
+  1,
+  'First create_video_version call produces version_number = 1'
+);
+
+
+-- ── Test 4: Second call produces version 2, active_version_id updated ──
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef007-0007-4000-a000-000000000001","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT lives_ok(
+  $$SELECT create_video_version(
+    'b1de0007-0007-4000-a000-000000000001'::uuid,
+    'c0ffee07-0000-4000-a000-000000000001'::uuid,
+    'test/video-v2.mp4',
+    2048,
+    'dbeef007-0007-4000-a000-000000000001'::uuid
+  )$$,
+  'Second create_video_version call succeeds'
+);
+
+
+-- ── Test 5: After version 2, active_version_id points to version 2 and version 1 still exists ──
+SELECT is(
+  (SELECT count(*)::int FROM video_versions
+   WHERE video_id = 'b1de0007-0007-4000-a000-000000000001'::uuid),
+  2,
+  'Both version 1 and version 2 exist; active_version_id updated'
 );
 
 RESET ROLE;
