@@ -1,6 +1,6 @@
 # Sprint 0 — Infrastructure & Schema
 
-**Status: In Progress**
+**Status: Complete**
 
 **Gate:** Local dev runs end-to-end. Schema applied to dev, staging, and prod. Vercel preview deploys on PR. CI passes on an empty commit. All RLS tests pass. All 25 tasks complete.
 
@@ -8,7 +8,7 @@
 
 ## Tasks
 
-### INFRA (12 tasks: 11 done, 1 not started)
+### INFRA (12 tasks: 12 done, 0 not started)
 
 ---
 
@@ -160,13 +160,13 @@ NOTES: CSP must not block Supabase Realtime websocket (wss://). Test with browse
 
 ---
 
-- [ ] **S0-INFRA-008** — Create storage abstraction module
+- [x] **S0-INFRA-008** — Create storage abstraction module
 
 TASK_ID: S0-INFRA-008
 TITLE: Create storage abstraction module
 BRANCH: feat/s0-infra-008-storage
 MODEL: opus-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-INFRA-005
 ACCEPTANCE_CRITERIA:
   - lib/storage.ts exports a single interface for all R2 operations
@@ -225,13 +225,13 @@ NOTES: Consent banner visual design is polished in Sprint 4. MVP requires correc
 
 ---
 
-- [ ] **S0-INFRA-011** — Provision Upstash Redis
+- [x] **S0-INFRA-011** — Provision Upstash Redis
 
 TASK_ID: S0-INFRA-011
 TITLE: Provision Upstash Redis
 BRANCH: feat/s0-infra-011-redis
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-INFRA-003
 ACCEPTANCE_CRITERIA:
   - Upstash Redis database created
@@ -245,13 +245,13 @@ NOTES: Redis is used for rate limiting only, not for caching or sessions in Spri
 
 ---
 
-- [ ] **S0-INFRA-012** — Configure Resend
+- [x] **S0-INFRA-012** — Configure Resend
 
 TASK_ID: S0-INFRA-012
 TITLE: Configure Resend
 BRANCH: feat/s0-infra-012-resend
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-INFRA-001
 ACCEPTANCE_CRITERIA:
   - Resend account created and API keys generated
@@ -352,7 +352,7 @@ NOTES: Indexes should be created after schema is stable.
 
 ---
 
-### AUTH (7 tasks: 2 done, 1 in review, 4 not started)
+### AUTH (7 tasks: 7 done, 0 not started)
 
 ---
 
@@ -399,13 +399,13 @@ NOTES: Email confirmation is required before account is active.
 
 ---
 
-- [ ] **S0-AUTH-003** — Build sign-in and sign-out
+- [x] **S0-AUTH-003** — Build sign-in and sign-out
 
 TASK_ID: S0-AUTH-003
 TITLE: Build sign-in and sign-out
 BRANCH: feat/s0-auth-003-signin
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-AUTH-001
 ACCEPTANCE_CRITERIA:
   - Sign-in page with email and password fields
@@ -420,13 +420,13 @@ NOTES: Session management handled by Supabase Auth.
 
 ---
 
-- [ ] **S0-AUTH-004** — Implement brute force protection on auth endpoints
+- [x] **S0-AUTH-004** — Implement brute force protection on auth endpoints
 
 TASK_ID: S0-AUTH-004
 TITLE: Implement brute force protection on auth endpoints
 BRANCH: feat/s0-auth-004-rate-limit
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-AUTH-001, S0-INFRA-011
 ACCEPTANCE_CRITERIA:
   - Rate limiting enforced on sign-in and registration endpoints
@@ -442,13 +442,13 @@ NOTES: Critical for security. Always return 429 + Retry-After.
 
 ---
 
-- [ ] **S0-AUTH-005** — Build invitation flow
+- [x] **S0-AUTH-005** — Build invitation flow
 
 TASK_ID: S0-AUTH-005
 TITLE: Build invitation flow
 BRANCH: feat/s0-auth-005-invitations
 MODEL: opus-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-DB-001, S0-AUTH-001
 ACCEPTANCE_CRITERIA:
   - Admin can send invitations to email addresses
@@ -465,13 +465,13 @@ NOTES: Invitations are how talent and agents join agencies.
 
 ---
 
-- [ ] **S0-AUTH-006** — Implement role-based middleware
+- [x] **S0-AUTH-006** — Implement role-based middleware
 
 TASK_ID: S0-AUTH-006
 TITLE: Implement role-based middleware
 BRANCH: feat/s0-auth-006-middleware
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-AUTH-003, S0-DB-002
 ACCEPTANCE_CRITERIA:
   - Middleware checks user role from `memberships` table
@@ -486,13 +486,13 @@ NOTES: Roles are: owner > admin_agent > agent > talent > guest.
 
 ---
 
-- [ ] **S0-AUTH-007** — Build password reset flow
+- [x] **S0-AUTH-007** — Build password reset flow
 
 TASK_ID: S0-AUTH-007
 TITLE: Build password reset flow
 BRANCH: feat/s0-auth-007-password-reset
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-AUTH-001, S0-INFRA-012
 ACCEPTANCE_CRITERIA:
   - Password reset request page accepts email and sends reset link via Resend
@@ -508,7 +508,7 @@ NOTES: Password reset is required for a complete auth flow before launch.
 
 ---
 
-### STORAGE (2 tasks: 1 done, 1 not started)
+### STORAGE (2 tasks: 2 done, 0 not started)
 
 ---
 
@@ -535,13 +535,13 @@ NOTES: CORS policy allows PUT only; GET through signing proxy. No unauthenticate
 
 ---
 
-- [ ] **S0-STORAGE-002** — Build R2 signing proxy (playback URL generation)
+- [x] **S0-STORAGE-002** — Build R2 signing proxy (playback URL generation)
 
 TASK_ID: S0-STORAGE-002
 TITLE: Build R2 signing proxy (playback URL generation)
 BRANCH: feat/s0-storage-002-signing-proxy
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S0-DB-002, S0-STORAGE-001
 ACCEPTANCE_CRITERIA:
   - `GET /api/videos/:videoId/playback-url` returns a signed R2 URL with 15-minute expiry
