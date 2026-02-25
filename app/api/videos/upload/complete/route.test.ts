@@ -93,3 +93,41 @@ describe('complete route — source code invariants', () => {
     assert.match(source, /p_uploaded_by:\s*user\.id/)
   })
 })
+
+describe('complete route — storage quota invariants', () => {
+  it('calls increment_storage_usage RPC before create_video_version', async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
+    const source = fs.readFileSync(routePath, 'utf8')
+
+    // Use .rpc(' prefix to match actual RPC calls, not comments
+    const incrementPos = source.indexOf(".rpc('increment_storage_usage'")
+    const createVersionPos = source.indexOf(".rpc('create_video_version'")
+    assert.ok(incrementPos > -1, 'increment_storage_usage RPC must be called')
+    assert.ok(createVersionPos > -1, 'create_video_version RPC must be called')
+    assert.ok(
+      incrementPos < createVersionPos,
+      'quota increment must happen before version creation'
+    )
+  })
+
+  it('uses headObject contentLength for quota (not client-declared size)', async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
+    const source = fs.readFileSync(routePath, 'utf8')
+
+    // Should reference head/contentLength for the quota call
+    assert.match(source, /head\?\.contentLength|head\.contentLength/)
+  })
+
+  it('rolls back quota on version creation failure via decrement_storage_usage', async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
+    const source = fs.readFileSync(routePath, 'utf8')
+
+    assert.match(source, /decrement_storage_usage/)
+  })
+})
