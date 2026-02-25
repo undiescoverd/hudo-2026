@@ -7,6 +7,8 @@ import { getStorage } from '@/lib/storage'
 const MAX_THUMBNAIL_SIZE = 2 * 1024 * 1024 // 2MB
 const ALLOWED_CONTENT_TYPES = ['image/jpeg', 'image/png']
 const SIGNED_URL_EXPIRY_SECONDS = 900 // 15 minutes
+const THUMBNAIL_RATE_LIMIT = 20 // max uploads per window
+const THUMBNAIL_RATE_WINDOW = 3600 // 1 hour in seconds
 
 /**
  * POST /api/videos/:videoId/thumbnail
@@ -44,6 +46,24 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
 
   if (!user) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+  }
+
+  // Rate limit: 20 thumbnail uploads per user per hour
+  try {
+    const { rateLimit } = await import('@/lib/redis')
+    const remaining = await rateLimit(
+      `thumbnail:upload:user:${user.id}`,
+      THUMBNAIL_RATE_LIMIT,
+      THUMBNAIL_RATE_WINDOW
+    )
+    if (remaining === -1) {
+      return NextResponse.json(
+        { error: 'Too many thumbnail upload requests. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(THUMBNAIL_RATE_WINDOW) } }
+      )
+    }
+  } catch (err) {
+    console.error('[thumbnail] Rate limit check failed, allowing request:', err)
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
