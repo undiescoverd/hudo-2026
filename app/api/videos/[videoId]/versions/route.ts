@@ -10,6 +10,8 @@ import { type NextRequest, NextResponse } from 'next/server'
  * No R2 keys are exposed — only metadata.
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const VERSIONS_RATE_LIMIT = 60 // max requests per window
+const VERSIONS_RATE_WINDOW = 60 // 1 minute in seconds
 
 export async function GET(_request: NextRequest, { params }: { params: { videoId: string } }) {
   const { videoId } = params
@@ -47,6 +49,24 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
 
   if (!user) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+  }
+
+  // Rate limit: 60 version list requests per user per minute
+  try {
+    const { rateLimit } = await import('@/lib/redis')
+    const remaining = await rateLimit(
+      `versions:get:user:${user.id}`,
+      VERSIONS_RATE_LIMIT,
+      VERSIONS_RATE_WINDOW
+    )
+    if (remaining === -1) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(VERSIONS_RATE_WINDOW) } }
+      )
+    }
+  } catch (err) {
+    console.error('[versions] Rate limit check failed, allowing request:', err)
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
