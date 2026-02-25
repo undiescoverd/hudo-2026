@@ -61,38 +61,6 @@ export async function getUser(): Promise<User | null> {
 }
 
 /**
- * Returns the user's role for a specific agency, or null if the user is not
- * a member of that agency.
- *
- * Uses the browser client — suitable for Client Components.
- * Server-side role checks in middleware use the server client directly.
- */
-export async function getUserRole(userId: string, agencyId: string): Promise<UserRole | null> {
-  const supabase = createClient()
-  const { data, error } = await supabase
-    .from('memberships')
-    .select('role')
-    .eq('user_id', userId)
-    .eq('agency_id', agencyId)
-    .maybeSingle()
-
-  if (error || !data) return null
-  return data.role as UserRole
-}
-
-/**
- * Returns all roles the user holds across any agency.
- * Useful when agency context is not yet established.
- */
-export async function getUserRoles(userId: string): Promise<UserRole[]> {
-  const supabase = createClient()
-  const { data, error } = await supabase.from('memberships').select('role').eq('user_id', userId)
-
-  if (error || !data) return []
-  return data.map((m: { role: string }) => m.role as UserRole)
-}
-
-/**
  * Signs in with email and password.
  * Returns the session on success, or an error.
  */

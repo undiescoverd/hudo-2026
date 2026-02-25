@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hudo — Video Review</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+  <script>
+    tailwindcss.config = {
+      theme: {
+        extend: {
+          colors: {
+            hudo: {
+              bg: '#0f0f12',
+              surface: '#1a1a22',
+              surface2: '#22222e',
+              border: '#2e2e3a',
+              accent: '#6366f1',
+              accentHover: '#818cf8',
+              text: '#e4e4eb',
+              textMuted: '#8b8b9e',
+              success: '#34d399',
+              warning: '#fbbf24',
+              danger: '#f87171',
+              info: '#60a5fa',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    body { background: #0f0f12; color: #e4e4eb; }
+
+    /* Custom scrollbar */
+    .custom-scroll::-webkit-scrollbar { width: 6px; }
+    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #2e2e3a; border-radius: 3px; }
+    .custom-scroll::-webkit-scrollbar-thumb:hover { background: #3e3e4e; }
+
+    /* Timeline marker animations */
+    .comment-marker { transition: transform 0.15s ease; }
+    .comment-marker:hover { transform: scale(1.3); }
+
+    /* Range bar */
+    .range-bar { opacity: 0.35; }
+    .range-bar:hover { opacity: 0.6; }
+
+    /* Keyboard shortcut pill */
+    .kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 22px;
+      height: 22px;
+      padding: 0 6px;
+      border-radius: 4px;
+      background: #22222e;
+      border: 1px solid #2e2e3a;
+      font-size: 11px;
+      font-weight: 600;
+      color: #8b8b9e;
+      line-height: 1;
+    }
+
+    /* Status badge */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    /* Tooltip */
+    .tooltip-trigger:hover .tooltip-content { opacity: 1; pointer-events: auto; }
+    .tooltip-content { opacity: 0; pointer-events: none; transition: opacity 0.15s ease; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- TOP NAV BAR                                         -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <header class="h-14 border-b border-hudo-border flex items-center px-5 gap-4 bg-hudo-surface">
+    <!-- Logo -->
+    <div class="flex items-center gap-2 shrink-0">
+      <div class="w-7 h-7 rounded-lg bg-hudo-accent flex items-center justify-center">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 3l8 5-8 5V3z" fill="white"/></svg>
+      </div>
+      <span class="text-sm font-bold tracking-tight">hudo</span>
+    </div>
+
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-1.5 text-sm">
+      <span class="text-hudo-textMuted hover:text-hudo-text cursor-pointer transition-colors">Stellar Talent</span>
+      <svg class="w-3.5 h-3.5 text-hudo-textMuted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+      <span class="text-hudo-textMuted hover:text-hudo-text cursor-pointer transition-colors">Marcus Chen</span>
+      <svg class="w-3.5 h-3.5 text-hudo-textMuted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+      <span class="font-medium">Spring Campaign — Take 3</span>
+    </nav>
+
+    <div class="flex-1"></div>
+
+    <!-- Version selector -->
+    <div class="flex items-center gap-2 border border-hudo-border rounded-lg px-3 py-1.5 bg-hudo-surface2 cursor-pointer hover:border-hudo-accent/50 transition-colors">
+      <span class="text-xs font-semibold text-hudo-accent">V3</span>
+      <span class="text-xs text-hudo-textMuted">· Feb 24 by Marcus</span>
+      <svg class="w-3.5 h-3.5 text-hudo-textMuted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+
+    <!-- Status badge -->
+    <div class="status-badge bg-amber-500/15 text-amber-400 border border-amber-500/25">
+      <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+      In Review
+    </div>
+
+    <!-- Actions -->
+    <button class="flex items-center gap-1.5 text-xs font-medium text-hudo-textMuted hover:text-hudo-text px-3 py-1.5 rounded-lg border border-hudo-border hover:border-hudo-accent/50 transition-colors bg-hudo-surface2">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+      Guest Link
+    </button>
+
+    <button class="flex items-center gap-1.5 text-xs font-semibold text-white px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-600/20">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+      Approve
+    </button>
+
+    <!-- User avatar -->
+    <div class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-xs font-bold text-white cursor-pointer">
+      JR
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- MAIN CONTENT                                        -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="flex h-[calc(100vh-56px)]">
+
+    <!-- ─────────────── VIDEO AREA (LEFT) ─────────────── -->
+    <main class="flex-1 flex flex-col min-w-0">
+
+      <!-- Video Player -->
+      <div class="flex-1 flex items-center justify-center bg-black relative">
+        <!-- 16:9 video placeholder -->
+        <div class="w-full max-w-[960px] mx-auto relative" style="aspect-ratio: 16/9;">
+          <div class="absolute inset-0 bg-gradient-to-b from-gray-900/80 via-gray-900/30 to-gray-900/80 rounded-sm overflow-hidden">
+            <!-- Simulated video frame — gradient bg -->
+            <div class="absolute inset-0" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #533483 100%);"></div>
+            <!-- "Playing" indicator -->
+            <div class="absolute inset-0 flex items-center justify-center">
+              <div class="text-center">
+                <div class="w-[580px] h-[326px] rounded-md border border-white/5 bg-white/[0.02] backdrop-blur-sm flex items-center justify-center">
+                  <div class="text-center">
+                    <div class="text-4xl font-bold text-white/20 mb-2">Spring Campaign</div>
+                    <div class="text-sm text-white/10">Marcus Chen — V3</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Timestamp overlay (current playback time) -->
+        <div class="absolute top-4 left-4 bg-black/60 backdrop-blur-md rounded-md px-3 py-1.5 text-xs font-mono text-white/80">
+          02:45 / 04:32
+        </div>
+      </div>
+
+      <!-- ─── Controls Bar ─── -->
+      <div class="bg-hudo-surface border-t border-hudo-border px-5 pt-3 pb-4">
+
+        <!-- Timeline Scrubber with Comment Markers -->
+        <div class="relative h-10 mb-3 group">
+          <!-- Scrubber track -->
+          <div class="absolute top-4 left-0 right-0 h-1 bg-hudo-border rounded-full overflow-hidden">
+            <!-- Progress -->
+            <div class="h-full bg-hudo-accent rounded-full" style="width: 60.7%;"></div>
+            <!-- Buffered -->
+            <div class="absolute top-0 h-full bg-white/10 rounded-full" style="width: 78%; left: 0;"></div>
+          </div>
+
+          <!-- Playhead -->
+          <div class="absolute top-2.5 w-3 h-3 bg-hudo-accent rounded-full shadow-lg shadow-hudo-accent/40 -translate-x-1/2 z-20 group-hover:scale-125 transition-transform" style="left: 60.7%;"></div>
+
+          <!-- Range comment bar (blue range from ~18% to ~32%) -->
+          <div class="range-bar absolute top-3 h-2.5 bg-blue-400 rounded-full z-10 cursor-pointer" style="left: 18%; width: 14%;"></div>
+
+          <!-- Range comment bar (purple range from ~55% to ~68%) -->
+          <div class="range-bar absolute top-3 h-2.5 bg-purple-400 rounded-full z-10 cursor-pointer" style="left: 55%; width: 13%;"></div>
+
+          <!-- Point comment markers -->
+          <!-- Sarah L — green -->
+          <div class="comment-marker absolute top-0 z-30 cursor-pointer tooltip-trigger" style="left: 8%;">
+            <div class="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center text-[9px] font-bold text-white shadow-md -translate-x-1/2">SL</div>
+            <div class="tooltip-content absolute -top-9 left-1/2 -translate-x-1/2 bg-hudo-surface2 border border-hudo-border text-xs px-2 py-1 rounded whitespace-nowrap shadow-xl">
+              <span class="font-medium">Sarah L</span> · 0:22
+            </div>
+          </div>
+
+          <!-- Marcus C — blue (at range start) -->
+          <div class="comment-marker absolute top-0 z-30 cursor-pointer tooltip-trigger" style="left: 18%;">
+            <div class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-[9px] font-bold text-white shadow-md -translate-x-1/2">MC</div>
+            <div class="tooltip-content absolute -top-9 left-1/2 -translate-x-1/2 bg-hudo-surface2 border border-hudo-border text-xs px-2 py-1 rounded whitespace-nowrap shadow-xl">
+              <span class="font-medium">Marcus C</span> · 0:49–1:24
+            </div>
+          </div>
+
+          <!-- JR — indigo -->
+          <div class="comment-marker absolute top-0 z-30 cursor-pointer" style="left: 35%;">
+            <div class="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-[9px] font-bold text-white shadow-md -translate-x-1/2">JR</div>
+          </div>
+
+          <!-- Sarah L — green (second comment) -->
+          <div class="comment-marker absolute top-0 z-30 cursor-pointer" style="left: 42%;">
+            <div class="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center text-[9px] font-bold text-white shadow-md -translate-x-1/2">SL</div>
+          </div>
+
+          <!-- JR — indigo (at range start) -->
+          <div class="comment-marker absolute top-0 z-30 cursor-pointer" style="left: 55%;">
+            <div class="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center text-[9px] font-bold text-white shadow-md -translate-x-1/2">JR</div>
+          </div>
+
+          <!-- Stacked markers (two at same spot) -->
+          <div class="comment-marker absolute top-0 z-30 cursor-pointer" style="left: 78%;">
+            <div class="w-6 h-6 rounded-full bg-rose-500 flex items-center justify-center text-[9px] font-bold text-white shadow-md -translate-x-1/2">AW</div>
+            <div class="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-hudo-surface rounded-full flex items-center justify-center">
+              <span class="text-[8px] font-bold text-hudo-textMuted">+1</span>
+            </div>
+          </div>
+
+          <!-- Marcus C — blue -->
+          <div class="comment-marker absolute top-0 z-30 cursor-pointer" style="left: 91%;">
+            <div class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-[9px] font-bold text-white shadow-md -translate-x-1/2">MC</div>
+          </div>
+        </div>
+
+        <!-- Transport Controls -->
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <!-- Skip back -->
+            <button class="w-8 h-8 flex items-center justify-center text-hudo-textMuted hover:text-white transition-colors rounded-md hover:bg-white/5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12.066 11.2a1 1 0 010 1.6L5.334 17.4A1 1 0 014 16.6V7.4a1 1 0 011.334-.8l6.732 4.6zM20.066 11.2a1 1 0 010 1.6l-6.732 4.6A1 1 0 0112 16.6V7.4a1 1 0 011.334-.8l6.732 4.6z" transform="rotate(180 12 12)"/></svg>
+            </button>
+
+            <!-- Play/Pause -->
+            <button class="w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/15 rounded-full transition-colors">
+              <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+
+            <!-- Skip forward -->
+            <button class="w-8 h-8 flex items-center justify-center text-hudo-textMuted hover:text-white transition-colors rounded-md hover:bg-white/5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12.066 11.2a1 1 0 010 1.6L5.334 17.4A1 1 0 014 16.6V7.4a1 1 0 011.334-.8l6.732 4.6zM20.066 11.2a1 1 0 010 1.6l-6.732 4.6A1 1 0 0112 16.6V7.4a1 1 0 011.334-.8l6.732 4.6z"/></svg>
+            </button>
+
+            <!-- Time display -->
+            <span class="text-xs font-mono text-hudo-textMuted ml-1">02:45 / 04:32</span>
+          </div>
+
+          <!-- Center: Keyboard shortcuts -->
+          <div class="flex items-center gap-4 text-[11px] text-hudo-textMuted">
+            <span class="flex items-center gap-1.5"><span class="kbd">Space</span> Play</span>
+            <span class="flex items-center gap-1.5"><span class="kbd">C</span> Comment</span>
+            <span class="flex items-center gap-1.5"><span class="kbd">I</span> In</span>
+            <span class="flex items-center gap-1.5"><span class="kbd">O</span> Out</span>
+            <span class="flex items-center gap-1.5"><span class="kbd">X</span> Clear</span>
+          </div>
+
+          <!-- Right controls -->
+          <div class="flex items-center gap-2">
+            <!-- Volume -->
+            <button class="w-8 h-8 flex items-center justify-center text-hudo-textMuted hover:text-white transition-colors rounded-md hover:bg-white/5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
+            </button>
+            <!-- Volume slider -->
+            <div class="w-16 h-1 bg-hudo-border rounded-full overflow-hidden">
+              <div class="h-full bg-white/50 rounded-full" style="width: 72%;"></div>
+            </div>
+
+            <!-- Playback speed -->
+            <button class="text-xs font-medium text-hudo-textMuted hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors">
+              1x
+            </button>
+
+            <!-- Fullscreen -->
+            <button class="w-8 h-8 flex items-center justify-center text-hudo-textMuted hover:text-white transition-colors rounded-md hover:bg-white/5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ─────────── COMMENT SIDEBAR (RIGHT) ─────────── -->
+    <aside class="w-[380px] border-l border-hudo-border flex flex-col bg-hudo-surface shrink-0">
+
+      <!-- Sidebar tabs -->
+      <div class="flex items-center border-b border-hudo-border px-4">
+        <button class="flex items-center gap-2 px-3 py-3 text-sm font-semibold text-hudo-accent border-b-2 border-hudo-accent -mb-px">
+          Comments
+          <span class="text-[10px] font-bold bg-hudo-accent/15 text-hudo-accent px-1.5 py-0.5 rounded-full">8</span>
+        </button>
+        <button class="flex items-center gap-2 px-3 py-3 text-sm font-medium text-hudo-textMuted hover:text-hudo-text transition-colors -mb-px border-b-2 border-transparent">
+          Versions
+          <span class="text-[10px] font-bold bg-white/5 text-hudo-textMuted px-1.5 py-0.5 rounded-full">3</span>
+        </button>
+        <button class="flex items-center gap-2 px-3 py-3 text-sm font-medium text-hudo-textMuted hover:text-hudo-text transition-colors -mb-px border-b-2 border-transparent">
+          Activity
+        </button>
+        <div class="flex-1"></div>
+        <!-- Filter -->
+        <button class="w-7 h-7 flex items-center justify-center text-hudo-textMuted hover:text-hudo-text rounded-md hover:bg-white/5 transition-colors">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+        </button>
+      </div>
+
+      <!-- Comment List -->
+      <div class="flex-1 overflow-y-auto custom-scroll">
+
+        <!-- ─── Comment 1: Point comment (resolved) ─── -->
+        <div class="px-4 py-3 border-b border-hudo-border/50 bg-white/[0.01] opacity-60">
+          <div class="flex items-start gap-3">
+            <div class="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">SL</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-semibold">Sarah L</span>
+                <span class="text-[10px] font-mono bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded">0:22</span>
+                <div class="flex-1"></div>
+                <div class="flex items-center gap-1 text-emerald-400">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                  <span class="text-[10px] font-medium">Resolved</span>
+                </div>
+              </div>
+              <p class="text-sm text-hudo-textMuted leading-relaxed line-through decoration-hudo-textMuted/30">The opening shot needs to be brighter — the talent's face is in shadow.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ─── Comment 2: Range comment ─── -->
+        <div class="px-4 py-3 border-b border-hudo-border/50 hover:bg-white/[0.02] transition-colors cursor-pointer">
+          <div class="flex items-start gap-3">
+            <div class="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">MC</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-semibold">Marcus C</span>
+                <span class="text-[10px] font-mono bg-blue-500/15 text-blue-400 px-1.5 py-0.5 rounded flex items-center gap-1">
+                  <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+                  0:49 – 1:24
+                </span>
+                <div class="flex-1"></div>
+                <span class="text-[10px] text-hudo-textMuted">12m ago</span>
+              </div>
+              <p class="text-sm text-hudo-text/90 leading-relaxed">This entire section feels too slow — can we tighten up the cuts? The energy drops between 0:55 and 1:15.</p>
+              <!-- Reply count -->
+              <button class="flex items-center gap-1.5 mt-2 text-[11px] text-hudo-accent hover:text-hudo-accentHover transition-colors">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                2 replies
+              </button>
+            </div>
+          </div>
+
+          <!-- Nested reply -->
+          <div class="ml-10 mt-3 pl-3 border-l-2 border-hudo-border/50">
+            <div class="flex items-start gap-2.5">
+              <div class="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0 mt-0.5">JR</div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-0.5">
+                  <span class="text-xs font-semibold">Jane R</span>
+                  <span class="text-[10px] text-hudo-textMuted">8m ago</span>
+                </div>
+                <p class="text-xs text-hudo-text/80 leading-relaxed">Agreed — I'll ask the editor to cut 10 seconds from here. Should have the updated version by tomorrow.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ─── Comment 3: Point comment ─── -->
+        <div class="px-4 py-3 border-b border-hudo-border/50 hover:bg-white/[0.02] transition-colors cursor-pointer">
+          <div class="flex items-start gap-3">
+            <div class="w-7 h-7 rounded-full bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">JR</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-semibold">Jane R</span>
+                <span class="text-[10px] font-mono bg-indigo-500/15 text-indigo-400 px-1.5 py-0.5 rounded">1:32</span>
+                <div class="flex-1"></div>
+                <span class="text-[10px] text-hudo-textMuted">8m ago</span>
+              </div>
+              <p class="text-sm text-hudo-text/90 leading-relaxed">Love this transition! The colour grade is perfect here.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ─── Comment 4: Point comment (active / current time) ─── -->
+        <div class="px-4 py-3 border-b border-hudo-border/50 bg-hudo-accent/5 border-l-2 border-l-hudo-accent">
+          <div class="flex items-start gap-3">
+            <div class="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">SL</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-semibold">Sarah L</span>
+                <span class="text-[10px] font-mono bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded">1:55</span>
+                <div class="flex-1"></div>
+                <span class="text-[10px] text-hudo-textMuted">5m ago</span>
+              </div>
+              <p class="text-sm text-hudo-text/90 leading-relaxed">The audio dips at this point — is that intentional or a mic issue? Might need a quick level adjustment.</p>
+              <!-- Resolve button -->
+              <div class="flex items-center gap-2 mt-2">
+                <button class="flex items-center gap-1 text-[11px] text-hudo-textMuted hover:text-hudo-accent transition-colors">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                  Reply
+                </button>
+                <button class="flex items-center gap-1 text-[11px] text-hudo-textMuted hover:text-emerald-400 transition-colors ml-2">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                  Resolve
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ─── Comment 5: Range comment ─── -->
+        <div class="px-4 py-3 border-b border-hudo-border/50 hover:bg-white/[0.02] transition-colors cursor-pointer">
+          <div class="flex items-start gap-3">
+            <div class="w-7 h-7 rounded-full bg-purple-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">JR</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-semibold">Jane R</span>
+                <span class="text-[10px] font-mono bg-purple-500/15 text-purple-400 px-1.5 py-0.5 rounded flex items-center gap-1">
+                  <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+                  2:30 – 3:06
+                </span>
+                <div class="flex-1"></div>
+                <span class="text-[10px] text-hudo-textMuted">3m ago</span>
+              </div>
+              <p class="text-sm text-hudo-text/90 leading-relaxed">The background music overwhelms the voiceover in this whole section. Can we drop it 3-4dB?</p>
+              <div class="flex items-center gap-2 mt-2">
+                <button class="flex items-center gap-1 text-[11px] text-hudo-textMuted hover:text-hudo-accent transition-colors">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                  Reply
+                </button>
+                <button class="flex items-center gap-1 text-[11px] text-hudo-textMuted hover:text-emerald-400 transition-colors ml-2">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                  Resolve
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ─── Comment 6: Stacked comments spot ─── -->
+        <div class="px-4 py-3 border-b border-hudo-border/50 hover:bg-white/[0.02] transition-colors cursor-pointer">
+          <div class="flex items-start gap-3">
+            <div class="w-7 h-7 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">AW</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-semibold">Alex W</span>
+                <span class="text-[10px] font-mono bg-rose-500/15 text-rose-400 px-1.5 py-0.5 rounded">3:32</span>
+                <div class="flex-1"></div>
+                <span class="text-[10px] text-hudo-textMuted">2m ago</span>
+              </div>
+              <p class="text-sm text-hudo-text/90 leading-relaxed">End card needs the updated logo — I'll send the asset over shortly.</p>
+              <div class="flex items-center gap-2 mt-2">
+                <button class="flex items-center gap-1 text-[11px] text-hudo-textMuted hover:text-hudo-accent transition-colors">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                  Reply
+                </button>
+                <button class="flex items-center gap-1 text-[11px] text-hudo-textMuted hover:text-emerald-400 transition-colors ml-2">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                  Resolve
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ─── Comment 7: Point comment ─── -->
+        <div class="px-4 py-3 border-b border-hudo-border/50 hover:bg-white/[0.02] transition-colors cursor-pointer">
+          <div class="flex items-start gap-3">
+            <div class="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">SL</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-semibold">Sarah L</span>
+                <span class="text-[10px] font-mono bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded">3:32</span>
+                <div class="flex-1"></div>
+                <span class="text-[10px] text-hudo-textMuted">2m ago</span>
+              </div>
+              <p class="text-sm text-hudo-text/90 leading-relaxed">Seconding Alex — also the font on the end card is wrong. Should be the new brand typeface.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ─── Comment 8: Point comment ─── -->
+        <div class="px-4 py-3 border-b border-hudo-border/50 hover:bg-white/[0.02] transition-colors cursor-pointer">
+          <div class="flex items-start gap-3">
+            <div class="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">MC</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-semibold">Marcus C</span>
+                <span class="text-[10px] font-mono bg-blue-500/15 text-blue-400 px-1.5 py-0.5 rounded">4:18</span>
+                <div class="flex-1"></div>
+                <span class="text-[10px] text-hudo-textMuted">just now</span>
+              </div>
+              <p class="text-sm text-hudo-text/90 leading-relaxed">Overall this is looking great! Just the few tweaks above and I think we're ready for client review.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom spacer for scroll -->
+        <div class="h-4"></div>
+      </div>
+
+      <!-- ─── Comment Input ─── -->
+      <div class="border-t border-hudo-border p-4 bg-hudo-surface">
+        <!-- Mode indicator -->
+        <div class="flex items-center gap-2 mb-2">
+          <div class="flex items-center gap-1.5 text-[11px] font-medium text-hudo-accent bg-hudo-accent/10 px-2.5 py-1 rounded-md">
+            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></svg>
+            Point at 2:45
+          </div>
+          <div class="flex-1"></div>
+          <span class="text-[10px] text-hudo-textMuted">
+            <span class="kbd text-[9px]">Enter</span> send · <span class="kbd text-[9px]">Shift+Enter</span> newline
+          </span>
+        </div>
+
+        <!-- Input area -->
+        <div class="flex items-end gap-2">
+          <div class="flex-1 relative">
+            <div class="w-full bg-hudo-surface2 border border-hudo-border rounded-lg px-3 py-2.5 text-sm text-hudo-text focus-within:border-hudo-accent/50 focus-within:ring-1 focus-within:ring-hudo-accent/20 transition-all min-h-[40px]">
+              <span class="text-hudo-textMuted">Add a comment...</span>
+            </div>
+            <div class="absolute right-2 bottom-2 text-[10px] text-hudo-textMuted/50">0 / 2000</div>
+          </div>
+          <button class="w-9 h-9 flex items-center justify-center bg-hudo-accent hover:bg-hudo-accentHover rounded-lg transition-colors shrink-0 shadow-lg shadow-hudo-accent/20">
+            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+</body>
+</html>

@@ -78,20 +78,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
-  // Rate limit: 5 invitations per user per hour
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(`invitation:send:user:${user.id}`, 5, 3600)
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many invitations. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': '3600' } }
-      )
-    }
-  } catch (err) {
-    console.error('[invitations/send] Rate limit check failed, allowing request:', err)
-  }
-
   // Check caller's role in the agency
   const admin = createClient(supabaseUrl, serviceRoleKey)
 

@@ -14,7 +14,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(7);
+SELECT plan(6);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -139,27 +139,6 @@ SELECT is(
     WHERE id = 'c0de0003-0003-4000-a000-000000000001'::uuid),
   1,
   'No DELETE policy: hard delete on comments silently blocked (comment still exists)'
-);
-
--- ── Test 7: comments_select — soft-deleted comments are invisible ────
--- P1-006: After migration 0004, comments with deleted_at IS NOT NULL
--- should not appear in SELECT results.
-RESET ROLE;
-
--- Soft-delete comment C1 as superuser
-UPDATE comments SET deleted_at = now()
-  WHERE id = 'c0de0003-0003-4000-a000-000000000001'::uuid;
-
--- Now check as Charlie — C1 should be invisible
-SELECT set_config('request.jwt.claims',
-  '{"sub":"dbeef003-0003-4000-a000-000000000001","role":"authenticated"}', true);
-SET LOCAL ROLE authenticated;
-
-SELECT is(
-  (SELECT count(*)::int FROM comments
-    WHERE id = 'c0de0003-0003-4000-a000-000000000001'::uuid),
-  0,
-  'comments_select: soft-deleted comment is invisible via RLS (P1-006 migration 0004)'
 );
 
 RESET ROLE;

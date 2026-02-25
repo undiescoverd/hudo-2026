@@ -32,11 +32,40 @@ Video review platform for talent agencies. Frame.io-style: upload → timestampe
 
 ## Project Structure
 
-`orchestrate.js`, `orchestrate.md`, `tasks/`, `scripts/`, `docs/`, `lib/`, `supabase/migrations/`, `tests/rls/`. Full tree in [orchestrate.md](orchestrate.md) and docs.
+```
+orchestrate.js         # Build orchestrator — node orchestrate.js <cmd>
+orchestrate.md         # Orchestrator documentation and workflow guide
+tasks/sprint-0.md      # Sprint 0 task list (STATUS tracked here)
+tasks/sprint-N.md      # Future sprint task lists (added per sprint)
+scripts/
+  update-linear-task.sh   # Update or query Linear task status
+docs/
+  hudo-prd-v1.1.md        # Product requirements
+  hudo-sprint-plan.md     # Full sprint plan v1.2 (task reference)
+  hudo-build-foundation.md # Schema, RLS policies, storage spec
+# Created during Sprint 0 build:
+lib/storage.ts         # Single interface for all R2 ops
+lib/redis.ts           # Upstash client — rate limiting only
+supabase/migrations/   # SQL migrations
+tests/rls/             # RLS policy test suite (runs in CI)
+```
 
 ## Orchestrator Workflow
 
-`node orchestrate.js status|next|start|done|review` (+ `prompt`, `gate`, `blocked`, `sync-check`, `sync-fix`). Full commands and task format in [orchestrate.md](orchestrate.md).
+```bash
+node orchestrate.js status              # Sprint progress
+node orchestrate.js next                # Unblocked tasks + parallelism waves
+node orchestrate.js prompt S0-INFRA-001 # Full agent prompt (includes model)
+node orchestrate.js start <TASK_ID>     # Set in_progress
+node orchestrate.js review <TASK_ID>    # Set in_review (on PR open)
+node orchestrate.js done <TASK_ID>      # Set done, shows newly unblocked
+node orchestrate.js gate sprint-0       # Verify sprint gate checklist
+node orchestrate.js blocked <ID> "why"  # Mark blocked (syncs to Linear)
+node orchestrate.js sync-check          # Compare markdown vs Linear
+node orchestrate.js sync-fix            # Push markdown statuses to Linear
+```
+
+Task format requires: `TASK_ID`, `TITLE`, `BRANCH`, `MODEL`, `STATUS`, `BLOCKED_BY`, `ACCEPTANCE_CRITERIA`, `FILES`, `NOTES`. Model defaults to `sonnet-4.6` if omitted.
 
 ## Agent Rules
 
@@ -49,16 +78,21 @@ Video review platform for talent agencies. Frame.io-style: upload → timestampe
 - After opening a PR, always run `/pr-fix` to start the Ralph Loop — do not wait for manual invocation
 - Before committing, run `pnpm format:check && pnpm type-check && pnpm lint` to catch CI issues locally
 - Do not start a task while any `BLOCKED_BY` task is not `done`
-- After completing work, update CLAUDE.md with any learnings (new patterns, gotchas, tooling changes). Keep it concise — remove stale info, never duplicate, only add what future agents genuinely need. Prefer updating MEMORY.md for session-specific details and CLAUDE.md for durable project rules.
+- After completing work, update CLAUDE.md with any learnings. If anything broke or surprised you, add an entry to the **Failure Log** section before closing the session — never defer it.
 
 ## Code Quality
 
 - **Pre-commit hooks** via Husky + lint-staged. Staged files are auto-formatted (Prettier) and linted (ESLint) on every commit. Config in `package.json` under `lint-staged`.
-- **Claude hooks** in `.claude/settings.json`: PreToolUse blocks any Edit/Write to `.env*` files (exit 2); PostToolUse runs `pnpm type-check` after any `.ts`/`.tsx` edit and surfaces the last 20 lines.
+
+## Failure Log
+
+When something breaks or surprises you mid-task, add an entry here before closing the session. Write only what's needed to understand the problem and fix — no more. One line if that's enough; a few lines if it isn't.
+
+Format: `- **[Area] Title (YYYY-MM-DD):** what broke + fix/workaround.`
 
 ## Environments
 
-Three envs: `hudo-dev`, `hudo-staging`, `hudo-prod`. Preview = main + feature branches (staging); Production = `production` branch (reserved). Never deploy to production without approval. Full details: [docs/vercel-setup.md](docs/vercel-setup.md).
+Three fully isolated environments: `hudo-dev`, `hudo-staging`, `hudo-prod` — each with own Supabase project, R2 bucket, Vercel env group, Stripe key. No production secrets in dev.
 
 ## Roles & Permissions
 
@@ -76,8 +110,22 @@ Guest: read-only via signed link, no Supabase access.
 
 ## Linear Sprint Tracker
 
-Status synced by `orchestrate.js start/review/done/blocked` and by GitHub Actions; manual: `sync-check`, `sync-fix`. Full automation table and workflow states: [orchestrate.md](orchestrate.md).
+All sprint tasks are tracked live in Linear. The orchestrator syncs statuses automatically.
 
-## Context budget
+**Automated sync (no manual action needed):**
+- `orchestrate.js start/review/done/blocked` → syncs to Linear with 1 retry
+- Push to `feat/s*-*` branch → GitHub Actions marks In Progress (only from Backlog/Todo)
+- PR open → GitHub Actions marks In Review + patches PR description
+- PR merge → GitHub Actions marks Done
+- Daily cron (08:00 UTC) → `linear-sync-check.yml` detects drift, auto-fixes, notifies Slack
 
-Keep CLAUDE.md to durable rules and minimal pointers; long reference lives in [orchestrate.md](orchestrate.md) and `docs/`. Prefer MEMORY.md for session-specific notes and CLAUDE.md for lasting project rules; keep MEMORY concise and link to docs instead of pasting runbooks.
+**Manual sync commands:**
+```bash
+node orchestrate.js sync-check          # Compare markdown vs Linear (read-only)
+node orchestrate.js sync-fix            # Push markdown statuses to Linear for drifted tasks
+./scripts/update-linear-task.sh --status <TASK_ID>  # Query a task's Linear state
+```
+
+**Linear workflow states:** Backlog, Todo, In Progress, In Review, Blocked, Done, Canceled, Duplicate
+
+`LINEAR_API_KEY` lives in `.env.linear`. The `.github/workflows/linear-update.yml` and `linear-sync-check.yml` workflows use the `LINEAR_API_KEY` GitHub Actions secret.
