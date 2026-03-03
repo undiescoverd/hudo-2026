@@ -28,6 +28,12 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
     return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
   }
 
+  // Validate versionId early if provided, before any DB access or rate limiting
+  const versionId = request.nextUrl.searchParams.get('versionId')
+  if (versionId && !UUID_RE.test(versionId)) {
+    return NextResponse.json({ error: 'Invalid version ID format' }, { status: 400 })
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -75,7 +81,11 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
       )
     }
   } catch (err) {
-    console.error('[playback-url] Rate limit check failed, allowing request:', err)
+    console.error('[playback-url] Rate limit check failed, failing-closed:', err)
+    return NextResponse.json(
+      { error: 'Too many requests. Please try again later.' },
+      { status: 429, headers: { 'Retry-After': String(PLAYBACK_RATE_WINDOW) } }
+    )
   }
 
   // Use service role to bypass RLS for the access check query
@@ -113,12 +123,6 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
   }
 
   // Fetch version - specific version if versionId provided, otherwise latest
-  const versionId = request.nextUrl.searchParams.get('versionId')
-
-  if (versionId && !UUID_RE.test(versionId)) {
-    return NextResponse.json({ error: 'Invalid version ID format' }, { status: 400 })
-  }
-
   let versionQuery = admin
     .from('video_versions')
     .select('id, r2_key, version_number')
