@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getStorage } from '@/lib/storage'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { checkRateLimit, requireAgentRole, requireMembership } from '@/lib/api-helpers'
+import { isValidUUID } from '@/lib/validation'
 
 const MAX_THUMBNAIL_SIZE = 2 * 1024 * 1024 // 2MB
 const ALLOWED_CONTENT_TYPES = ['image/jpeg', 'image/png']
@@ -11,7 +12,6 @@ const THUMBNAIL_UPLOAD_RATE_LIMIT = 20 // max uploads per window
 const THUMBNAIL_UPLOAD_RATE_WINDOW = 3600 // 1 hour in seconds
 const THUMBNAIL_GET_RATE_LIMIT = 60 // max GET requests per window
 const THUMBNAIL_GET_RATE_WINDOW = 60 // 1 minute in seconds
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * POST /api/videos/:videoId/thumbnail
@@ -22,7 +22,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function POST(request: NextRequest, { params }: { params: { videoId: string } }) {
   const { videoId } = params
 
-  if (!UUID_RE.test(videoId)) {
+  if (!isValidUUID(videoId)) {
     return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
   }
 
@@ -35,19 +35,7 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options)
-        }
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const {
     data: { user },
@@ -58,22 +46,14 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
   }
 
   // Rate limit: 20 thumbnail uploads per user per hour
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(
-      `thumbnail:upload:user:${user.id}`,
-      THUMBNAIL_UPLOAD_RATE_LIMIT,
-      THUMBNAIL_UPLOAD_RATE_WINDOW
-    )
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many thumbnail upload requests. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': String(THUMBNAIL_UPLOAD_RATE_WINDOW) } }
-      )
-    }
-  } catch (err) {
-    console.error('[thumbnail] Rate limit check failed, allowing request:', err)
-  }
+  const rl = await checkRateLimit(
+    `thumbnail:upload:user:${user.id}`,
+    THUMBNAIL_UPLOAD_RATE_LIMIT,
+    THUMBNAIL_UPLOAD_RATE_WINDOW,
+    'thumbnail',
+    'Too many thumbnail upload requests. Please try again later.'
+  )
+  if (rl) return rl
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
@@ -89,24 +69,13 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
   }
 
   // Membership + agent+ role check
-  const { data: membership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', video.agency_id)
-    .single()
-
-  if (!membership) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
-
-  const agentPlusRoles = ['owner', 'admin_agent', 'agent']
-  if (!agentPlusRoles.includes(membership.role)) {
-    return NextResponse.json(
-      { error: 'Only agents and above can upload thumbnails' },
-      { status: 403 }
-    )
-  }
+  const membership = await requireAgentRole(
+    admin,
+    user.id,
+    video.agency_id,
+    'Only agents and above can upload thumbnails'
+  )
+  if (membership instanceof NextResponse) return membership
 
   // Validate content type (strip parameters like charset)
   const rawContentType = request.headers.get('content-type')
@@ -177,7 +146,7 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
 export async function GET(_request: NextRequest, { params }: { params: { videoId: string } }) {
   const { videoId } = params
 
-  if (!UUID_RE.test(videoId)) {
+  if (!isValidUUID(videoId)) {
     return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
   }
 
@@ -190,19 +159,7 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options)
-        }
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const {
     data: { user },
@@ -213,22 +170,14 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
   }
 
   // Rate limit: 60 thumbnail reads per user per minute
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(
-      `thumbnail:get:user:${user.id}`,
-      THUMBNAIL_GET_RATE_LIMIT,
-      THUMBNAIL_GET_RATE_WINDOW
-    )
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': String(THUMBNAIL_GET_RATE_WINDOW) } }
-      )
-    }
-  } catch (err) {
-    console.error('[thumbnail] Rate limit check failed, allowing request:', err)
-  }
+  const rl = await checkRateLimit(
+    `thumbnail:get:user:${user.id}`,
+    THUMBNAIL_GET_RATE_LIMIT,
+    THUMBNAIL_GET_RATE_WINDOW,
+    'thumbnail',
+    'Too many requests. Please try again later.'
+  )
+  if (rl) return rl
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
@@ -242,16 +191,8 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  const { data: membership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', video.agency_id)
-    .single()
-
-  if (!membership) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
+  const membership = await requireMembership(admin, user.id, video.agency_id)
+  if (membership instanceof NextResponse) return membership
 
   if (!video.thumbnail_r2_key) {
     return NextResponse.json({ url: null })

@@ -56,8 +56,8 @@ describe('versions route — source invariants', () => {
     assert.match(source, /order\('version_number',\s*\{\s*ascending:\s*false\s*\}/)
   })
 
-  it('validates videoId with UUID regex', () => {
-    assert.match(source, /UUID_RE\.test\(videoId\)/)
+  it('validates videoId with UUID helper', () => {
+    assert.match(source, /isValidUUID\(videoId\)/)
   })
 
   it('applies rate limiting', () => {
@@ -81,12 +81,12 @@ describe('playback-url route — source invariants', () => {
   })
 
   it('validates versionId as UUID format', () => {
-    assert.ok(source.includes('0-9a-f'), 'playback-url must contain UUID hex pattern')
+    assert.match(source, /isValidUUID\(versionId\)/)
     assert.match(source, /Invalid version ID format/)
   })
 
   it('validates videoId as UUID format', () => {
-    assert.match(source, /UUID_RE\.test\(videoId\)/)
+    assert.match(source, /isValidUUID\(videoId\)/)
   })
 
   it('includes versionNumber in response', () => {

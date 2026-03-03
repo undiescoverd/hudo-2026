@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getStorage } from '@/lib/storage'
 import type { CompletedPart } from '@/lib/storage'
 import { isQuotaExceededError } from '@/lib/storage-quota'
+import { UPLOAD_RATE_LIMIT, UPLOAD_RATE_WINDOW } from '@/lib/upload-validation'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { checkRateLimit, requireAgentRole } from '@/lib/api-helpers'
 
 /**
  * POST /api/videos/upload/complete
@@ -91,19 +92,7 @@ export async function POST(request: NextRequest) {
 
   // --- Authentication ---
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options)
-        }
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const {
     data: { user },
@@ -112,28 +101,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
+  // --- Rate limit: 10 complete requests per user per hour ---
+
+  const rl = await checkRateLimit(
+    `upload:complete:user:${user.id}`,
+    UPLOAD_RATE_LIMIT,
+    UPLOAD_RATE_WINDOW,
+    'upload/complete',
+    'Too many upload requests. Please try again later.'
+  )
+  if (rl) return rl
+
   // --- Membership check ---
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
-  const { data: membership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', agencyId)
-    .single()
-
-  if (!membership) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
-
-  const agentPlusRoles = ['owner', 'admin_agent', 'agent']
-  if (!agentPlusRoles.includes(membership.role)) {
-    return NextResponse.json(
-      { error: 'Only agents and above can complete uploads' },
-      { status: 403 }
-    )
-  }
+  const membership = await requireAgentRole(
+    admin,
+    user.id,
+    agencyId,
+    'Only agents and above can complete uploads'
+  )
+  if (membership instanceof NextResponse) return membership
 
   // --- Verify video belongs to agency ---
 
