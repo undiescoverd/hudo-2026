@@ -236,7 +236,7 @@ API route generates presigned R2 upload URL; client uploads directly to R2; mult
 ---
 
 #### S1-UPLOAD-002 — Enforce storage quota at upload
-**Size:** M | **Status:** not_started | **Blocked by:** S1-UPLOAD-001
+**Size:** M | **Status:** done | **Blocked by:** S1-UPLOAD-001
 Check agency storage quota before issuing presigned URL; increment usage only after confirming object exists; decrement atomically on delete.
 
 ---
@@ -248,7 +248,7 @@ Drag-and-drop zone with multipart progress bar; error state with retry; success 
 ---
 
 #### S1-UPLOAD-004 — Implement version upload
-**Size:** M | **Status:** not_started | **Blocked by:** S1-UPLOAD-001
+**Size:** M | **Status:** done | **Blocked by:** S1-UPLOAD-001
 New file on existing video creates a new version via Postgres RPC (`create_video_version`); RPC locks row, increments, inserts — single transaction, no race conditions.
 
 ---
@@ -291,7 +291,7 @@ Video top half, comment panel bottom half; persistent comment input bar; tapping
 ---
 
 #### S1-PLAYER-005 — Video thumbnail generation (client canvas) ⭐ new
-**Size:** S | **Status:** not_started | **Blocked by:** S1-UPLOAD-001
+**Size:** S | **Status:** done | **Blocked by:** S1-UPLOAD-001
 After upload completes, capture a frame from the video via client-side canvas; upload thumbnail to R2; store reference in `videos` table.
 
 ---
@@ -299,7 +299,7 @@ After upload completes, capture a frame from the video via client-side canvas; u
 ### Comments (5 tasks)
 
 #### S1-COMMENT-001 — Build comment data model
-**Size:** M | **Status:** not_started | **Blocked by:** S0-DB-001, S0-DB-002
+**Size:** M | **Status:** done | **Blocked by:** S0-DB-001, S0-DB-002
 Migration: `comments` table with point/range types, parent_id for replies, soft-delete (`deleted_at`), resolved state; RLS for all access patterns.
 
 ---

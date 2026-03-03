@@ -85,7 +85,7 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
   // in the same agency as the video.
   const { data: video, error: videoError } = await admin
     .from('videos')
-    .select('id, agency_id')
+    .select('id, agency_id, talent_id')
     .eq('id', videoId)
     .single()
 
@@ -104,6 +104,11 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
     .single()
 
   if (!membership) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  }
+
+  // Enforce talent visibility: talent users can only access playback for their own videos
+  if (membership.role === 'talent' && video.talent_id !== user.id) {
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
