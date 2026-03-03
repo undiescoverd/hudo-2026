@@ -91,4 +91,12 @@ describe('api-helpers — source invariants', () => {
   it('returns Retry-After header on 429', () => {
     assert.match(source, /Retry-After/)
   })
+
+  it('distinguishes PGRST116 (no rows) from unexpected Supabase errors', () => {
+    assert.match(source, /PGRST116/)
+  })
+
+  it('returns 500 on unexpected Supabase errors in requireMembership', () => {
+    assert.match(source, /status: 500/)
+  })
 })

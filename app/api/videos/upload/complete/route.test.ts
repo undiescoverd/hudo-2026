@@ -114,4 +114,13 @@ describe('complete route — source invariants', () => {
   it('rolls back quota on version creation failure', () => {
     assert.match(source, /decrement_storage_usage/)
   })
+
+  it('applies rate limiting with user-scoped key', () => {
+    assert.match(source, /upload:complete:user/)
+  })
+
+  it('uses UPLOAD_RATE_LIMIT and UPLOAD_RATE_WINDOW constants', () => {
+    assert.match(source, /UPLOAD_RATE_LIMIT/)
+    assert.match(source, /UPLOAD_RATE_WINDOW/)
+  })
 })

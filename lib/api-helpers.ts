@@ -30,12 +30,18 @@ export async function requireMembership(
   userId: string,
   agencyId: string
 ): Promise<{ role: string } | NextResponse> {
-  const { data: membership } = await admin
+  const { data: membership, error } = await admin
     .from('memberships')
     .select('role')
     .eq('user_id', userId)
     .eq('agency_id', agencyId)
     .single()
+  // PGRST116 = "Results contain 0 rows" — legitimate auth failure, return 403.
+  // Any other error is an unexpected server-side failure — log and return 500.
+  if (error && error.code !== 'PGRST116') {
+    console.error('[api-helpers] Membership query failed:', error.message)
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+  }
   if (!membership) {
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
