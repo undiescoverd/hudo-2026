@@ -9,6 +9,8 @@
 
 import assert from 'node:assert/strict'
 import { before, describe, it } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import path from 'node:path'
 
 // ── Extracted constants (must match route.ts) ─────────────────────────────
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -35,8 +37,8 @@ describe('versions route — source invariants', () => {
 
   before(async () => {
     const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
+    const currentDir = path.dirname(fileURLToPath(import.meta.url))
+    const routePath = path.resolve(currentDir, 'route.ts')
     source = fs.readFileSync(routePath, 'utf8')
   })
 
@@ -68,8 +70,8 @@ describe('playback-url route — source invariants', () => {
 
   before(async () => {
     const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, '../playback-url/route.ts')
+    const currentDir = path.dirname(fileURLToPath(import.meta.url))
+    const routePath = path.resolve(currentDir, '../playback-url/route.ts')
     source = fs.readFileSync(routePath, 'utf8')
   })
 
