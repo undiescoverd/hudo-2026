@@ -1,6 +1,7 @@
 pnpm-lock.yaml
 node_modules/
 .next/
+.figma-prototype/
 
 # Docs and orchestration — not Next.js source files
 docs/

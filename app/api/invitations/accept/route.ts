@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { validatePassword } from '@/lib/auth-validation'
 import crypto from 'crypto'
+import { getClientIp } from '@/lib/rate-limit'
 
 /**
  * POST /api/invitations/accept
@@ -11,6 +12,21 @@ import crypto from 'crypto'
  * Marks the invitation as accepted and logs to audit_log.
  */
 export async function POST(request: NextRequest) {
+  // Rate limit: 10 accepts per IP per hour
+  const ip = getClientIp(request)
+  try {
+    const { rateLimit } = await import('@/lib/redis')
+    const remaining = await rateLimit(`invitation:accept:ip:${ip}`, 10, 3600)
+    if (remaining === -1) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': '3600' } }
+      )
+    }
+  } catch (err) {
+    console.error('[invitations/accept] Rate limit check failed, allowing request:', err)
+  }
+
   let body: unknown
   try {
     body = await request.json()
@@ -40,22 +56,27 @@ export async function POST(request: NextRequest) {
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
-  // Look up invitation
-  const { data: invitation } = await admin
+  // Atomically claim the invitation: UPDATE only if not already accepted and not expired.
+  // This prevents TOCTOU race conditions where two concurrent requests could both
+  // read accepted_at IS NULL, then both proceed to create memberships.
+  // PostgREST correctly casts ISO 8601 strings to timestamptz for comparison.
+  // .gte() intentionally includes the exact expiry moment (invitations valid until expiry).
+  const now = new Date().toISOString()
+  const { data: claimed, error: claimError } = await admin
     .from('invitations')
-    .select('id, email, role, agency_id, expires_at, accepted_at')
+    .update({ accepted_at: now })
     .eq('token_hash', tokenHash)
-    .single()
+    .is('accepted_at', null)
+    .gte('expires_at', now)
+    .select('id, email, role, agency_id')
 
+  if (claimError) {
+    console.error('[invitations/accept] claim failed:', claimError.message)
+    return NextResponse.json({ error: 'Failed to process invitation' }, { status: 500 })
+  }
+
+  const invitation = claimed?.[0]
   if (!invitation) {
-    return NextResponse.json({ error: 'Invalid or expired invitation' }, { status: 410 })
-  }
-
-  // Check expired or already accepted
-  if (invitation.accepted_at) {
-    return NextResponse.json({ error: 'Invalid or expired invitation' }, { status: 410 })
-  }
-  if (new Date(invitation.expires_at) < new Date()) {
     return NextResponse.json({ error: 'Invalid or expired invitation' }, { status: 410 })
   }
 
@@ -130,18 +151,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to add to agency' }, { status: 500 })
   }
 
-  // Mark invitation as accepted
-  const { error: acceptError } = await admin
-    .from('invitations')
-    .update({ accepted_at: new Date().toISOString() })
-    .eq('id', invitation.id)
-
-  if (acceptError) {
-    console.error('[invitations/accept] mark accepted failed:', acceptError.message)
-    return NextResponse.json({ error: 'Failed to finalize invitation' }, { status: 500 })
-  }
-
-  // Insert audit log entry
+  // Insert audit log entry (invitation already marked accepted by the atomic claim above)
   const { data: inviter } = await admin.from('users').select('full_name').eq('id', userId).single()
 
   const { error: auditError } = await admin.from('audit_log').insert({
