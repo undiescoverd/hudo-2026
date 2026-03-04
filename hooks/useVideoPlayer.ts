@@ -58,6 +58,11 @@ export function useVideoPlayer(videoRef: RefObject<HTMLVideoElement>): VideoPlay
     el.addEventListener('pause', onPause)
     el.addEventListener('volumechange', onVolumeChange)
 
+    // Sync initial state in case the element already has values
+    onDurationChange()
+    onTimeUpdate()
+    onVolumeChange()
+
     return () => {
       el.removeEventListener('timeupdate', onTimeUpdate)
       el.removeEventListener('durationchange', onDurationChange)

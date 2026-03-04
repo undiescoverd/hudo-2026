@@ -47,6 +47,7 @@ export function PlayerControls({
       <div className="flex items-center gap-3">
         {/* Play/Pause */}
         <button
+          type="button"
           onClick={playing ? onPause : onPlay}
           className="flex items-center justify-center rounded hover:text-gray-300"
           aria-label={playing ? 'Pause' : 'Play'}
@@ -62,6 +63,7 @@ export function PlayerControls({
         <div className="ml-auto flex items-center gap-2">
           {/* Mute */}
           <button
+            type="button"
             onClick={onToggleMute}
             className="flex items-center justify-center rounded hover:text-gray-300"
             aria-label={muted ? 'Unmute' : 'Mute'}
@@ -83,6 +85,7 @@ export function PlayerControls({
 
           {/* Fullscreen */}
           <button
+            type="button"
             onClick={onFullscreen}
             className="flex items-center justify-center rounded hover:text-gray-300"
             aria-label="Fullscreen"

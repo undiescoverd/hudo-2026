@@ -33,14 +33,15 @@ export function useVideoPlayerContext(): VideoPlayerHandle {
 interface VideoPlayerProps {
   videoId: string
   versionId?: string
+  captionsSrc?: string
 }
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer(
-  { videoId, versionId },
+  { videoId, versionId, captionsSrc },
   ref
 ) {
   const videoRef = useRef<HTMLVideoElement>(null)
-  const { url, loading, error, applyPendingUrl } = useSignedUrl(videoId, versionId)
+  const { url, loading, error, fetchUrl, applyPendingUrl } = useSignedUrl(videoId, versionId)
   const playerState = useVideoPlayer(videoRef)
 
   // Remove native controls and show custom controls after hydration
@@ -84,8 +85,15 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   if (error) {
     return (
-      <div className="flex aspect-video w-full items-center justify-center bg-black">
+      <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-black">
         <p className="text-sm text-gray-400">Failed to load video</p>
+        <button
+          type="button"
+          onClick={() => fetchUrl(false)}
+          className="rounded bg-white/10 px-3 py-1 text-xs text-white hover:bg-white/20"
+        >
+          Retry
+        </button>
       </div>
     )
   }
@@ -106,7 +114,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
           className="aspect-video w-full"
           controls={!showCustomControls}
           playsInline
-        />
+        >
+          {captionsSrc && <track kind="captions" src={captionsSrc} label="Captions" default />}
+        </video>
 
         {showCustomControls && url && (
           <div className="absolute bottom-0 left-0 right-0">

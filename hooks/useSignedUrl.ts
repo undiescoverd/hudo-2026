@@ -6,6 +6,7 @@ export interface SignedUrlState {
   url: string | null
   loading: boolean
   error: string | null
+  fetchUrl: (isPending: boolean) => Promise<void>
   applyPendingUrl: (videoEl: HTMLVideoElement) => void
 }
 
@@ -22,12 +23,20 @@ export function useSignedUrl(videoId: string, versionId?: string | null): Signed
   const [error, setError] = useState<string | null>(null)
   const pendingUrl = useRef<string | null>(null)
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const fetchUrl = useCallback(
     async (isPending: boolean) => {
+      // Abort any in-flight request before starting a new one
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+
       try {
         const endpoint = buildPlaybackUrl(videoId, versionId)
-        const res = await fetch(endpoint)
+        const res = await fetch(endpoint, { signal: controller.signal })
         if (!res.ok) {
           const body = await res.json().catch(() => ({}))
           throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
@@ -51,7 +60,9 @@ export function useSignedUrl(videoId: string, versionId?: string | null): Signed
           },
           Math.max(0, refreshDelay)
         )
-      } catch {
+      } catch (err) {
+        // Ignore aborted requests
+        if (err instanceof DOMException && err.name === 'AbortError') return
         if (!isPending) {
           setError('Failed to load video')
           setLoading(false)
@@ -74,8 +85,11 @@ export function useSignedUrl(videoId: string, versionId?: string | null): Signed
 
     return () => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current)
+      if (abortControllerRef.current) abortControllerRef.current.abort()
     }
   }, [fetchUrl])
+
+  const pendingListenerRef = useRef<(() => void) | null>(null)
 
   const applyPendingUrl = useCallback(
     (videoEl: HTMLVideoElement) => {
@@ -84,6 +98,13 @@ export function useSignedUrl(videoId: string, versionId?: string | null): Signed
       pendingUrl.current = null
       const savedTime = videoEl.currentTime
       const wasPlaying = !videoEl.paused
+
+      // Remove any previous loadedmetadata listener before adding a new one
+      if (pendingListenerRef.current) {
+        videoEl.removeEventListener('loadedmetadata', pendingListenerRef.current)
+        pendingListenerRef.current = null
+      }
+
       videoEl.src = fresh
       videoEl.load()
       // currentTime must be set after metadata loads — setting it during load() is ignored
@@ -93,12 +114,14 @@ export function useSignedUrl(videoId: string, versionId?: string | null): Signed
           videoEl.play().catch(() => {})
         }
         videoEl.removeEventListener('loadedmetadata', onReady)
+        pendingListenerRef.current = null
       }
+      pendingListenerRef.current = onReady
       videoEl.addEventListener('loadedmetadata', onReady)
       setUrl(fresh)
     },
     [] // pendingUrl is a ref; setUrl is stable from useState
   )
 
-  return { url, loading, error, applyPendingUrl }
+  return { url, loading, error, fetchUrl, applyPendingUrl }
 }
