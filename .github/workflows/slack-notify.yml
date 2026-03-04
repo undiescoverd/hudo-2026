@@ -13,15 +13,18 @@ jobs:
     if: github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'reopened') && secrets.SLACK_WEBHOOK_URL != ''
     name: Notify PR opened
     runs-on: ubuntu-latest
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       - name: Post to Slack
+        if: env.SLACK_WEBHOOK_URL != ''
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then echo "SLACK_WEBHOOK_URL not set — skipping"; exit 0; fi
           python3 -c "
           import os, json, urllib.request
           payload = json.dumps({
@@ -35,14 +38,17 @@ jobs:
     if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true && secrets.SLACK_WEBHOOK_URL != ''
     name: Notify PR merged
     runs-on: ubuntu-latest
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       - name: Post to Slack
+        if: env.SLACK_WEBHOOK_URL != ''
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then echo "SLACK_WEBHOOK_URL not set — skipping"; exit 0; fi
           python3 -c "
           import os, json, urllib.request
           payload = json.dumps({
@@ -61,14 +67,17 @@ jobs:
       secrets.SLACK_WEBHOOK_URL != ''
     name: Notify DeepSeek review posted
     runs-on: ubuntu-latest
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       - name: Post to Slack
+        if: env.SLACK_WEBHOOK_URL != ''
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           PR_URL: ${{ github.event.issue.html_url }}
           PR_NUMBER: ${{ github.event.issue.number }}
           PR_TITLE: ${{ github.event.issue.title }}
         run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then echo "SLACK_WEBHOOK_URL not set — skipping"; exit 0; fi
           python3 -c "
           import os, json, urllib.request
           payload = json.dumps({
@@ -82,11 +91,13 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && secrets.SLACK_WEBHOOK_URL != ''
     name: Test webhook
     runs-on: ubuntu-latest
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       - name: Post test message to Slack
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: env.SLACK_WEBHOOK_URL != ''
         run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then echo "SLACK_WEBHOOK_URL not set — skipping"; exit 0; fi
           python3 -c "
           import os, json, urllib.request
           payload = json.dumps({

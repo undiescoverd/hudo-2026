@@ -14,7 +14,7 @@ const nextConfig = {
               // TODO: Replace 'unsafe-inline' with nonce-based CSP in S1
               "script-src 'self' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline'",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://us.i.posthog.com",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://us.i.posthog.com https://*.r2.cloudflarestorage.com",
               "img-src 'self' data: blob:",
               "media-src 'self' blob:",
               "frame-src 'self'",

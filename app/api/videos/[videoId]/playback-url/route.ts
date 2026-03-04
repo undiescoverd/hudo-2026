@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getStorage } from '@/lib/storage'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { checkRateLimit, requireMembership } from '@/lib/api-helpers'
+import { isValidUUID } from '@/lib/validation'
 
 const SIGNED_URL_EXPIRY_SECONDS = 900 // 15 minutes
 
@@ -17,8 +18,15 @@ const SIGNED_URL_EXPIRY_SECONDS = 900 // 15 minutes
  * - Direct R2 object URLs are never returned — only signed URLs
  * - Signed URL expires after 15 minutes
  */
-export async function GET(_request: NextRequest, { params }: { params: { videoId: string } }) {
+const PLAYBACK_RATE_LIMIT = 60 // max requests per window
+const PLAYBACK_RATE_WINDOW = 60 // 1 minute in seconds
+
+export async function GET(request: NextRequest, { params }: { params: { videoId: string } }) {
   const { videoId } = params
+
+  if (!isValidUUID(videoId)) {
+    return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -30,17 +38,7 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
   }
 
   // Authenticate the requesting user via session cookie
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const {
     data: { user },
@@ -50,6 +48,16 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
+  // Rate limit: 60 playback URL requests per user per minute
+  const rl = await checkRateLimit(
+    `playback:get:user:${user.id}`,
+    PLAYBACK_RATE_LIMIT,
+    PLAYBACK_RATE_WINDOW,
+    'playback-url',
+    'Too many requests. Please try again later.'
+  )
+  if (rl) return rl
+
   // Use service role to bypass RLS for the access check query
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
@@ -57,7 +65,7 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
   // in the same agency as the video.
   const { data: video, error: videoError } = await admin
     .from('videos')
-    .select('id, agency_id')
+    .select('id, agency_id, talent_id')
     .eq('id', videoId)
     .single()
 
@@ -68,25 +76,33 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
   }
 
   // Verify user has a membership in the video's agency
-  const { data: membership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', video.agency_id)
-    .single()
+  const membership = await requireMembership(admin, user.id, video.agency_id)
+  if (membership instanceof NextResponse) return membership
 
-  if (!membership) {
+  // Enforce talent visibility: talent users can only access playback for their own videos
+  if (membership.role === 'talent' && video.talent_id !== user.id) {
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  // Fetch the latest video version's R2 key (column is `r2_key` per migration 0001)
-  const { data: version, error: versionError } = await admin
+  // Fetch version - specific version if versionId provided, otherwise latest
+  const versionId = request.nextUrl.searchParams.get('versionId')
+
+  if (versionId && !isValidUUID(versionId)) {
+    return NextResponse.json({ error: 'Invalid version ID format' }, { status: 400 })
+  }
+
+  let versionQuery = admin
     .from('video_versions')
-    .select('r2_key')
+    .select('id, r2_key, version_number')
     .eq('video_id', videoId)
-    .order('version_number', { ascending: false })
-    .limit(1)
-    .single()
+
+  if (versionId) {
+    versionQuery = versionQuery.eq('id', versionId)
+  } else {
+    versionQuery = versionQuery.order('version_number', { ascending: false }).limit(1)
+  }
+
+  const { data: version, error: versionError } = await versionQuery.single()
 
   if (versionError || !version) {
     return NextResponse.json({ error: 'No video version found' }, { status: 404 })
@@ -106,6 +122,7 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
 
   return NextResponse.json({
     url: signedUrl,
+    versionNumber: version.version_number,
     expiresIn: SIGNED_URL_EXPIRY_SECONDS,
   })
 }

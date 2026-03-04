@@ -49,12 +49,18 @@ Video review platform for talent agencies. Frame.io-style: upload → timestampe
 - After opening a PR, always run `/pr-fix` to start the Ralph Loop — do not wait for manual invocation
 - Before committing, run `pnpm format:check && pnpm type-check && pnpm lint` to catch CI issues locally
 - Do not start a task while any `BLOCKED_BY` task is not `done`
-- After completing work, update CLAUDE.md with any learnings (new patterns, gotchas, tooling changes). Keep it concise — remove stale info, never duplicate, only add what future agents genuinely need. Prefer updating MEMORY.md for session-specific details and CLAUDE.md for durable project rules.
+- After completing work, update CLAUDE.md with any learnings. If anything broke or surprised you, add an entry to the **Failure Log** section before closing the session — never defer it.
 
 ## Code Quality
 
 - **Pre-commit hooks** via Husky + lint-staged. Staged files are auto-formatted (Prettier) and linted (ESLint) on every commit. Config in `package.json` under `lint-staged`.
 - **Claude hooks** in `.claude/settings.json`: PreToolUse blocks any Edit/Write to `.env*` files (exit 2); PostToolUse runs `pnpm type-check` after any `.ts`/`.tsx` edit and surfaces the last 20 lines.
+
+## Failure Log
+
+When something breaks or surprises you mid-task, add an entry here before closing the session. Write only what's needed to understand the problem and fix — no more. One line if that's enough; a few lines if it isn't.
+
+Format: `- **[Area] Title (YYYY-MM-DD):** what broke + fix/workaround.`
 
 ## Environments
 

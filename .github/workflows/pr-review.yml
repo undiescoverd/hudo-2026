@@ -33,6 +33,11 @@ jobs:
           import os, json, urllib.request, sys
 
           api_key = os.environ["DEEPSEEK_API_KEY"]
+          if not api_key:
+              print("DEEPSEEK_API_KEY not set — skipping code review")
+              with open("pr_review.txt", "w") as f:
+                  f.write("_Automated code review skipped: `DEEPSEEK_API_KEY` secret not configured._")
+              sys.exit(0)
 
           with open(".github/pr-review-prompt.md") as f:
               system_prompt = f.read()
