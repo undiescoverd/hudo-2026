@@ -113,13 +113,12 @@ SELECT lives_ok(
 );
 
 
--- ── Test 5: comments_update_own — user can soft-delete their own comment
+-- ── Test 5: soft_delete_comment — user can soft-delete their own comment
 -- PRD: Comments soft-delete only (deleted_at). No hard delete via any API.
+-- Uses SECURITY DEFINER function to bypass SELECT ↔ UPDATE policy interaction.
 SELECT lives_ok(
-  $$UPDATE comments
-       SET deleted_at = now()
-     WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid$$,
-  'comments_update_own: Clara can soft-delete her own comment (set deleted_at)'
+  $$SELECT soft_delete_comment('c0de0003-0003-4000-a000-000000000002'::uuid)$$,
+  'soft_delete_comment: Clara can soft-delete her own comment via SECURITY DEFINER function'
 );
 
 
