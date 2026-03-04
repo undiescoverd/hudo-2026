@@ -69,13 +69,22 @@ export function validateCreateInput(body: unknown): CreateCommentInput | string 
     return "comment_type must be 'point' or 'range'"
   }
 
-  if (typeof b.timestamp_seconds !== 'number' || isNaN(b.timestamp_seconds)) {
+  if (typeof b.timestamp_seconds !== 'number' || !Number.isFinite(b.timestamp_seconds)) {
     return 'timestamp_seconds must be a number'
+  }
+  if (b.timestamp_seconds < 0) {
+    return 'timestamp_seconds must be >= 0'
   }
 
   if (b.comment_type === 'range') {
-    if (typeof b.end_timestamp_seconds !== 'number' || isNaN(b.end_timestamp_seconds)) {
+    if (typeof b.end_timestamp_seconds !== 'number' || !Number.isFinite(b.end_timestamp_seconds)) {
       return 'end_timestamp_seconds is required for range comments'
+    }
+    if (b.end_timestamp_seconds < 0) {
+      return 'end_timestamp_seconds must be >= 0'
+    }
+    if (b.end_timestamp_seconds <= b.timestamp_seconds) {
+      return 'end_timestamp_seconds must be greater than timestamp_seconds'
     }
   }
 

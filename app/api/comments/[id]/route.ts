@@ -164,10 +164,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     .from('comments')
     .update(updates)
     .eq('id', commentId)
+    .is('deleted_at', null)
     .select()
     .single()
 
   if (updateError || !updated) {
+    // If no rows matched, the comment was deleted between our check and update
+    if (updateError?.code === 'PGRST116') {
+      return NextResponse.json({ error: 'Comment not found' }, { status: 404 })
+    }
     console.error('[comments/[id]:PATCH] Update failed:', updateError)
     return NextResponse.json({ error: 'Failed to update comment' }, { status: 500 })
   }
@@ -280,14 +285,20 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
   }
 
   // Soft-delete only — never SQL DELETE
-  const { error: updateError } = await admin
+  const { data: deleted, error: updateError } = await admin
     .from('comments')
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', commentId)
+    .is('deleted_at', null)
+    .select('id')
 
   if (updateError) {
     console.error('[comments/[id]:DELETE] Soft-delete failed:', updateError)
     return NextResponse.json({ error: 'Failed to delete comment' }, { status: 500 })
+  }
+
+  if (!deleted || deleted.length === 0) {
+    return NextResponse.json({ error: 'Comment not found' }, { status: 404 })
   }
 
   return NextResponse.json({ success: true })

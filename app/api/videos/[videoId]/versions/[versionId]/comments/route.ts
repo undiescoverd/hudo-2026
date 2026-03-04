@@ -212,6 +212,34 @@ export async function POST(
     return NextResponse.json({ error: input }, { status: 400 })
   }
 
+  // Validate parent_id if provided
+  if (input.parent_id) {
+    const { data: parent, error: parentError } = await admin
+      .from('comments')
+      .select('id, video_version_id, agency_id, deleted_at')
+      .eq('id', input.parent_id)
+      .single()
+
+    if (parentError || !parent) {
+      return NextResponse.json({ error: 'Parent comment not found' }, { status: 400 })
+    }
+    if (parent.deleted_at !== null) {
+      return NextResponse.json({ error: 'Cannot reply to a deleted comment' }, { status: 400 })
+    }
+    if (parent.video_version_id !== versionId) {
+      return NextResponse.json(
+        { error: 'Parent comment belongs to a different version' },
+        { status: 400 }
+      )
+    }
+    if (parent.agency_id !== agencyId) {
+      return NextResponse.json(
+        { error: 'Parent comment belongs to a different agency' },
+        { status: 400 }
+      )
+    }
+  }
+
   const { data: comment, error: insertError } = await admin
     .from('comments')
     .insert({
