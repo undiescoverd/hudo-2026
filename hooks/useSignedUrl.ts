@@ -55,6 +55,11 @@ export function useSignedUrl(videoId: string, versionId?: string | null): Signed
         if (!isPending) {
           setError('Failed to load video')
           setLoading(false)
+        } else {
+          // Retry pending refresh in 30 s so the URL doesn't expire without a replacement
+          refreshTimer.current = setTimeout(() => {
+            void fetchUrl(true)
+          }, 30_000)
         }
       }
     },
@@ -81,10 +86,15 @@ export function useSignedUrl(videoId: string, versionId?: string | null): Signed
       const wasPlaying = !videoEl.paused
       videoEl.src = fresh
       videoEl.load()
-      videoEl.currentTime = savedTime
-      if (wasPlaying) {
-        videoEl.play().catch(() => {})
+      // currentTime must be set after metadata loads — setting it during load() is ignored
+      const onReady = () => {
+        videoEl.currentTime = savedTime
+        if (wasPlaying) {
+          videoEl.play().catch(() => {})
+        }
+        videoEl.removeEventListener('loadedmetadata', onReady)
       }
+      videoEl.addEventListener('loadedmetadata', onReady)
       setUrl(fresh)
     },
     [] // pendingUrl is a ref; setUrl is stable from useState

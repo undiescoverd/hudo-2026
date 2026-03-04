@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -62,18 +63,14 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     }
   }, [applyPendingUrl])
 
-  const handle: VideoPlayerHandle = {
-    currentTime: playerState.currentTime,
-    duration: playerState.duration,
-    seek: playerState.seek,
-    play: playerState.play,
-    pause: playerState.pause,
-  }
-
-  useImperativeHandle(
-    ref,
-    () => handle,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const handle = useMemo<VideoPlayerHandle>(
+    () => ({
+      currentTime: playerState.currentTime,
+      duration: playerState.duration,
+      seek: playerState.seek,
+      play: playerState.play,
+      pause: playerState.pause,
+    }),
     [
       playerState.currentTime,
       playerState.duration,
@@ -82,6 +79,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       playerState.pause,
     ]
   )
+
+  useImperativeHandle(ref, () => handle, [handle])
 
   if (error) {
     return (
