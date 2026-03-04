@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { checkRateLimit, requireMembership } from '@/lib/api-helpers'
+import { isValidUUID } from '@/lib/validation'
 
 /**
  * GET /api/videos/:videoId/versions
@@ -9,14 +10,13 @@ import { type NextRequest, NextResponse } from 'next/server'
  * Returns all versions for a video, ordered by version number descending.
  * No R2 keys are exposed — only metadata.
  */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const VERSIONS_RATE_LIMIT = 60 // max requests per window
 const VERSIONS_RATE_WINDOW = 60 // 1 minute in seconds
 
 export async function GET(_request: NextRequest, { params }: { params: { videoId: string } }) {
   const { videoId } = params
 
-  if (!UUID_RE.test(videoId)) {
+  if (!isValidUUID(videoId)) {
     return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
   }
 
@@ -29,19 +29,7 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options)
-        }
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const {
     data: { user },
@@ -52,29 +40,21 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
   }
 
   // Rate limit: 60 version list requests per user per minute
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(
-      `versions:get:user:${user.id}`,
-      VERSIONS_RATE_LIMIT,
-      VERSIONS_RATE_WINDOW
-    )
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': String(VERSIONS_RATE_WINDOW) } }
-      )
-    }
-  } catch (err) {
-    console.error('[versions] Rate limit check failed, allowing request:', err)
-  }
+  const rl = await checkRateLimit(
+    `versions:get:user:${user.id}`,
+    VERSIONS_RATE_LIMIT,
+    VERSIONS_RATE_WINDOW,
+    'versions',
+    'Too many requests. Please try again later.'
+  )
+  if (rl) return rl
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
   // Fetch video and verify agency membership
   const { data: video, error: videoError } = await admin
     .from('videos')
-    .select('id, agency_id')
+    .select('id, agency_id, talent_id')
     .eq('id', videoId)
     .single()
 
@@ -82,14 +62,11 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  const { data: membership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', video.agency_id)
-    .single()
+  const membership = await requireMembership(admin, user.id, video.agency_id)
+  if (membership instanceof NextResponse) return membership
 
-  if (!membership) {
+  // Enforce talent visibility: talent users can only see their own videos
+  if (membership.role === 'talent' && video.talent_id !== user.id) {
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 

@@ -1,6 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getStorage } from '@/lib/storage'
 import {
@@ -14,6 +12,8 @@ import {
   validateFileName,
   validateFileSize,
 } from '@/lib/upload-validation'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { checkRateLimit, requireAgentRole } from '@/lib/api-helpers'
 
 /**
  * POST /api/videos/upload/presign
@@ -86,17 +86,7 @@ export async function POST(request: NextRequest) {
 
   // --- Authentication ---
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const {
     data: { user },
@@ -107,42 +97,26 @@ export async function POST(request: NextRequest) {
 
   // --- Rate limit: 10 presigns per user per hour ---
 
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(
-      `upload:presign:user:${user.id}`,
-      UPLOAD_RATE_LIMIT,
-      UPLOAD_RATE_WINDOW
-    )
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many upload requests. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': String(UPLOAD_RATE_WINDOW) } }
-      )
-    }
-  } catch (err) {
-    console.error('[upload/presign] Rate limit check failed, allowing request:', err)
-  }
+  const rl = await checkRateLimit(
+    `upload:presign:user:${user.id}`,
+    UPLOAD_RATE_LIMIT,
+    UPLOAD_RATE_WINDOW,
+    'upload/presign',
+    'Too many upload requests. Please try again later.'
+  )
+  if (rl) return rl
 
   // --- Membership check (agent+ role required) ---
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
-  const { data: membership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', agencyId)
-    .single()
-
-  if (!membership) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
-
-  const agentPlusRoles = ['owner', 'admin_agent', 'agent']
-  if (!agentPlusRoles.includes(membership.role)) {
-    return NextResponse.json({ error: 'Only agents and above can upload videos' }, { status: 403 })
-  }
+  const membership = await requireAgentRole(
+    admin,
+    user.id,
+    agencyId,
+    'Only agents and above can upload videos'
+  )
+  if (membership instanceof NextResponse) return membership
 
   // --- Quota check (best-effort; authoritative check in complete route) ---
 

@@ -9,6 +9,8 @@
 
 import assert from 'node:assert/strict'
 import { before, describe, it } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import path from 'node:path'
 
 // ── Extracted constants (must match route.ts) ─────────────────────────────
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -35,8 +37,8 @@ describe('versions route — source invariants', () => {
 
   before(async () => {
     const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
+    const currentDir = path.dirname(fileURLToPath(import.meta.url))
+    const routePath = path.resolve(currentDir, 'route.ts')
     source = fs.readFileSync(routePath, 'utf8')
   })
 
@@ -54,8 +56,8 @@ describe('versions route — source invariants', () => {
     assert.match(source, /order\('version_number',\s*\{\s*ascending:\s*false\s*\}/)
   })
 
-  it('validates videoId with UUID regex', () => {
-    assert.match(source, /UUID_RE\.test\(videoId\)/)
+  it('validates videoId with UUID helper', () => {
+    assert.match(source, /isValidUUID\(videoId\)/)
   })
 
   it('applies rate limiting', () => {
@@ -68,8 +70,8 @@ describe('playback-url route — source invariants', () => {
 
   before(async () => {
     const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, '../playback-url/route.ts')
+    const currentDir = path.dirname(fileURLToPath(import.meta.url))
+    const routePath = path.resolve(currentDir, '../playback-url/route.ts')
     source = fs.readFileSync(routePath, 'utf8')
   })
 
@@ -79,12 +81,12 @@ describe('playback-url route — source invariants', () => {
   })
 
   it('validates versionId as UUID format', () => {
-    assert.ok(source.includes('0-9a-f'), 'playback-url must contain UUID hex pattern')
+    assert.match(source, /isValidUUID\(versionId\)/)
     assert.match(source, /Invalid version ID format/)
   })
 
   it('validates videoId as UUID format', () => {
-    assert.match(source, /UUID_RE\.test\(videoId\)/)
+    assert.match(source, /isValidUUID\(videoId\)/)
   })
 
   it('includes versionNumber in response', () => {

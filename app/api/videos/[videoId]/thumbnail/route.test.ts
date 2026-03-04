@@ -159,8 +159,8 @@ describe('thumbnail route — source invariants', () => {
     assert.match(source, /thumbnail:get:user/)
   })
 
-  it('validates videoId with UUID regex in both handlers', () => {
-    const uuidChecks = source.match(/UUID_RE\.test\(videoId\)/g)
+  it('validates videoId with UUID helper in both handlers', () => {
+    const uuidChecks = source.match(/isValidUUID\(videoId\)/g)
     assert.ok(uuidChecks && uuidChecks.length >= 2, 'Both POST and GET must validate videoId')
   })
 })
