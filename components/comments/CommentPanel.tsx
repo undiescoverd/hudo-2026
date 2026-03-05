@@ -22,7 +22,9 @@ export function CommentPanel({ videoId, versionId }: CommentPanelProps) {
     setLoading(true)
     setError(null)
 
-    fetch(`/api/videos/${videoId}/versions/${versionId}/comments`)
+    fetch(
+      `/api/videos/${encodeURIComponent(videoId)}/versions/${encodeURIComponent(versionId)}/comments`
+    )
       .then(async (res) => {
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string }
@@ -62,7 +64,8 @@ export function CommentPanel({ videoId, versionId }: CommentPanelProps) {
 
   const repliesByParent = comments.reduce<Record<string, Comment[]>>((acc, c) => {
     if (c.parentId !== null) {
-      acc[c.parentId] = [...(acc[c.parentId] ?? []), c]
+      const existing = acc[c.parentId] ?? []
+      acc[c.parentId] = [...existing, c].sort((a, b) => a.timestampSeconds - b.timestampSeconds)
     }
     return acc
   }, {})
