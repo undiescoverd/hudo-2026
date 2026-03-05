@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Comment } from '@/lib/comments'
 import { useVideoPlayerContext } from '@/components/player/VideoPlayer'
+import { useRealtimeComments } from '@/hooks/useRealtimeComments'
 import { CommentThread } from './CommentThread'
 
 interface CommentPanelProps {
@@ -49,6 +50,31 @@ export function CommentPanel({ videoId, versionId }: CommentPanelProps) {
       cancelled = true
     }
   }, [videoId, versionId])
+
+  const handleInsert = useCallback((comment: Comment) => {
+    setComments((prev) => {
+      // Avoid duplicates
+      if (prev.some((c) => c.id === comment.id)) return prev
+      return [...prev, comment]
+    })
+  }, [])
+
+  const handleUpdate = useCallback((updated: Comment) => {
+    setComments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+  }, [])
+
+  const handleDelete = useCallback((commentId: string) => {
+    setComments((prev) =>
+      prev.map((c) => (c.id === commentId ? { ...c, deletedAt: new Date().toISOString() } : c))
+    )
+  }, [])
+
+  useRealtimeComments({
+    videoVersionId: versionId,
+    onInsert: handleInsert,
+    onUpdate: handleUpdate,
+    onDelete: handleDelete,
+  })
 
   const handleSeek = useCallback(
     (t: number) => {
