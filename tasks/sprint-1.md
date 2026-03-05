@@ -54,13 +54,13 @@ NOTES: Uses Supabase RPC for atomic increment/decrement to avoid race conditions
 
 ---
 
-- [ ] **S1-UPLOAD-003** — Build upload UI
+- [x] **S1-UPLOAD-003** — Build upload UI
 
 TASK_ID: S1-UPLOAD-003
 TITLE: Build upload UI
 BRANCH: feat/s1-upload-003-upload-ui
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S1-UPLOAD-001
 ACCEPTANCE_CRITERIA:
   - Drag-and-drop zone accepts MP4/MOV files; rejects others with clear error message
@@ -274,13 +274,13 @@ NOTES: Agents can resolve/unresolve any comment on their agency videos. Talent c
 
 ---
 
-- [ ] **S1-COMMENT-003** — Build comment UI panel
+- [x] **S1-COMMENT-003** — Build comment UI panel
 
 TASK_ID: S1-COMMENT-003
 TITLE: Build comment UI panel
 BRANCH: feat/s1-comment-003-comment-panel
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S1-COMMENT-002, S1-PLAYER-001
 ACCEPTANCE_CRITERIA:
   - Comment list sorted by timestamp_start ascending
@@ -297,13 +297,13 @@ NOTES: User colour: same HSL hash approach as timeline overlay. Keep avatar colo
 
 ---
 
-- [ ] **S1-COMMENT-004** — Implement real-time comment sync
+- [x] **S1-COMMENT-004** — Implement real-time comment sync
 
 TASK_ID: S1-COMMENT-004
 TITLE: Implement real-time comment sync
 BRANCH: feat/s1-comment-004-realtime
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S1-COMMENT-002
 ACCEPTANCE_CRITERIA:
   - Supabase Realtime subscription on comments table filtered to current video_version_id
