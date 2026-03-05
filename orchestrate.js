@@ -544,6 +544,22 @@ function cmdDone(taskId) {
     }
     console.log();
   }
+
+  // Vault update prompt
+  const sprintMatch = taskId.match(/^S(\d+)-/);
+  if (sprintMatch) {
+    const sprintNum  = sprintMatch[1];
+    const vaultNote  = path.join(__dirname, 'docs', 'vault', 'sprints', `sprint-${sprintNum}`, `${taskId}.md`);
+    if (fs.existsSync(vaultNote)) {
+      const relPath = path.relative(__dirname, vaultNote);
+      console.log(col(c.grey, '─'.repeat(52)));
+      console.log(bold('Vault update:') + col(c.grey, ` ${relPath}`));
+      console.log(col(c.white, 'Add a ## Gotchas section with anything non-obvious'));
+      console.log(col(c.white, 'from this session: surprises, workarounds, decisions.'));
+      console.log(col(c.white, 'Skip if the implementation was straightforward.'));
+      console.log(col(c.grey, '─'.repeat(52)));
+    }
+  }
 }
 
 function cmdGate(sprintArg) {
