@@ -120,8 +120,9 @@ async function performUpload(
         headers: { 'Content-Type': 'application/octet-stream' },
       })
       if (!res.ok) throw new Error(`Part upload failed: ${res.status}`)
-      const etag = (res.headers.get('ETag') ?? res.headers.get('etag') ?? '').replace(/"/g, '')
-      parts.push({ PartNumber: partNumber, ETag: etag })
+      const rawEtag = res.headers.get('ETag') ?? res.headers.get('etag')
+      if (!rawEtag) throw new Error(`Part upload succeeded but ETag header was missing`)
+      parts.push({ PartNumber: partNumber, ETag: rawEtag.replace(/"/g, '') })
       onProgress(Math.round(((i + 1) / partCount) * 100))
     }
 
@@ -233,7 +234,7 @@ export default function UploadPage() {
             onRetry={handleRetry}
           />
 
-          {!uploading && progress === 0 && !error && (
+          {!uploading && (
             <button
               type="button"
               onClick={() => {

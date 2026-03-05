@@ -17,10 +17,10 @@ export function UploadZone({ onFileSelected, disabled }: UploadZoneProps) {
     const type = file.type
     const name = file.name.toLowerCase()
     const ext = name.slice(name.lastIndexOf('.'))
-    if (
-      !ALLOWED_CONTENT_TYPES.includes(type as (typeof ALLOWED_CONTENT_TYPES)[number]) &&
-      !ALLOWED_EXTENSIONS.includes(ext as (typeof ALLOWED_EXTENSIONS)[number])
-    ) {
+    const validMime =
+      !type || ALLOWED_CONTENT_TYPES.includes(type as (typeof ALLOWED_CONTENT_TYPES)[number])
+    const validExt = ALLOWED_EXTENSIONS.includes(ext as (typeof ALLOWED_EXTENSIONS)[number])
+    if (!validMime || !validExt) {
       return `Only MP4 and MOV files are supported. "${file.name}" is not allowed.`
     }
     return null

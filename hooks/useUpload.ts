@@ -24,8 +24,9 @@ async function uploadPart(url: string, data: Blob): Promise<string> {
     headers: { 'Content-Type': 'application/octet-stream' },
   })
   if (!res.ok) throw new Error(`Part upload failed: ${res.status}`)
-  const etag = res.headers.get('ETag') ?? res.headers.get('etag') ?? ''
-  return etag.replace(/"/g, '')
+  const raw = res.headers.get('ETag') ?? res.headers.get('etag')
+  if (!raw) throw new Error(`Part upload succeeded but ETag header was missing`)
+  return raw.replace(/"/g, '')
 }
 
 // Upload standard (single PUT) with XHR for progress
