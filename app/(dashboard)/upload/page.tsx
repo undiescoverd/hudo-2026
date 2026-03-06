@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { UploadZone } from '@/components/upload/UploadZone'
 import { UploadProgress } from '@/components/upload/UploadProgress'
+import { MetadataForm } from '@/components/upload/MetadataForm'
 import { createClient } from '@/lib/auth'
 import { MULTIPART_PART_SIZE_BYTES, MULTIPART_THRESHOLD_BYTES } from '@/lib/upload-validation'
 
@@ -146,6 +147,12 @@ async function performUpload(
   }
 }
 
+/** Strip file extension to use as default title */
+function fileNameWithoutExtension(name: string): string {
+  const lastDot = name.lastIndexOf('.')
+  return lastDot > 0 ? name.slice(0, lastDot) : name
+}
+
 export default function UploadPage() {
   const router = useRouter()
   const [file, setFile] = useState<File | null>(null)
@@ -154,23 +161,23 @@ export default function UploadPage() {
   const [isMultipart, setIsMultipart] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [uploadedVideoId, setUploadedVideoId] = useState<string | null>(null)
+  const [uploadedFileName, setUploadedFileName] = useState<string>('')
 
-  const runUpload = useCallback(
-    async (f: File, aid: string) => {
-      setUploading(true)
-      setError(null)
-      setProgress(0)
-      try {
-        const videoId = await performUpload(f, aid, setProgress)
-        router.push(`/videos/${videoId}`)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Upload failed')
-      } finally {
-        setUploading(false)
-      }
-    },
-    [router]
-  )
+  const runUpload = useCallback(async (f: File, aid: string) => {
+    setUploading(true)
+    setError(null)
+    setProgress(0)
+    try {
+      const videoId = await performUpload(f, aid, setProgress)
+      setUploadedVideoId(videoId)
+      setUploadedFileName(f.name)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }, [])
 
   const handleFileSelected = useCallback(
     async (f: File) => {
@@ -178,6 +185,7 @@ export default function UploadPage() {
       setIsMultipart(f.size > MULTIPART_THRESHOLD_BYTES)
       setError(null)
       setProgress(0)
+      setUploadedVideoId(null)
 
       let aid = agencyId
       if (!aid) {
@@ -234,18 +242,28 @@ export default function UploadPage() {
             onRetry={handleRetry}
           />
 
-          {!uploading && (
-            <button
-              type="button"
-              onClick={() => {
-                setFile(null)
-                setError(null)
-                setProgress(0)
-              }}
-              className="w-full rounded-lg border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            >
-              Choose different file
-            </button>
+          {uploadedVideoId ? (
+            <MetadataForm
+              videoId={uploadedVideoId}
+              defaultTitle={fileNameWithoutExtension(uploadedFileName)}
+              onSaved={(videoId) => router.push(`/videos/${videoId}`)}
+              onSkip={(videoId) => router.push(`/videos/${videoId}`)}
+            />
+          ) : (
+            !uploading && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFile(null)
+                  setError(null)
+                  setProgress(0)
+                  setUploadedVideoId(null)
+                }}
+                className="w-full rounded-lg border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                Choose different file
+              </button>
+            )
           )}
         </div>
       )}
