@@ -34,10 +34,11 @@ interface VideoPlayerProps {
   videoId: string
   versionId?: string
   captionsSrc?: string
+  className?: string
 }
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer(
-  { videoId, versionId, captionsSrc },
+  { videoId, versionId, captionsSrc, className },
   ref
 ) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -100,41 +101,43 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   return (
     <VideoPlayerContext.Provider value={handle}>
-      <div className="relative w-full bg-black">
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
-          </div>
-        )}
+      <div className={className ?? 'w-full'}>
+        <div className="relative w-full bg-black">
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            </div>
+          )}
 
-        {/* controls fallback before JS hydrates */}
-        <video
-          ref={videoRef}
-          src={url ?? undefined}
-          className="aspect-video w-full"
-          controls={!showCustomControls}
-          playsInline
-        >
-          {captionsSrc && <track kind="captions" src={captionsSrc} label="Captions" default />}
-        </video>
+          {/* controls fallback before JS hydrates */}
+          <video
+            ref={videoRef}
+            src={url ?? undefined}
+            className="aspect-video w-full"
+            controls={!showCustomControls}
+            playsInline
+          >
+            {captionsSrc && <track kind="captions" src={captionsSrc} label="Captions" default />}
+          </video>
 
-        {showCustomControls && url && (
-          <div className="absolute bottom-0 left-0 right-0">
-            <PlayerControls
-              currentTime={playerState.currentTime}
-              duration={playerState.duration}
-              playing={playerState.playing}
-              volume={playerState.volume}
-              muted={playerState.muted}
-              onPlay={playerState.play}
-              onPause={playerState.pause}
-              onSeek={playerState.seek}
-              onVolumeChange={playerState.setVolume}
-              onToggleMute={playerState.toggleMute}
-              onFullscreen={playerState.toggleFullscreen}
-            />
-          </div>
-        )}
+          {showCustomControls && url && (
+            <div className="absolute bottom-0 left-0 right-0">
+              <PlayerControls
+                currentTime={playerState.currentTime}
+                duration={playerState.duration}
+                playing={playerState.playing}
+                volume={playerState.volume}
+                muted={playerState.muted}
+                onPlay={playerState.play}
+                onPause={playerState.pause}
+                onSeek={playerState.seek}
+                onVolumeChange={playerState.setVolume}
+                onToggleMute={playerState.toggleMute}
+                onFullscreen={playerState.toggleFullscreen}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </VideoPlayerContext.Provider>
   )

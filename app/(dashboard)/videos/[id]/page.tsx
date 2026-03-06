@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { VideoPlayer } from '@/components/player/VideoPlayer'
+import { MobilePlayerLayout } from '@/components/player/MobilePlayerLayout'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -13,8 +14,8 @@ export default function VideoPage({ params }: Props) {
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      <VideoPlayer videoId={params.id} />
+    <main className="min-h-screen">
+      <MobilePlayerLayout player={<VideoPlayer videoId={params.id} className="h-full w-full" />} />
     </main>
   )
 }
