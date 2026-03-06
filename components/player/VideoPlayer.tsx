@@ -45,10 +45,11 @@ interface VideoPlayerProps {
   captionsSrc?: string
   comments?: Comment[]
   onSeekToComment?: (commentId: string) => void
+  className?: string
 }
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer(
-  { videoId, versionId, captionsSrc, comments, onSeekToComment },
+  { videoId, versionId, captionsSrc, comments, onSeekToComment, className },
   ref
 ) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -154,7 +155,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   return (
     <VideoPlayerContext.Provider value={handle}>
-      <div className="w-full">
+      <div className={className ?? 'w-full'}>
         {/* Video + controls */}
         <div className="relative w-full bg-black">
           {loading && (
