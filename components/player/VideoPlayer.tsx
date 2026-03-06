@@ -3,6 +3,7 @@
 import {
   createContext,
   forwardRef,
+  useCallback,
   useContext,
   useEffect,
   useImperativeHandle,
@@ -13,6 +14,7 @@ import {
 import { PlayerControls } from './PlayerControls'
 import { useSignedUrl } from '@/hooks/useSignedUrl'
 import { useVideoPlayer } from '@/hooks/useVideoPlayer'
+import { usePlayerShortcuts } from '@/hooks/usePlayerShortcuts'
 
 export interface VideoPlayerHandle {
   currentTime: number
@@ -20,6 +22,11 @@ export interface VideoPlayerHandle {
   seek: (t: number) => void
   play: () => void
   pause: () => void
+  rangeIn: number | null
+  rangeOut: number | null
+  setRangeIn: (t: number | null) => void
+  setRangeOut: (t: number | null) => void
+  openCommentAtTime: () => void
 }
 
 const VideoPlayerContext = createContext<VideoPlayerHandle | null>(null)
@@ -44,6 +51,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   const { url, loading, error, fetchUrl, applyPendingUrl } = useSignedUrl(videoId, versionId)
   const playerState = useVideoPlayer(videoRef)
 
+  const [rangeIn, setRangeIn] = useState<number | null>(null)
+  const [rangeOut, setRangeOut] = useState<number | null>(null)
+
+  // Stub — will be overridden by PLAYER-003 via a ref callback
+  const openCommentAtTime = useCallback(() => {}, [])
+
   // Remove native controls and show custom controls after hydration
   const [showCustomControls, setShowCustomControls] = useState(false)
   useEffect(() => {
@@ -64,6 +77,35 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     }
   }, [applyPendingUrl])
 
+  const handlePlayPause = useCallback(() => {
+    if (playerState.playing) {
+      playerState.pause()
+    } else {
+      playerState.play()
+    }
+  }, [playerState])
+
+  const handleRangeIn = useCallback(() => {
+    setRangeIn(playerState.currentTime)
+  }, [playerState.currentTime])
+
+  const handleRangeOut = useCallback(() => {
+    setRangeOut(playerState.currentTime)
+  }, [playerState.currentTime])
+
+  const handleClearRange = useCallback(() => {
+    setRangeIn(null)
+    setRangeOut(null)
+  }, [])
+
+  usePlayerShortcuts({
+    onPlayPause: handlePlayPause,
+    onCommentAtTime: openCommentAtTime,
+    onRangeIn: handleRangeIn,
+    onRangeOut: handleRangeOut,
+    onClearRange: handleClearRange,
+  })
+
   const handle = useMemo<VideoPlayerHandle>(
     () => ({
       currentTime: playerState.currentTime,
@@ -71,6 +113,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       seek: playerState.seek,
       play: playerState.play,
       pause: playerState.pause,
+      rangeIn,
+      rangeOut,
+      setRangeIn,
+      setRangeOut,
+      openCommentAtTime,
     }),
     [
       playerState.currentTime,
@@ -78,6 +125,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       playerState.seek,
       playerState.play,
       playerState.pause,
+      rangeIn,
+      rangeOut,
+      openCommentAtTime,
     ]
   )
 
