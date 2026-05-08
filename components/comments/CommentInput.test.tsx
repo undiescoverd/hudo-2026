@@ -42,8 +42,14 @@ describe('CommentInput — source invariants', () => {
     assert.match(source, /crypto\.randomUUID|temp-/)
   })
 
-  it('rolls back optimistic insert on error', () => {
-    assert.match(source, /onOptimisticRollback|rollback/i)
+  it('calls onOptimisticRollback in both success and error paths', () => {
+    const matches = [...source.matchAll(/onOptimisticRollback\(tempId\)/g)]
+    assert.equal(matches.length, 2, 'rollback must be called in both success and error paths')
+  })
+
+  it('consumes POST response to swap temp for canonical comment', () => {
+    assert.match(source, /res\.json\(\)/)
+    assert.match(source, /onOptimisticInsert/) // called twice in the file: once for temp, once for canonical
   })
 
   it('disables submit when body is empty after trim', () => {

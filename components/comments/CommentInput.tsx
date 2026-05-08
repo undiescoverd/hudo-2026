@@ -39,7 +39,7 @@ export function CommentInput({
   const endSec = hasRange ? (player.rangeOut as number) : null
 
   const trimmed = body.trim()
-  const overLimit = body.length > COMMENT_BODY_MAX_LENGTH
+  const overLimit = trimmed.length > COMMENT_BODY_MAX_LENGTH
   const canSubmit = !submitting && trimmed.length > 0 && !overLimit
 
   const submit = useCallback(async () => {
@@ -66,6 +66,7 @@ export function CommentInput({
       createdAt: nowIso,
     }
 
+    const originalBody = body
     onOptimisticInsert(optimistic)
     setBody('')
 
@@ -89,16 +90,26 @@ export function CommentInput({
         throw new Error(errBody.error ?? `Failed to post comment (${res.status})`)
       }
 
-      // Success: drop the temp; Realtime will deliver the canonical comment.
+      // Success: swap the temp for the canonical comment returned by the server.
+      // Insert canonical first, then remove temp so the comment never disappears from the DOM.
+      let data: { comment: Comment }
+      try {
+        data = (await res.json()) as { comment: Comment }
+        if (!data?.comment?.id) throw new Error('Unexpected response shape')
+      } catch {
+        throw new Error('Unexpected response from server')
+      }
+      onOptimisticInsert(data.comment)
       onOptimisticRollback(tempId)
     } catch (err) {
       onOptimisticRollback(tempId)
       setError(err instanceof Error ? err.message : 'Failed to post comment')
-      setBody(trimmed) // restore so the user can retry
+      setBody(originalBody) // restore original so the user can retry without losing formatting
     } finally {
       setSubmitting(false)
     }
   }, [
+    body,
     canSubmit,
     trimmed,
     commentType,
@@ -139,6 +150,7 @@ export function CommentInput({
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={handleKeyDown}
         rows={3}
+        aria-label="Comment"
         placeholder="Leave a comment… (Enter to send, Shift+Enter for newline)"
         className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
       />
@@ -147,7 +159,7 @@ export function CommentInput({
         <span
           className={`text-xs ${overLimit ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`}
         >
-          {body.length} / {COMMENT_BODY_MAX_LENGTH}
+          {trimmed.length} / {COMMENT_BODY_MAX_LENGTH}
         </span>
         <button
           type="button"
