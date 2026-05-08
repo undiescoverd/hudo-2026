@@ -99,6 +99,7 @@ export function CommentInput({
       } catch {
         throw new Error('Unexpected response from server')
       }
+      // CommentPanel.handleInsert dedupes by id, so a Realtime echo of the same comment is a no-op.
       onOptimisticInsert(data.comment)
       onOptimisticRollback(tempId)
     } catch (err) {

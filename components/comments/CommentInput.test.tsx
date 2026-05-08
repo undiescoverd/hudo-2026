@@ -47,9 +47,17 @@ describe('CommentInput — source invariants', () => {
     assert.equal(matches.length, 2, 'rollback must be called in both success and error paths')
   })
 
-  it('consumes POST response to swap temp for canonical comment', () => {
+  it('calls onOptimisticInsert twice (temp + canonical) on success', () => {
+    const insertMatches = [...source.matchAll(/onOptimisticInsert\(/g)]
+    assert.equal(
+      insertMatches.length,
+      2,
+      'onOptimisticInsert must be called twice: once for temp, once for canonical'
+    )
+  })
+
+  it('parses POST response JSON', () => {
     assert.match(source, /res\.json\(\)/)
-    assert.match(source, /onOptimisticInsert/) // called twice in the file: once for temp, once for canonical
   })
 
   it('disables submit when body is empty after trim', () => {
