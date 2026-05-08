@@ -1,11 +1,9 @@
-/**
- * Unit tests for the video PATCH route.
- *
- * Uses Node.js built-in test runner — no Next.js runtime needed.
- * Tests source-invariant security checks for the active_version_id branch.
- *
- * Run: npx tsx --test "app/api/videos/[videoId]/route.test.ts"
- */
+// Unit tests for the video PATCH route.
+//
+// Uses Node.js built-in test runner — no Next.js runtime needed.
+// Tests source-invariant security checks for the active_version_id branch.
+//
+// Run: npx tsx --test "app/api/videos/**/*.test.ts"
 
 import assert from 'node:assert/strict'
 import { before, describe, it } from 'node:test'

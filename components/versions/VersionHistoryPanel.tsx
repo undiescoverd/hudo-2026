@@ -46,7 +46,7 @@ export function VersionHistoryPanel({
   const [pendingId, setPendingId] = useState<string | null>(null)
 
   // Only agents, admins, and owners can set the active version.
-  // talent and guest see read-only panel — server also enforces this via requireAgentRole.
+  // talent and guest see read-only panel — server-enforced via AGENT_PLUS_ROLES check.
   const canSetActive = role !== 'talent' && role !== 'guest'
 
   useEffect(() => {
