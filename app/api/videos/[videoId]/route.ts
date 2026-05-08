@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
-import { checkRateLimit, requireMembership } from '@/lib/api-helpers'
+import { AGENT_PLUS_ROLES, checkRateLimit, requireMembership } from '@/lib/api-helpers'
 import { isValidUUID } from '@/lib/validation'
 
 /**
@@ -78,8 +78,54 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { title, description } = body as { title?: unknown; description?: unknown }
+  const { title, description, active_version_id } = body as {
+    title?: unknown
+    description?: unknown
+    active_version_id?: unknown
+  }
 
+  // -------------------------------------------------------------------------
+  // active_version_id branch — agents/admins/owner only
+  // -------------------------------------------------------------------------
+  if (active_version_id !== undefined) {
+    // role gate using already-loaded membership (avoids duplicate DB query)
+    if (!(AGENT_PLUS_ROLES as readonly string[]).includes(membership.role)) {
+      return NextResponse.json({ error: 'Only agents can set the active version' }, { status: 403 })
+    }
+
+    // Must be a valid UUID
+    if (typeof active_version_id !== 'string' || !isValidUUID(active_version_id)) {
+      return NextResponse.json({ error: 'Invalid active_version_id' }, { status: 400 })
+    }
+
+    // Version must belong to this video
+    const { data: version, error: vErr } = await admin
+      .from('video_versions')
+      .select('id')
+      .eq('id', active_version_id)
+      .eq('video_id', videoId)
+      .maybeSingle()
+
+    if (vErr || !version) {
+      return NextResponse.json({ error: 'Version not found for this video' }, { status: 400 })
+    }
+
+    const { error: uErr } = await admin
+      .from('videos')
+      .update({ active_version_id, updated_at: new Date().toISOString() })
+      .eq('id', videoId)
+
+    if (uErr) {
+      console.error('[video:patch] Failed to update active_version_id:', uErr.message)
+      return NextResponse.json({ error: 'Failed to update active version' }, { status: 500 })
+    }
+
+    return NextResponse.json({ id: videoId, active_version_id })
+  }
+
+  // -------------------------------------------------------------------------
+  // title / description branch (existing behaviour — unchanged)
+  // -------------------------------------------------------------------------
   const updates: { title?: string; description?: string; updated_at: string } = {
     updated_at: new Date().toISOString(),
   }
