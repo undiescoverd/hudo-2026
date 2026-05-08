@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { notFound } from 'next/navigation'
 import { VideoPlayer } from '@/components/player/VideoPlayer'
 import { VersionSelector } from '@/components/versions/VersionSelector'
+import { MobilePlayerLayout } from '@/components/player/MobilePlayerLayout'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -19,15 +20,23 @@ export default function VideoPage({ params }: Props) {
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-3">
+    <main className="min-h-screen">
+      <div className="px-4 pt-4">
         <VersionSelector
           videoId={params.id}
           activeVersionId={activeVersionId}
           onVersionChange={setActiveVersionId}
         />
       </div>
-      <VideoPlayer videoId={params.id} versionId={activeVersionId ?? undefined} />
+      <MobilePlayerLayout
+        player={
+          <VideoPlayer
+            videoId={params.id}
+            versionId={activeVersionId ?? undefined}
+            className="h-full w-full"
+          />
+        }
+      />
     </main>
   )
 }
