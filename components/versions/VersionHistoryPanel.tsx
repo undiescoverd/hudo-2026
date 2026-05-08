@@ -152,7 +152,7 @@ export function VersionHistoryPanel({
               {canSetActive && !isActive && (
                 <button
                   type="button"
-                  disabled={pendingId === v.id}
+                  disabled={pendingId !== null}
                   onClick={() => void setActive(v.id)}
                   className="rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
                 >

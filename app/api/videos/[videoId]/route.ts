@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
-import { checkRateLimit, requireAgentRole, requireMembership } from '@/lib/api-helpers'
+import { AGENT_PLUS_ROLES, checkRateLimit, requireMembership } from '@/lib/api-helpers'
 import { isValidUUID } from '@/lib/validation'
 
 /**
@@ -88,14 +88,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
   // active_version_id branch — agents/admins/owner only
   // -------------------------------------------------------------------------
   if (active_version_id !== undefined) {
-    // Role gate: talent cannot set the active version (server-enforced, not just client-hidden)
-    const gated = await requireAgentRole(
-      admin,
-      user.id,
-      video.agency_id,
-      'Only agents can set the active version'
-    )
-    if (gated instanceof NextResponse) return gated
+    // role gate using already-loaded membership (avoids duplicate DB query)
+    if (!(AGENT_PLUS_ROLES as readonly string[]).includes(membership.role)) {
+      return NextResponse.json({ error: 'Only agents can set the active version' }, { status: 403 })
+    }
 
     // Must be a valid UUID
     if (typeof active_version_id !== 'string' || !isValidUUID(active_version_id)) {

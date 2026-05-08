@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-const AGENT_PLUS_ROLES = ['owner', 'admin_agent', 'agent'] as const
+export const AGENT_PLUS_ROLES = ['owner', 'admin_agent', 'agent'] as const
 
 export async function checkRateLimit(
   key: string,

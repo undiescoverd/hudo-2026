@@ -26,12 +26,13 @@ describe('videos PATCH route — active_version_id branch', () => {
     source = fs.readFileSync(routePath, 'utf8')
   })
 
-  it('accepts active_version_id in PATCH body', () => {
-    assert.match(source, /active_version_id/)
+  it('destructures active_version_id from the request body', () => {
+    // matches `active_version_id }` or `, active_version_id` or `active_version_id =` in destructuring
+    assert.match(source, /\bactive_version_id\s*[},=]/)
   })
 
-  it('uses requireAgentRole to gate active version changes', () => {
-    assert.match(source, /requireAgentRole/)
+  it('uses AGENT_PLUS_ROLES to gate active version changes', () => {
+    assert.match(source, /AGENT_PLUS_ROLES/)
   })
 
   it('validates the version belongs to this video', () => {
