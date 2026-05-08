@@ -99,13 +99,13 @@ NOTES: Version numbers assigned by Postgres RPC only — never by app logic.
 
 ---
 
-- [ ] **S1-UPLOAD-005** — Video metadata form
+- [x] **S1-UPLOAD-005** — Video metadata form
 
 TASK_ID: S1-UPLOAD-005
 TITLE: Video metadata form (title/description)
 BRANCH: feat/s1-upload-005-metadata-form
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S1-UPLOAD-003
 ACCEPTANCE_CRITERIA:
   - Inline form shown after upload success (or on video page) to set title and description
@@ -147,13 +147,13 @@ NOTES: Signed URL endpoint already exists (S0-STORAGE-002). Never return or stor
 
 ---
 
-- [ ] **S1-PLAYER-002** — Implement comment keyboard shortcuts
+- [x] **S1-PLAYER-002** — Implement comment keyboard shortcuts
 
 TASK_ID: S1-PLAYER-002
 TITLE: Implement comment keyboard shortcuts
 BRANCH: feat/s1-player-002-keyboard-shortcuts
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S1-PLAYER-001
 ACCEPTANCE_CRITERIA:
   - C key opens comment input at current timestamp
@@ -168,13 +168,13 @@ NOTES: Shortcuts must not fire inside comment input — check document.activeEle
 
 ---
 
-- [ ] **S1-PLAYER-003** — Build comment timeline overlay
+- [x] **S1-PLAYER-003** — Build comment timeline overlay
 
 TASK_ID: S1-PLAYER-003
 TITLE: Build comment timeline overlay
 BRANCH: feat/s1-player-003-timeline-overlay
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S1-PLAYER-001, S1-COMMENT-001
 ACCEPTANCE_CRITERIA:
   - Timeline bar (below scrub bar) shows per-user colour-coded badges at comment timestamps
@@ -188,13 +188,13 @@ NOTES: User colours: derive consistent colour from user UUID (HSL hash). No exte
 
 ---
 
-- [ ] **S1-PLAYER-004** — Mobile player layout
+- [x] **S1-PLAYER-004** — Mobile player layout
 
 TASK_ID: S1-PLAYER-004
 TITLE: Mobile player layout
 BRANCH: feat/s1-player-004-mobile-layout
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S1-PLAYER-001
 ACCEPTANCE_CRITERIA:
   - On mobile (<768px): video fills top half of screen, comment panel fills bottom half
@@ -318,13 +318,13 @@ NOTES: Realtime channel name: video-version:{videoVersionId}. Scoped per CLAUDE.
 
 ---
 
-- [ ] **S1-COMMENT-005** — Build comment input
+- [x] **S1-COMMENT-005** — Build comment input
 
 TASK_ID: S1-COMMENT-005
 TITLE: Build comment input
 BRANCH: feat/s1-comment-005-comment-input
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S1-COMMENT-002, S1-PLAYER-002
 ACCEPTANCE_CRITERIA:
   - Textarea: Enter submits, Shift+Enter inserts newline
@@ -342,13 +342,13 @@ NOTES: Integrates with useVideoPlayer context for current timestamp / range stat
 
 ---
 
-- [ ] **S1-VERSION-001** — Build version selector UI
+- [x] **S1-VERSION-001** — Build version selector UI
 
 TASK_ID: S1-VERSION-001
 TITLE: Build version selector UI
 BRANCH: feat/s1-version-001-version-selector
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S1-UPLOAD-004
 ACCEPTANCE_CRITERIA:
   - Dropdown or tab strip showing all versions for the video (v1, v2, …)
@@ -362,13 +362,13 @@ NOTES: GET handler on the versions route (POST already handled by S1-UPLOAD-004)
 
 ---
 
-- [ ] **S1-VERSION-002** — Version history panel
+- [x] **S1-VERSION-002** — Version history panel
 
 TASK_ID: S1-VERSION-002
 TITLE: Version history panel
 BRANCH: feat/s1-version-002-version-history
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S1-VERSION-001
 ACCEPTANCE_CRITERIA:
   - Panel lists all versions: version number, upload date, uploader name, file size
