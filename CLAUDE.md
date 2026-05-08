@@ -82,7 +82,7 @@ Guest: read-only via signed link, no Supabase access.
 
 ## Linear Sprint Tracker
 
-Status synced by `orchestrate.js start/review/done/blocked` and by GitHub Actions; manual: `sync-check`, `sync-fix`. Full automation table and workflow states: [orchestrate.md](orchestrate.md).
+Status synced by `orchestrate.js start/review/done/blocked` and by GitHub Actions; manual: `sync-check`, `sync-fix`. `sync-check` also flags branches merged into release refs (`main`, `production`, `preview/wave-*`) but not marked done, and `sync-fix` auto-promotes them. Full automation table and workflow states: [orchestrate.md](orchestrate.md).
 
 ## Context budget
 

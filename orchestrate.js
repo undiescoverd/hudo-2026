@@ -71,7 +71,8 @@ function auditLog(message) {
   fs.appendFileSync(AUDIT_LOG, `[${ts}] ${message}\n`, 'utf8');
 }
 
-/** Sync task status to Linear via update-linear-task.sh script. Never throws. */
+/** Sync task status to Linear via update-linear-task.sh script. Never throws.
+ *  Returns true on success, false if the sync was skipped or all retries failed. */
 function syncLinear(taskId, orchestratorStatus) {
   const statusMap = {
     'in_progress': 'In Progress',
@@ -80,12 +81,12 @@ function syncLinear(taskId, orchestratorStatus) {
     'blocked':     'Blocked',
   };
   const linearStatus = statusMap[orchestratorStatus];
-  if (!linearStatus) return;
+  if (!linearStatus) return false;
 
   const script = path.join(__dirname, 'scripts', 'update-linear-task.sh');
   if (!fs.existsSync(script)) {
     console.warn(col(c.grey, `  ⚠  Linear sync skipped — script not found`));
-    return;
+    return false;
   }
 
   const maxAttempts = 2;
@@ -96,7 +97,7 @@ function syncLinear(taskId, orchestratorStatus) {
         timeout: 15000,
       });
       console.log(col(c.grey, `  ↗  Linear: ${taskId} → ${linearStatus}`));
-      return;
+      return true;
     } catch (err) {
       const stderr = err.stderr ? err.stderr.toString().trim() : '';
       if (attempt < maxAttempts) {
@@ -108,6 +109,7 @@ function syncLinear(taskId, orchestratorStatus) {
       console.warn(col(c.yellow, `      Run: node orchestrate.js sync-fix to repair drift`));
     }
   }
+  return false;
 }
 
 /** Query a task's current Linear status. Returns state name string or null on error. */
@@ -520,15 +522,25 @@ function cmdReview(taskId) {
   syncLinear(taskId, 'in_review');
 }
 
+/**
+ * Mark a task done in markdown + Linear. Shared by cmdDone and cmdSyncFix.
+ * Returns { task, linearSynced } on success, or null if the task was not found.
+ */
+function markTaskDone(taskId, { auditTag = 'DONE' } = {}) {
+  const { byId } = loadAllTasks();
+  const task = byId.get(taskId);
+  if (!task) return null;
+  setTaskStatus(task, 'done');
+  auditLog(`${auditTag} ${taskId}`);
+  const linearSynced = syncLinear(taskId, 'done');
+  return { task, linearSynced };
+}
+
 function cmdDone(taskId) {
   if (!taskId) { console.error('Usage: node orchestrate.js done <TASK_ID>'); process.exit(1); }
-  const { tasks, byId } = loadAllTasks();
-  const task = byId.get(taskId);
-  if (!task) { console.error(col(c.red, `✗  Task not found: ${taskId}`)); process.exit(1); }
-  setTaskStatus(task, 'done');
-  auditLog(`DONE ${taskId}`);
+  const result = markTaskDone(taskId);
+  if (!result) { console.error(col(c.red, `✗  Task not found: ${taskId}`)); process.exit(1); }
   console.log(col(c.green, `✓  ${taskId} done`));
-  syncLinear(taskId, 'done');
 
   // Re-load to get fresh statuses and print newly unblocked tasks
   const { tasks: freshTasks, byId: freshById } = loadAllTasks();
@@ -634,6 +646,117 @@ function cmdBlocked(taskId, reason) {
 
 // ─── Sync commands ────────────────────────────────────────────────────────────
 
+/** Run a git command and return stdout, or '' on failure (never throws). */
+function gitSafe(args) {
+  try {
+    return execFileSync('git', args, {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 10000,
+    }).toString().trim();
+  } catch {
+    return '';
+  }
+}
+
+/** True if `ancestor` is reachable from `descendant` (both ref names). */
+function gitIsAncestor(ancestor, descendant) {
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', ancestor, descendant], {
+      stdio: ['ignore', 'ignore', 'ignore'],
+      timeout: 10000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Resolve the list of release refs to check against, in priority order. */
+function listReleaseRefs() {
+  const candidates = [];
+  for (const base of ['main', 'production']) {
+    if (gitSafe(['rev-parse', '--verify', '--quiet', base])) {
+      candidates.push(base);
+    } else if (gitSafe(['rev-parse', '--verify', '--quiet', `origin/${base}`])) {
+      candidates.push(`origin/${base}`);
+    }
+  }
+  const waves = gitSafe([
+    'for-each-ref',
+    '--format=%(refname:short)',
+    'refs/heads/preview/wave-*',
+    'refs/remotes/origin/preview/wave-*',
+  ]).split('\n').map(s => s.trim()).filter(Boolean);
+  // De-dupe while preserving order; prefer local ref over its origin/ counterpart
+  const seen = new Set();
+  for (const ref of waves) {
+    const local = ref.replace(/^origin\//, '');
+    if (seen.has(local)) continue;
+    seen.add(local);
+    // Prefer the local ref name if both exist
+    candidates.push(waves.includes(local) ? local : ref);
+  }
+  return candidates;
+}
+
+/**
+ * Detect tasks whose branch (or task ID) is reachable from a release ref but whose
+ * markdown status is not `done`. Returns array of { id, branch, mergedIn, evidence }.
+ */
+function detectGitDrift(tasks) {
+  const releaseRefs = listReleaseRefs();
+  if (releaseRefs.length === 0) return [];
+
+  const candidate = (s) => ['not_started', 'in_progress', 'in_review', 'blocked'].includes(s);
+  const drifted = [];
+
+  for (const t of tasks) {
+    if (!candidate(t.status)) continue;
+    if (!t.id) continue;
+
+    let mergedIn = null;
+    let evidence = null;
+
+    // First pass: branch-ancestor check (strongest evidence)
+    if (t.branch) {
+      const branchRefs = [
+        `refs/remotes/origin/${t.branch}`,
+        `refs/heads/${t.branch}`,
+      ];
+      for (const ref of branchRefs) {
+        if (!gitSafe(['rev-parse', '--verify', '--quiet', ref])) continue;
+        for (const release of releaseRefs) {
+          if (gitIsAncestor(ref, release)) {
+            mergedIn = release;
+            evidence = `branch ${t.branch} merged into ${release}`;
+            break;
+          }
+        }
+        if (mergedIn) break;
+      }
+    }
+
+    // Fallback: task ID present in release-ref history
+    if (!mergedIn) {
+      for (const release of releaseRefs) {
+        const log = gitSafe(['log', release, '--oneline', '-F', `--grep=${t.id}`]);
+        if (log) {
+          const firstLine = log.split('\n')[0];
+          mergedIn = release;
+          evidence = `task id in ${release} history: ${firstLine}`;
+          break;
+        }
+      }
+    }
+
+    if (mergedIn) {
+      drifted.push({ id: t.id, branch: t.branch, markdownStatus: t.status, mergedIn, evidence });
+    }
+  }
+
+  return drifted;
+}
+
 function cmdSyncCheck() {
   const { tasks } = loadAllTasks();
 
@@ -648,65 +771,89 @@ function cmdSyncCheck() {
   // Only check tasks that have a meaningful status
   const checkable = tasks.filter(t => statusToLinear[t.status]);
 
-  if (checkable.length === 0) {
-    console.log(col(c.grey, '\nNo tasks with trackable status to check.\n'));
-    return { results: [], driftCount: 0, errorCount: 0 };
-  }
-
   console.log('\n' + bold('=== Linear Sync Check ===') + '\n');
-  console.log(
-    `  ${'TASK'.padEnd(20)} ${'MARKDOWN'.padEnd(14)} ${'LINEAR'.padEnd(14)} STATUS`
-  );
-  console.log('  ' + '─'.repeat(60));
 
   const results = [];
   let driftCount = 0;
   let errorCount = 0;
 
-  for (const t of checkable) {
-    const expectedLinear = statusToLinear[t.status];
-    const actualLinear = queryLinearStatus(t.id);
+  if (checkable.length === 0) {
+    console.log(col(c.grey, '  No tasks with Linear-tracked status to query.\n'));
+  } else {
+    console.log(
+      `  ${'TASK'.padEnd(20)} ${'MARKDOWN'.padEnd(14)} ${'LINEAR'.padEnd(14)} STATUS`
+    );
+    console.log('  ' + '─'.repeat(60));
 
-    if (actualLinear === null) {
-      results.push({ id: t.id, markdown: t.status, expected: expectedLinear, actual: null, status: 'error' });
-      errorCount++;
-      console.log(
-        `  ${t.id.padEnd(20)} ${t.status.padEnd(14)} ${col(c.red, '? (error)'.padEnd(14))} ${col(c.red, '⚠ ERROR')}`
-      );
-      continue;
+    for (const t of checkable) {
+      const expectedLinear = statusToLinear[t.status];
+      const actualLinear = queryLinearStatus(t.id);
+
+      if (actualLinear === null) {
+        results.push({ id: t.id, markdown: t.status, expected: expectedLinear, actual: null, status: 'error' });
+        errorCount++;
+        console.log(
+          `  ${t.id.padEnd(20)} ${t.status.padEnd(14)} ${col(c.red, '? (error)'.padEnd(14))} ${col(c.red, '⚠ ERROR')}`
+        );
+        continue;
+      }
+
+      const inSync = actualLinear.toLowerCase() === expectedLinear.toLowerCase();
+      if (inSync) {
+        results.push({ id: t.id, markdown: t.status, expected: expectedLinear, actual: actualLinear, status: 'ok' });
+        console.log(
+          `  ${t.id.padEnd(20)} ${t.status.padEnd(14)} ${actualLinear.padEnd(14)} ${col(c.green, '✓ in sync')}`
+        );
+      } else {
+        results.push({ id: t.id, markdown: t.status, expected: expectedLinear, actual: actualLinear, status: 'drifted' });
+        driftCount++;
+        console.log(
+          `  ${t.id.padEnd(20)} ${t.status.padEnd(14)} ${col(c.red, actualLinear.padEnd(14))} ${col(c.red, '✗ DRIFTED')}`
+        );
+      }
     }
+  }
 
-    const inSync = actualLinear.toLowerCase() === expectedLinear.toLowerCase();
-    if (inSync) {
-      results.push({ id: t.id, markdown: t.status, expected: expectedLinear, actual: actualLinear, status: 'ok' });
+  // ── Git drift: branches merged into release refs but markdown ≠ done
+  // Always runs — drift can exist even when checkable.length === 0
+  const gitDrift = detectGitDrift(tasks);
+  const gitDriftCount = gitDrift.length;
+
+  if (gitDriftCount > 0) {
+    console.log();
+    console.log(bold('MERGED INTO RELEASE BUT NOT DONE'));
+    console.log(
+      `  ${'TASK'.padEnd(20)} ${'MARKDOWN'.padEnd(14)} ${'MERGED IN'.padEnd(20)} EVIDENCE`
+    );
+    console.log('  ' + '─'.repeat(72));
+    for (const g of gitDrift) {
+      const evidence = g.evidence.length > 60 ? g.evidence.slice(0, 57) + '…' : g.evidence;
       console.log(
-        `  ${t.id.padEnd(20)} ${t.status.padEnd(14)} ${actualLinear.padEnd(14)} ${col(c.green, '✓ in sync')}`
-      );
-    } else {
-      results.push({ id: t.id, markdown: t.status, expected: expectedLinear, actual: actualLinear, status: 'drifted' });
-      driftCount++;
-      console.log(
-        `  ${t.id.padEnd(20)} ${t.status.padEnd(14)} ${col(c.red, actualLinear.padEnd(14))} ${col(c.red, '✗ DRIFTED')}`
+        `  ${col(c.red, g.id.padEnd(20))} ${g.markdownStatus.padEnd(14)} ${g.mergedIn.padEnd(20)} ${col(c.grey, evidence)}`
       );
     }
   }
 
   console.log();
-  if (driftCount === 0 && errorCount === 0) {
-    console.log(col(c.green, `✓  All ${checkable.length} tasks in sync with Linear.\n`));
+  if (driftCount === 0 && errorCount === 0 && gitDriftCount === 0) {
+    const tally = checkable.length > 0
+      ? `All ${checkable.length} tasks in sync with Linear and git.`
+      : 'No drift detected.';
+    console.log(col(c.green, `✓  ${tally}\n`));
   } else {
-    if (driftCount > 0) console.log(col(c.yellow, `⚠  ${driftCount} task(s) drifted.`));
-    if (errorCount > 0) console.log(col(c.red, `⚠  ${errorCount} task(s) could not be queried.`));
+    if (driftCount > 0)    console.log(col(c.yellow, `⚠  ${driftCount} task(s) drifted from Linear.`));
+    if (gitDriftCount > 0) console.log(col(c.yellow, `⚠  ${gitDriftCount} task(s) merged into a release ref but not marked done.`));
+    if (errorCount > 0)    console.log(col(c.red,    `⚠  ${errorCount} task(s) could not be queried.`));
     console.log(col(c.yellow, `   Run: node orchestrate.js sync-fix to repair drift\n`));
   }
 
-  return { results, driftCount, errorCount };
+  return { results, driftCount, errorCount, gitDrift, gitDriftCount };
 }
 
 function cmdSyncFix() {
-  const { results, driftCount } = cmdSyncCheck();
+  const { results, driftCount, gitDrift, gitDriftCount } = cmdSyncCheck();
 
-  if (driftCount === 0) {
+  if (driftCount === 0 && gitDriftCount === 0) {
     console.log(col(c.green, 'Nothing to fix.\n'));
     return;
   }
@@ -746,6 +893,26 @@ function cmdSyncFix() {
       console.log(col(c.red, `  ✗  ${r.id}: ${stderr || err.message}`));
       failed++;
     }
+  }
+
+  // ── Git drift: auto-promote tasks merged into a release ref to done
+  for (const g of (gitDrift || [])) {
+    const result = markTaskDone(g.id, { auditTag: 'SYNC-FIX-GIT' });
+    if (!result) {
+      console.log(col(c.red, `  ✗  ${g.id}: task vanished from sprint files`));
+      failed++;
+      continue;
+    }
+    if (!result.linearSynced) {
+      // Markdown is source of truth: keep the done flip even if Linear is unreachable.
+      // Operator retries sync-fix once Linear recovers.
+      console.log(col(c.yellow, `  ⚠  ${g.id}: markdown updated but Linear sync failed`));
+      failed++;
+      continue;
+    }
+    auditLog(`SYNC-FIX-GIT: ${g.id} merged into ${g.mergedIn} — auto-promoted to done`);
+    console.log(col(c.green, `  ✓  ${g.id}: ${g.markdownStatus} → done (merged in ${g.mergedIn})`));
+    fixed++;
   }
 
   console.log();

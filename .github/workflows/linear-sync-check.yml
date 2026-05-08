@@ -11,10 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Fetch all refs
+        run: git fetch --all --quiet --tags --prune
 
       - name: Run sync-check
         id: check
@@ -27,7 +32,7 @@ jobs:
           output=$(node orchestrate.js sync-check 2>&1) || true
           echo "$output"
 
-          if echo "$output" | grep -q "DRIFTED"; then
+          if echo "$output" | grep -qE "DRIFTED|MERGED INTO RELEASE BUT NOT DONE"; then
             echo "drifted=true" >> "$GITHUB_OUTPUT"
           else
             echo "drifted=false" >> "$GITHUB_OUTPUT"
@@ -48,7 +53,7 @@ jobs:
         run: |
           curl -sS -X POST "$SLACK_WEBHOOK_URL" \
             -H 'Content-type: application/json' \
-            -d '{"text":"Linear sync drift detected and auto-fixed. Run `node orchestrate.js sync-check` to verify."}'
+            -d '{"text":"Linear/git sync drift detected and auto-fixed. Run `node orchestrate.js sync-check` to verify."}'
 
       - name: Cleanup
         if: always()
