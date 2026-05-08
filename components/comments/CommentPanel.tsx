@@ -6,13 +6,16 @@ import type { Comment } from '@/lib/comments'
 import { useVideoPlayerContext } from '@/components/player/VideoPlayer'
 import { useRealtimeComments } from '@/hooks/useRealtimeComments'
 import { CommentThread } from './CommentThread'
+import { CommentInput } from './CommentInput'
 
 interface CommentPanelProps {
   videoId: string
   versionId: string
+  agencyId: string
+  userId: string
 }
 
-export function CommentPanel({ videoId, versionId }: CommentPanelProps) {
+export function CommentPanel({ videoId, versionId, agencyId, userId }: CommentPanelProps) {
   const player = useVideoPlayerContext()
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(true)
@@ -69,6 +72,10 @@ export function CommentPanel({ videoId, versionId }: CommentPanelProps) {
     )
   }, [])
 
+  const handleOptimisticRollback = useCallback((tempId: string) => {
+    setComments((prev) => prev.filter((c) => c.id !== tempId))
+  }, [])
+
   useRealtimeComments({
     videoVersionId: versionId,
     onInsert: handleInsert,
@@ -96,41 +103,48 @@ export function CommentPanel({ videoId, versionId }: CommentPanelProps) {
     return acc
   }, {})
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="px-4 py-6 text-center">
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-      </div>
-    )
-  }
-
-  if (topLevel.length === 0) {
-    return (
-      <div className="px-4 py-12 text-center">
-        <p className="text-sm text-gray-500 dark:text-gray-400">No comments yet.</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="divide-y divide-gray-100 dark:divide-gray-800">
-      {topLevel.map((comment) => (
-        <div key={comment.id} className="py-1">
-          <CommentThread
-            parent={comment}
-            replies={repliesByParent[comment.id] ?? []}
-            onSeek={handleSeek}
-          />
-        </div>
-      ))}
+    <div className="flex h-full flex-col">
+      <div className="flex-1 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
+        {loading && (
+          <div className="flex items-center justify-center py-12">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="px-4 py-6 text-center">
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          </div>
+        )}
+
+        {!loading && !error && topLevel.length === 0 && (
+          <div className="px-4 py-12 text-center">
+            <p className="text-sm text-gray-500 dark:text-gray-400">No comments yet.</p>
+          </div>
+        )}
+
+        {!loading &&
+          !error &&
+          topLevel.length > 0 &&
+          topLevel.map((comment) => (
+            <div key={comment.id} className="py-1">
+              <CommentThread
+                parent={comment}
+                replies={repliesByParent[comment.id] ?? []}
+                onSeek={handleSeek}
+              />
+            </div>
+          ))}
+      </div>
+      <CommentInput
+        videoId={videoId}
+        versionId={versionId}
+        agencyId={agencyId}
+        userId={userId}
+        onOptimisticInsert={handleInsert}
+        onOptimisticRollback={handleOptimisticRollback}
+      />
     </div>
   )
 }
