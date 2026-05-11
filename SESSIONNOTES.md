@@ -8,6 +8,16 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-05-11 — S2 replan: app shell first
+
+- **Task:** Roll back NOTIF-001 start; add S2-SHELL-001 (app shell); re-order S2 waves.
+- **Models:** planner=opus, executor=opus (sprint file + CLAUDE.md edits only)
+- **Outcome:** done
+- **Notes:** Discovered S1 shipped no connective tissue (no layout, no nav, no video list, no root redirect). NOTIF-001/GUEST-001 deprioritised to wave 3. SHELL-001 added as solo wave 1 gating everything.
+- **Gotcha (if any):** Always run a local walkthrough before declaring a sprint done. The S1 gate was deferred and revealed structural gaps only visible in a browser.
+
+---
+
 ## 2026-05-11 — S2 wave 1 kickoff (housekeeping PR + plan correction)
 
 - **Task:** Land sprint-1 closeout chore (workflow rule + sprint files + housekeeping) on branch `chore/sprint-1-closeout`; correct sprint-2 migration scope before NOTIF-001/GUEST-001 kickoff.

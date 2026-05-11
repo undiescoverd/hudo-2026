@@ -8,6 +8,38 @@
 
 ## Tasks
 
+### WAVE 1 — App Shell (solo, must land first)
+
+---
+
+- [ ] **S2-SHELL-001** — Build app shell
+
+TASK_ID: S2-SHELL-001
+TITLE: Build app shell
+BRANCH: feat/s2-shell-001-app-shell
+MODEL: haiku-4.5
+STATUS: not_started
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - app/(dashboard)/layout.tsx wraps all dashboard pages with <AppHeader>
+  - <AppHeader>: logo (links to /videos), nav links (Videos, Upload for agents+), user display name, sign-out button
+  - app/page.tsx: signed-out → redirect /auth/signin; signed-in → redirect /videos
+  - signin default redirect (no ?redirect param) → /videos
+  - app/(dashboard)/videos/page.tsx: list of all videos accessible to current user — thumbnail, title, status badge, link to /videos/[id]
+  - /videos/[id] has a back link to /videos
+  - pnpm type-check && pnpm lint green
+FILES:
+  - app/(dashboard)/layout.tsx
+  - components/layout/AppHeader.tsx
+  - app/page.tsx
+  - app/auth/signin/signin-form.tsx (update safeRedirect default)
+  - app/(dashboard)/videos/page.tsx
+NOTES: Connective tissue for S1 features. Must be walkable: register → sign in → /videos list → click video → player + comments → upload new video. Check if GET /api/videos route exists before adding; reuse lib/supabase-server.ts for data fetch.
+
+---
+
+### WAVE 2 — Dashboards + Gating (parallel after SHELL-001)
+
 ### DASHBOARDS (4 tasks)
 
 ---
@@ -127,6 +159,8 @@ NOTES: Plan limits live in `plans` table (S0). Cache key: `plan-limit:{agency_id
 
 ---
 
+### WAVE 3 — Notifications (parallel after WAVE 2)
+
 ### NOTIFICATIONS (4 tasks)
 
 ---
@@ -219,6 +253,8 @@ FILES:
 NOTES: Reuse existing settings layout from S0/S1.
 
 ---
+
+### WAVE 3 — Guest Links (parallel after WAVE 2)
 
 ### GUEST LINKS (4 tasks)
 
