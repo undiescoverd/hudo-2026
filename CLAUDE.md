@@ -110,6 +110,8 @@ When something breaks or surprises you mid-task, add an entry here before closin
 
 Format: `- **[Area] Title (YYYY-MM-DD):** what broke + fix/workaround.`
 
+- **[UX] Ship walkable flows, not component piles (2026-05-11):** S1 shipped upload, player, comments, versions — but no app shell, no video list, no root redirect, no shared nav. The app couldn't be walked end-to-end at sprint close. Rule: every sprint must land at least one complete user journey before the gate. New sprint tasks go in tasks/ *only after* confirming the previous sprint leaves a walkable state. For S2: SHELL-001 goes first, dashboards second, feature tracks third.
+
 ## Environments
 
 Three envs: `hudo-dev`, `hudo-staging`, `hudo-prod`. Preview = main + feature branches (staging); Production = `production` branch (reserved). Never deploy to production without approval. Full details: [docs/vercel-setup.md](docs/vercel-setup.md).
