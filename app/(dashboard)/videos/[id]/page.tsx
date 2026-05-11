@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import { notFound } from 'next/navigation'
 import { VideoPlayer } from '@/components/player/VideoPlayer'
@@ -21,7 +22,15 @@ export default function VideoPage({ params }: Props) {
 
   return (
     <main className="min-h-screen">
-      <div className="px-4 pt-4">
+      <div className="px-4 pt-4 pb-2">
+        <Link
+          href="/videos"
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          ← Back to videos
+        </Link>
+      </div>
+      <div className="px-4 pt-2">
         <VersionSelector
           videoId={params.id}
           activeVersionId={activeVersionId}
