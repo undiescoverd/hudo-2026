@@ -111,6 +111,7 @@ When something breaks or surprises you mid-task, add an entry here before closin
 Format: `- **[Area] Title (YYYY-MM-DD):** what broke + fix/workaround.`
 
 - **[UX] Ship walkable flows, not component piles (2026-05-11):** S1 shipped upload, player, comments, versions — but no app shell, no video list, no root redirect, no shared nav. The app couldn't be walked end-to-end at sprint close. Rule: every sprint must land at least one complete user journey before the gate. New sprint tasks go in tasks/ *only after* confirming the previous sprint leaves a walkable state. For S2: SHELL-001 goes first, dashboards second, feature tracks third.
+- **[Orchestrate] `review` blocks `gh pr merge` (2026-05-11):** `orchestrate.js review <ID>` rewrites `tasks/sprint-N.md` locally (in_progress → in_review) and leaves it uncommitted. `gh pr merge` then refuses to checkout main. Fix: commit the status bump before `review`, or `git stash` before merging — `orchestrate.js done` will overwrite the status on main anyway.
 
 ## Environments
 

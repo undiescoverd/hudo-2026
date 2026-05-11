@@ -12,13 +12,13 @@
 
 ---
 
-- [ ] **S2-SHELL-001** — Build app shell
+- [x] **S2-SHELL-001** — Build app shell
 
 TASK_ID: S2-SHELL-001
 TITLE: Build app shell
 BRANCH: feat/s2-shell-001-app-shell
 MODEL: haiku-4.5
-STATUS: in_progress
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - app/(dashboard)/layout.tsx wraps all dashboard pages with <AppHeader>
