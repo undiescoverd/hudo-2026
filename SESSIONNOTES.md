@@ -8,6 +8,22 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-05-11 — S2-SHELL-001: app shell shipped
+
+- **Task:** S2-SHELL-001 — app shell, video list, root redirect (PR #69)
+- **Models:** planner=opus, executor=opus (light glue), tests verified manually
+- **Outcome:** done, merged to main
+- **Notes:**
+  - Added `app/(dashboard)/layout.tsx` server layout that fetches user + highest role from `memberships` and renders `<AppHeader>`.
+  - `app/page.tsx` now redirects: signed-in → `/videos`, signed-out → `/auth/signin`.
+  - `safeRedirect()` default moved from `/` → `/videos`; updated `app/api/auth/signin/route.test.ts` expectations to match.
+  - Video list (`app/(dashboard)/videos/page.tsx`) is a server component querying RLS-scoped videos; status badges inline (no Shadcn).
+  - Back link added to video detail page so the flow is round-trippable.
+  - Unblocked: DASH-001/002/004, GATE-001, NOTIF-001, GUEST-001.
+- **Gotcha:** `orchestrate.js review` mutates `tasks/sprint-2.md` locally even after the branch was pushed; if you then try to `gh pr merge` from the feature branch, git refuses to checkout because of the uncommitted change. Fix: `git stash` before merging, or commit the status bump before running review. The `done` step on `main` re-writes the status anyway.
+
+---
+
 ## 2026-05-11 — S2 replan: app shell first
 
 - **Task:** Roll back NOTIF-001 start; add S2-SHELL-001 (app shell); re-order S2 waves.
