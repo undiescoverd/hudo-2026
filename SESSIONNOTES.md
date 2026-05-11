@@ -8,6 +8,16 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-05-11 — S2 wave 1 kickoff (housekeeping PR + plan correction)
+
+- **Task:** Land sprint-1 closeout chore (workflow rule + sprint files + housekeeping) on branch `chore/sprint-1-closeout`; correct sprint-2 migration scope before NOTIF-001/GUEST-001 kickoff.
+- **Models:** planner=opus, executor=opus (chore + sprint-2 edits — docs/config only, no code path)
+- **Outcome:** done (PR #67 open); S2 wave-1 kickoff (NOTIF-001 + GUEST-001) **halted pending user signoff** on revised migration scope.
+- **Notes:** Three commits on the chore branch — workflow + sprint files; gitignore (`supabase/.branches/`, `supabase/.temp/`); docs vault + design file. `images/image.png` left untracked (no code refs, but auto-mode forbids deletion without confirmation). PR #67 opened with checklist for Vercel Preview + S1 manual gate. `pnpm format:check && pnpm type-check && pnpm lint` all green pre-push.
+- **Gotcha (if any):** **Sprint-2.md NOTIF-001/GUEST-001 acceptance criteria as originally drafted assumed greenfield CREATE TABLE migrations, but `notifications` / `notification_preferences` / `guest_links` already exist in `0001_initial_schema.sql` with RLS in `0002`.** Migrations are ALTER + CREATE INDEX only. Existing column is `recipient_id` not `user_id` — RLS in 0002 already references it; do NOT rename. Sprint-2 acceptance criteria rewritten in this PR to match. Always grep existing migrations before drafting new ones.
+
+---
+
 ## 2026-05-10 — Sprint 1 close-out + Sprint 2 kickoff
 
 - **Task:** Archive sprint-1 (17/17 done), seed `tasks/sprint-2.md` with all 13 S2 tasks (Dashboards, Plan Gating, Notifications, Guest Links).
