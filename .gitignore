@@ -48,3 +48,7 @@ get-jwt.sh
 
 # MCP config (local/personal)
 .mcp.json
+
+# Supabase CLI scratch dirs
+supabase/.branches/
+supabase/.temp/

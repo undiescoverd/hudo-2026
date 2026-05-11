@@ -51,6 +51,54 @@ Video review platform for talent agencies. Frame.io-style: upload → timestampe
 - Do not start a task while any `BLOCKED_BY` task is not `done`
 - After completing work, update CLAUDE.md with any learnings. If anything broke or surprised you, add an entry to the **Failure Log** section before closing the session — never defer it.
 
+## Model & Workflow Rule
+
+**Planning is Opus. Execution is Sonnet or Haiku. Review is mandatory for important code.**
+
+For any non-trivial task (more than a one-line tweak), the main session (Opus) MUST:
+
+1. **Plan first.** Use `superpowers:writing-plans` for spec'd work or `feature-dev:code-architect` for architecture-heavy changes. Decompose into subtasks; tag each with a complexity (low/medium/high).
+2. **Delegate execution** via the `Agent` tool with an explicit `model` override:
+   - **Haiku** (`model: "haiku"`) — single-file edits, mechanical refactors, doc updates, test scaffolding, dependency bumps, anything where the answer is obvious from the plan.
+   - **Sonnet** (`model: "sonnet"`) — multi-file features, new components, API routes, RLS policies, anything requiring judgement during execution.
+   - **Opus** stays in the main thread for planning, review synthesis, and decisions; do not delegate execution back to Opus.
+3. **Code-review** every "important" change before commit. Important = touches business logic, auth, RLS, API routes, payment flows, RPCs, or anything in `lib/`, `app/api/`, or `supabase/migrations/`. Use `pr-review-toolkit:code-reviewer` (Sonnet).
+4. **Simplify** after review. Run `pr-review-toolkit:code-simplifier` or the `code-simplifier` plugin agent against the same diff. Apply suggestions that don't fight the plan.
+5. **Security review** when the change touches a security surface — listed in "Security surfaces" below. Use the `devsecops-security-engineer` agent or `/security-review`. This is a gate, not a suggestion.
+6. **Log the run** in `SESSIONNOTES.md` (see below).
+
+### Security surfaces (mandatory security review)
+
+- Anything under `app/api/`
+- Any `supabase/migrations/` change touching RLS or new tables
+- Auth flows (`lib/auth/`, Supabase Auth wiring, guest-token handling)
+- Stripe / billing code
+- File-upload / R2-presigning code
+- Cookie / session / consent code (PostHog gate)
+- Any change to `.claude/settings.json` hooks or new env-var reads
+
+### SESSIONNOTES.md log
+
+Maintain `SESSIONNOTES.md` at the repo root. Append a dated entry whenever:
+
+- A task starts and finishes (one combined entry is fine)
+- An error or unexpected behaviour occurs
+- A gotcha is discovered (something a future session would also trip on)
+- A workaround or fix is applied
+
+Entry format:
+
+```markdown
+## YYYY-MM-DD HH:MM — <short title>
+- **Task:** <task id or description>
+- **Models:** planner=opus, executor=sonnet|haiku
+- **Outcome:** done | partial | blocked
+- **Notes:** <what happened; what broke; what fixed it>
+- **Gotcha (if any):** <one line — surface this so future sessions search and find it>
+```
+
+`SESSIONNOTES.md` is the *running build log*; `CLAUDE.md → Failure Log` stays for the most durable rules-of-thumb that get distilled out of recurring SESSIONNOTES gotchas.
+
 ## Code Quality
 
 - **Pre-commit hooks** via Husky + lint-staged. Staged files are auto-formatted (Prettier) and linted (ESLint) on every commit. Config in `package.json` under `lint-staged`.

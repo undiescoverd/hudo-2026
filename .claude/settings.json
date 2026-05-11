@@ -21,6 +21,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/ianvincent/workspace/hudo-2026; CHANGED=$(git diff --name-only HEAD 2>/dev/null; git diff --cached --name-only 2>/dev/null); CODE=$(echo \"$CHANGED\" | grep -E '\\.(ts|tsx|sql|js)$' | grep -v node_modules); NOTES=$(echo \"$CHANGED\" | grep -E '^SESSIONNOTES\\.md$'); if [ -n \"$CODE\" ] && [ -z \"$NOTES\" ]; then echo '{\"systemMessage\":\"Reminder: code changed this session but SESSIONNOTES.md was not updated. Add a dated entry before stopping.\"}'; fi"
+          }
+        ]
+      }
     ]
   }
 }
