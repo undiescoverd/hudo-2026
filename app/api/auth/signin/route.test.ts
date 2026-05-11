@@ -13,24 +13,24 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 describe('safeRedirect', () => {
-  it('returns / for null target', () => {
-    assert.equal(safeRedirect(null), '/')
+  it('returns /videos for null target', () => {
+    assert.equal(safeRedirect(null), '/videos')
   })
 
-  it('returns / for empty string target', () => {
-    assert.equal(safeRedirect(''), '/')
+  it('returns /videos for empty string target', () => {
+    assert.equal(safeRedirect(''), '/videos')
   })
 
-  it('returns / for protocol-relative URLs (//example.com)', () => {
-    assert.equal(safeRedirect('//example.com'), '/')
+  it('returns /videos for protocol-relative URLs (//example.com)', () => {
+    assert.equal(safeRedirect('//example.com'), '/videos')
   })
 
-  it('returns / for absolute URLs (http://example.com)', () => {
-    assert.equal(safeRedirect('http://example.com'), '/')
+  it('returns /videos for absolute URLs (http://example.com)', () => {
+    assert.equal(safeRedirect('http://example.com'), '/videos')
   })
 
-  it('returns / for absolute URLs (https://example.com)', () => {
-    assert.equal(safeRedirect('https://example.com'), '/')
+  it('returns /videos for absolute URLs (https://example.com)', () => {
+    assert.equal(safeRedirect('https://example.com'), '/videos')
   })
 
   it('accepts a valid local path (/dashboard)', () => {
