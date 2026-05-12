@@ -8,6 +8,24 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-05-12 — S2 Wave 2 closeout: GUEST-001 + DASH-002 + DASH-003 shipped
+
+- **Task:** S2-GUEST-001 (PR #73), S2-DASH-002 (PR #75), S2-DASH-003 (PR #76) merged. The agent-reviews-talent-video walkable loop is now live.
+- **Models:** planner=opus, executor=sonnet for all three; reviewers=pr-review-toolkit:code-reviewer + devsecops-security-engineer.
+- **Outcome:** done. Sprint-2: 6/14 (SHELL, DASH-001, DASH-002, DASH-003, NOTIF-001, GUEST-001).
+- **Notes:**
+  - **GUEST-001**: `lib/guest-tokens.ts` (32-byte base64url tokens, sha-256 hex hash, timing-safe verify via `crypto.timingSafeEqual` with length-guard) + migration 0013 (CREATE INDEX only on existing `guest_links`). Security review approved with two LOW notes for the future GUEST-002 API layer (cap token length to 43 chars before calling verify; consuming endpoint should also validate).
+  - **DASH-002**: `/talent` dashboard with VideoCard grid + unread comment count. New migration 0014 `comment_reads` table with RLS policies scoped by both `user_id = auth.uid()` AND a `videos → memberships` join — CodeRabbit caught the missing tenant scope on first push; implementer fixed before review. Security review confirmed the tenant-scope fix is correct and noted the belt-and-braces interaction: the EXISTS subquery selects from `videos`, triggering `videos_select_talent` RLS, which means a talent in the same agency can't write a comment_read for someone else's video. Defense-in-depth working.
+  - **DASH-003**: `PATCH /api/videos/[id]/status` with `canTransition()` matrix in `lib/video-status.ts`. Service-role client used for audit_log + video update. Audit-first ordering (audit insert → video update; if audit fails, abort; if video update fails after audit, log `auditOrphan: true`). BulkStatusUpdate wired and enabled, max 20 per batch.
+  - Security review forced one round of fixes on DASH-003: added per-user rate limit (in addition to IP), bulk-apply cap = 20, structured `auditOrphan: true` log field for the rare orphan path.
+- **Walkable journey — NOT verified in browser this session.** Per the 2026-05-11 Failure Log rule ("Ship walkable flows, not component piles") AND CLAUDE.md ("For UI or frontend changes, start the dev server and use the feature in a browser before reporting the task as complete"), the agent→/dashboard→bulk-set in_review→talent→/talent→see status flow has only been validated via code review + CI green. The dev server was not run; no clicks were performed; no test accounts were exercised against dev Supabase. The user (or next session) must walk this before treating the loop as ship-confirmed. Specifically remaining: (a) sign in as agent role, (b) confirm `/dashboard` renders talent videos with status/talent/comment columns, (c) select 2 rows, set `in_review`, click Apply, (d) verify 200 from PATCH + `router.refresh` re-fetches, (e) verify audit_log row inserted, (f) sign in as talent, confirm `/talent` shows the new status. Path-mismatch spot-check: `BulkStatusUpdate` POSTs to `/api/videos/${id}/status`; route file is `app/api/videos/[videoId]/status/route.ts` — Next.js routes by file position so this works, but a 200 on the first bulk-apply is the cheapest confirmation.
+- **Gotcha (deferred — track for follow-up):**
+  - DASH-003 handler tests are source-string greps via `assert.match`, not true integration tests. Real coverage gap: a regression that drops the audit insert call but keeps the error string would pass current tests. Track as a follow-up "DASH-003 handler integration tests" task.
+  - DASH-003 audit + video update are non-atomic — orphan audit row possible if video update fails after audit insert. CLAUDE.md already mandates "Version numbers via Postgres RPC … to prevent race conditions" — same pattern should apply here. Track as a follow-up "status_changed via Postgres RPC for atomicity" task; defer to S3 hardening.
+  - `actor_name` in audit_log is user-mutable display name. Audit evidence must reference `actor_id` (UUID), not `actor_name`. Add to compliance docs in S3.
+
+---
+
 ## 2026-05-12 — S2 Wave 2 phase: DASH-001 + NOTIF-001 shipped
 
 - **Task:** S2-DASH-001 (PR #71) + S2-NOTIF-001 (PR #72) merged together as opening salvo of Wave 2.

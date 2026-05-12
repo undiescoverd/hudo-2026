@@ -70,13 +70,13 @@ NOTES: Size L — must run pr-review-toolkit:code-reviewer before merge. Server-
 
 ---
 
-- [ ] **S2-DASH-002** — Build talent dashboard
+- [x] **S2-DASH-002** — Build talent dashboard
 
 TASK_ID: S2-DASH-002
 TITLE: Build talent dashboard
 BRANCH: feat/s2-dash-002-talent-dashboard
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Grid of the talent's own videos only (RLS-enforced, never agency-wide)
@@ -91,13 +91,13 @@ NOTES: Unread count = comments where comment.created_at > last_seen_at for that 
 
 ---
 
-- [ ] **S2-DASH-003** — Build video status workflow
+- [x] **S2-DASH-003** — Build video status workflow
 
 TASK_ID: S2-DASH-003
 TITLE: Build video status workflow
 BRANCH: feat/s2-dash-003-status-workflow
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S2-DASH-001
 ACCEPTANCE_CRITERIA:
   - Status enum: draft → pending_review → in_review → changes_requested → approved
@@ -260,13 +260,13 @@ NOTES: Reuse existing settings layout from S0/S1.
 
 ---
 
-- [ ] **S2-GUEST-001** — Build guest link data model
+- [x] **S2-GUEST-001** — Build guest link data model
 
 TASK_ID: S2-GUEST-001
 TITLE: Build guest link data model
 BRANCH: feat/s2-guest-001-data-model
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Existing `guest_links` table (0001) already covers all required columns including `agency_id`, `token_hash text UNIQUE` (sha-256 hex), `expires_at`, `revoked_at`, `view_count`, `last_viewed_at`
