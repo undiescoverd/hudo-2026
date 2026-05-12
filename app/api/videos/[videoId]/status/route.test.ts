@@ -2,12 +2,13 @@
  * Unit tests for the video status PATCH route and canTransition matrix.
  *
  * Tests cover:
- *  1. canTransition() — all role/status combinations from the spec
+ *  1. canTransition() — real implementation imported from lib/video-status.ts
  *  2. Route source invariants — security-critical patterns must exist in route.ts
  *
  * Uses Node.js built-in test runner — no Next.js runtime needed.
+ * tsx resolves relative .ts imports directly; Next.js path aliases (@/) are NOT used here.
  *
- * Run: npx tsx --test "app/api/videos/[videoId]/status/route.test.ts"
+ * Run: npx tsx app/api/videos/\[videoId\]/status/route.test.ts
  */
 
 import assert from 'node:assert/strict'
@@ -16,105 +17,85 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
 
-// ---------------------------------------------------------------------------
-// canTransition — import directly from lib
-// ---------------------------------------------------------------------------
-
-// We use source-based invariant checks for canTransition too, since tsx can
-// resolve the path but Next.js path aliases won't work in raw node:test context.
-// The logic tests below use a local implementation that mirrors the spec exactly;
-// source invariants verify the real file matches.
+// Import the real canTransition from lib using a relative path.
+// tsx resolves .ts imports natively, so this works without a build step.
+import { canTransition } from '../../../../../lib/video-status.js'
 
 // ---------------------------------------------------------------------------
-// Local canTransition mirror for pure logic testing (no module resolution needed)
-// ---------------------------------------------------------------------------
-
-type VideoStatus = 'draft' | 'pending_review' | 'in_review' | 'changes_requested' | 'approved'
-type UserRole = 'owner' | 'admin_agent' | 'agent' | 'talent'
-
-function canTransitionLocal(from: VideoStatus, to: VideoStatus, role: UserRole): boolean {
-  if (from === to) return false
-  if (role === 'talent') {
-    return to === 'pending_review' && (from === 'draft' || from === 'changes_requested')
-  }
-  return true
-}
-
-// ---------------------------------------------------------------------------
-// 1. canTransition matrix tests
+// 1. canTransition matrix tests — testing the REAL implementation
 // ---------------------------------------------------------------------------
 
 describe('canTransition — talent role', () => {
   it('allows draft → pending_review', () => {
-    assert.equal(canTransitionLocal('draft', 'pending_review', 'talent'), true)
+    assert.equal(canTransition('draft', 'pending_review', 'talent'), true)
   })
 
   it('allows changes_requested → pending_review', () => {
-    assert.equal(canTransitionLocal('changes_requested', 'pending_review', 'talent'), true)
+    assert.equal(canTransition('changes_requested', 'pending_review', 'talent'), true)
   })
 
   it('blocks pending_review → pending_review (same-status no-op)', () => {
-    assert.equal(canTransitionLocal('pending_review', 'pending_review', 'talent'), false)
+    assert.equal(canTransition('pending_review', 'pending_review', 'talent'), false)
   })
 
   it('blocks draft → approved', () => {
-    assert.equal(canTransitionLocal('draft', 'approved', 'talent'), false)
+    assert.equal(canTransition('draft', 'approved', 'talent'), false)
   })
 
   it('blocks draft → in_review', () => {
-    assert.equal(canTransitionLocal('draft', 'in_review', 'talent'), false)
+    assert.equal(canTransition('draft', 'in_review', 'talent'), false)
   })
 
   it('blocks in_review → pending_review (not from allowed source status)', () => {
-    assert.equal(canTransitionLocal('in_review', 'pending_review', 'talent'), false)
+    assert.equal(canTransition('in_review', 'pending_review', 'talent'), false)
   })
 
   it('blocks approved → pending_review (talent cannot re-submit from approved)', () => {
-    assert.equal(canTransitionLocal('approved', 'pending_review', 'talent'), false)
+    assert.equal(canTransition('approved', 'pending_review', 'talent'), false)
   })
 
   it('blocks draft → changes_requested (talent cannot set changes_requested)', () => {
-    assert.equal(canTransitionLocal('draft', 'changes_requested', 'talent'), false)
+    assert.equal(canTransition('draft', 'changes_requested', 'talent'), false)
   })
 })
 
 describe('canTransition — agent role', () => {
   it('allows any valid transition: pending_review → in_review', () => {
-    assert.equal(canTransitionLocal('pending_review', 'in_review', 'agent'), true)
+    assert.equal(canTransition('pending_review', 'in_review', 'agent'), true)
   })
 
   it('allows in_review → approved', () => {
-    assert.equal(canTransitionLocal('in_review', 'approved', 'agent'), true)
+    assert.equal(canTransition('in_review', 'approved', 'agent'), true)
   })
 
   it('allows in_review → changes_requested', () => {
-    assert.equal(canTransitionLocal('in_review', 'changes_requested', 'agent'), true)
+    assert.equal(canTransition('in_review', 'changes_requested', 'agent'), true)
   })
 
   it('allows approved → changes_requested (reversal)', () => {
-    assert.equal(canTransitionLocal('approved', 'changes_requested', 'agent'), true)
+    assert.equal(canTransition('approved', 'changes_requested', 'agent'), true)
   })
 
   it('blocks same → same: approved → approved', () => {
-    assert.equal(canTransitionLocal('approved', 'approved', 'agent'), false)
+    assert.equal(canTransition('approved', 'approved', 'agent'), false)
   })
 
   it('blocks same → same: draft → draft', () => {
-    assert.equal(canTransitionLocal('draft', 'draft', 'agent'), false)
+    assert.equal(canTransition('draft', 'draft', 'agent'), false)
   })
 })
 
 describe('canTransition — owner and admin_agent roles', () => {
   it('owner: allows draft → approved', () => {
-    assert.equal(canTransitionLocal('draft', 'approved', 'owner'), true)
+    assert.equal(canTransition('draft', 'approved', 'owner'), true)
   })
 
   it('admin_agent: allows pending_review → approved', () => {
-    assert.equal(canTransitionLocal('pending_review', 'approved', 'admin_agent'), true)
+    assert.equal(canTransition('pending_review', 'approved', 'admin_agent'), true)
   })
 
   it('owner: blocks same → same', () => {
-    assert.equal(canTransitionLocal('in_review', 'in_review', 'owner'), false)
+    assert.equal(canTransition('in_review', 'in_review', 'owner'), false)
   })
 })
 
