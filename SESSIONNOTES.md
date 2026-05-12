@@ -8,6 +8,21 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-05-12 — S2 Wave 2 phase: DASH-001 + NOTIF-001 shipped
+
+- **Task:** S2-DASH-001 (PR #71) + S2-NOTIF-001 (PR #72) merged together as opening salvo of Wave 2.
+- **Models:** planner=opus, executor=sonnet (DASH-001), executor=haiku (NOTIF-001); reviewers=pr-review-toolkit:code-reviewer + devsecops-security-engineer.
+- **Outcome:** done. 2/14 → 4/14 sprint progress (including SHELL).
+- **Notes:**
+  - DASH-001 ships shared `lib/video-status.ts` + `lib/auth-helpers.ts` for DASH-002/DASH-003 to reuse, agent dashboard at `/dashboard`, API `/api/dashboard/videos`, shadcn `table/badge/checkbox/select/input/card` added.
+  - `BulkStatusUpdate.tsx` button shipped permanently disabled with `TODO(S2-DASH-003)` per the planner contract.
+  - Security review forced a follow-up: `getCurrentUserRole` originally returned the union of all `agency_ids` even when caller was only talent in some — RLS rescued reads but the pattern would break the first write-path reuse. Fix split returned shape into `{ agency_ids, agent_agency_ids }`. DASH-003 must consume `agent_agency_ids` for any mutating endpoint.
+  - Also added ilike metacharacter escaping + 200-char `q` cap on the dashboard search.
+  - NOTIF-001 = pure `ALTER ... ADD COLUMN IF NOT EXISTS` + 3 indexes on `notifications`/`notification_preferences`. Idempotent, no RLS touched.
+- **Gotcha:** `pnpm test` doesn't exist at top-level — `package.json` only has `test:e2e`. Unit tests run via `npx tsx --test <file>`. CI evidently runs differently (lint/type/build pass; RLS tests pass; no separate unit test job). Worth wiring `"test": "node --test --import tsx 'lib/**/*.test.ts'"` later; for now executors should use the per-file invocation.
+
+---
+
 ## 2026-05-11 — S2-SHELL-001: app shell shipped
 
 - **Task:** S2-SHELL-001 — app shell, video list, root redirect (PR #69)
