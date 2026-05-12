@@ -17,7 +17,10 @@ CREATE INDEX IF NOT EXISTS comment_reads_video_id_idx ON comment_reads (video_id
 ALTER TABLE comment_reads ENABLE ROW LEVEL SECURITY;
 
 -- RLS: user can only see + write their own read-markers.
--- Three policies (idempotent): SELECT, INSERT, UPDATE all scoped to auth.uid().
+-- Tenant scope enforced via memberships: video_id must map to a video whose
+-- agency_id the current user belongs to. This prevents a user from inserting
+-- or reading read-markers for videos in agencies they don't belong to.
+-- Three policies (idempotent): SELECT, INSERT, UPDATE scoped to auth.uid() + membership.
 -- No DELETE policy — read-markers are not deletable from the API.
 
 DO $$
@@ -25,17 +28,53 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='comment_reads' AND policyname='comment_reads_select_own') THEN
     CREATE POLICY comment_reads_select_own ON comment_reads
       FOR SELECT
-      USING (user_id = auth.uid());
+      USING (
+        user_id = auth.uid()
+        AND EXISTS (
+          SELECT 1
+          FROM videos v
+          JOIN memberships m ON m.agency_id = v.agency_id
+          WHERE v.id = comment_reads.video_id
+            AND m.user_id = auth.uid()
+        )
+      );
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='comment_reads' AND policyname='comment_reads_insert_own') THEN
     CREATE POLICY comment_reads_insert_own ON comment_reads
       FOR INSERT
-      WITH CHECK (user_id = auth.uid());
+      WITH CHECK (
+        user_id = auth.uid()
+        AND EXISTS (
+          SELECT 1
+          FROM videos v
+          JOIN memberships m ON m.agency_id = v.agency_id
+          WHERE v.id = comment_reads.video_id
+            AND m.user_id = auth.uid()
+        )
+      );
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='comment_reads' AND policyname='comment_reads_update_own') THEN
     CREATE POLICY comment_reads_update_own ON comment_reads
       FOR UPDATE
-      USING (user_id = auth.uid())
-      WITH CHECK (user_id = auth.uid());
+      USING (
+        user_id = auth.uid()
+        AND EXISTS (
+          SELECT 1
+          FROM videos v
+          JOIN memberships m ON m.agency_id = v.agency_id
+          WHERE v.id = comment_reads.video_id
+            AND m.user_id = auth.uid()
+        )
+      )
+      WITH CHECK (
+        user_id = auth.uid()
+        AND EXISTS (
+          SELECT 1
+          FROM videos v
+          JOIN memberships m ON m.agency_id = v.agency_id
+          WHERE v.id = comment_reads.video_id
+            AND m.user_id = auth.uid()
+        )
+      );
   END IF;
 END $$;

@@ -95,7 +95,8 @@ export async function getTalentVideos({
     .limit(100)
 
   if (videoError) {
-    return { data: [], error: videoError.message }
+    console.error('[talent-dashboard] videos query failed:', videoError)
+    return { data: [], error: 'Unable to load videos right now.' }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase generic return
@@ -116,7 +117,7 @@ export async function getTalentVideos({
 
   if (readError) {
     // Non-fatal: treat all comments as unread
-    console.error('[talent-dashboard] comment_reads query failed:', readError.message)
+    console.error('[talent-dashboard] comment_reads query failed:', readError)
   }
 
   // Build a map: video_id → last_seen_at (ISO string)
@@ -136,7 +137,7 @@ export async function getTalentVideos({
 
   if (commentError) {
     // Non-fatal: return zero unread counts
-    console.error('[talent-dashboard] comments query failed:', commentError.message)
+    console.error('[talent-dashboard] comments query failed:', commentError)
   }
 
   // Build a map: video_id → all comment created_at timestamps

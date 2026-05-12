@@ -30,11 +30,15 @@ export default async function TalentPage() {
     redirect('/dashboard')
   }
 
-  const { data: videos } = await getTalentVideos({
+  const { data: videos, error } = await getTalentVideos({
     supabase,
     user_id: user.id,
     agency_ids,
   })
+
+  if (error) {
+    console.error('[talent-page] getTalentVideos failed:', error)
+  }
 
   return (
     <main className="max-w-7xl mx-auto px-4 py-8">
@@ -43,7 +47,13 @@ export default async function TalentPage() {
         <p className="text-sm text-muted-foreground mt-1">Your videos across all agencies.</p>
       </div>
 
-      <TalentDashboard videos={videos ?? []} />
+      {error ? (
+        <p className="text-sm text-destructive">
+          Unable to load videos right now. Please try again later.
+        </p>
+      ) : (
+        <TalentDashboard videos={videos ?? []} />
+      )}
     </main>
   )
 }
