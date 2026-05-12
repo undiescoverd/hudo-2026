@@ -44,13 +44,13 @@ NOTES: Connective tissue for S1 features. Must be walkable: register → sign in
 
 ---
 
-- [ ] **S2-DASH-001** — Build agent dashboard
+- [x] **S2-DASH-001** — Build agent dashboard
 
 TASK_ID: S2-DASH-001
 TITLE: Build agent dashboard
 BRANCH: feat/s2-dash-001-agent-dashboard
 MODEL: sonnet-4.6
-STATUS: in_progress
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Data fetch returns agency videos with joined talent name, status, comment count, last activity, version number
@@ -165,13 +165,13 @@ NOTES: Plan limits live in `plans` table (S0). Cache key: `plan-limit:{agency_id
 
 ---
 
-- [ ] **S2-NOTIF-001** — Build notification data model
+- [x] **S2-NOTIF-001** — Build notification data model
 
 TASK_ID: S2-NOTIF-001
 TITLE: Build notification data model
 BRANCH: feat/s2-notif-001-data-model
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Existing `notifications` table (0001) extended with: payload jsonb, sent_at timestamptz (nullable) — both via ADD COLUMN IF NOT EXISTS
