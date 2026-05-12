@@ -1,5 +1,6 @@
 import { AppHeader } from '@/components/layout/AppHeader'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { getCurrentUserRole } from '@/lib/auth-helpers'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient(
@@ -7,30 +8,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { user, role } = await getCurrentUserRole(supabase)
 
-  let role = 'talent'
-  if (user) {
-    const { data: memberships } = await supabase
-      .from('memberships')
-      .select('role')
-      .eq('user_id', user.id)
-
-    const HIERARCHY = ['owner', 'admin_agent', 'agent', 'talent']
-    const roles = (memberships ?? []).map((m: { role: string }) => m.role)
-    if (roles.length > 0) {
-      roles.sort((a: string, b: string) => HIERARCHY.indexOf(a) - HIERARCHY.indexOf(b))
-      role = roles[0]
-    }
-  }
-
-  const displayName =
-    user?.user_metadata?.full_name ??
-    user?.user_metadata?.name ??
-    user?.email?.split('@')[0] ??
-    'User'
+  const meta = user?.user_metadata as Record<string, string> | undefined
+  const displayName = meta?.full_name ?? meta?.name ?? user?.email?.split('@')[0] ?? 'User'
 
   return (
     <div className="min-h-screen flex flex-col">

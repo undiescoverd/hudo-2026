@@ -31,6 +31,11 @@ export function AppHeader({ displayName, role }: Props) {
             Videos
           </Link>
           {isAgent && (
+            <Link href="/dashboard" className={navClass('/dashboard')}>
+              Dashboard
+            </Link>
+          )}
+          {isAgent && (
             <Link href="/upload" className={navClass('/upload')}>
               Upload
             </Link>

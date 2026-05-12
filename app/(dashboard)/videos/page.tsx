@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { StatusBadge } from '@/lib/video-status'
 
 type Video = {
   id: string
@@ -7,23 +8,6 @@ type Video = {
   status: string
   thumbnail_r2_key: string | null
   created_at: string
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700',
-  pending_review: 'bg-yellow-100 text-yellow-700',
-  in_review: 'bg-blue-100 text-blue-700',
-  changes_requested: 'bg-red-100 text-red-700',
-  approved: 'bg-green-100 text-green-700',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const cls = STATUS_STYLES[status] ?? STATUS_STYLES.draft
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${cls}`}>
-      {status.replace(/_/g, ' ')}
-    </span>
-  )
 }
 
 export default async function VideosPage() {
