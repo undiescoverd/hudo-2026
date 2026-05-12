@@ -66,6 +66,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
+  // Rate limit by user ID: 20 requests / minute (prevents per-user self-DOS / bulk abuse)
+  const userRl = await checkRateLimit(
+    `video:status:user:${user.id}`,
+    STATUS_RATE_LIMIT,
+    STATUS_RATE_WINDOW,
+    'video:status:patch',
+    'Too many requests. Please try again later.'
+  )
+  if (userRl) return userRl
+
   // Parse and validate body
   let body: unknown
   try {
@@ -184,10 +194,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
 
   if (updateError) {
     // Audit row already written — log loudly so operators can reconcile.
-    console.error(
-      `[video:status:patch] CRITICAL: audit_log written but video update failed for ${videoId}:`,
-      updateError.message
-    )
+    console.error('[video:status:patch] CRITICAL: audit_log written but video update failed', {
+      videoId,
+      auditOrphan: true,
+      updateError: updateError.message,
+    })
     return NextResponse.json({ error: 'Failed to update video status' }, { status: 500 })
   }
 

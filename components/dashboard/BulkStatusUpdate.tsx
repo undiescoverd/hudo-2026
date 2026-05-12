@@ -40,8 +40,21 @@ export function BulkStatusUpdate({ selectedCount, videoIds = [], onComplete }: P
   const noneSelected = selectedCount === 0
   const canApply = !noneSelected && targetStatus.length > 0 && !applying
 
+  const MAX_BULK_APPLY = 20
+
   async function handleApply() {
     if (!canApply || targetStatus === '') return
+
+    if (videoIds.length > MAX_BULK_APPLY) {
+      setResult({
+        succeeded: 0,
+        failed: videoIds.length,
+        errors: [
+          `You can update at most ${MAX_BULK_APPLY} videos at a time. Currently selected: ${videoIds.length}`,
+        ],
+      })
+      return
+    }
 
     setApplying(true)
     setResult(null)
