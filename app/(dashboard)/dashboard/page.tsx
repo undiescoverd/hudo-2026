@@ -20,7 +20,7 @@ export default async function DashboardPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  const { user, role, agency_ids } = await getCurrentUserRole(supabase)
+  const { user, role, agent_agency_ids } = await getCurrentUserRole(supabase)
 
   // Unauthenticated → redirect to sign-in
   if (!user) {
@@ -33,12 +33,16 @@ export default async function DashboardPage() {
   }
 
   // Fetch initial data server-side for first paint
-  const { data: initialVideos } = await getAgencyVideos({
-    supabase,
-    agency_ids,
-    limit: 50,
-    offset: 0,
-  })
+  // agent_agency_ids is empty only if the user has no agent-role memberships yet
+  const { data: initialVideos } =
+    agent_agency_ids.length === 0
+      ? { data: [] }
+      : await getAgencyVideos({
+          supabase,
+          agency_ids: agent_agency_ids,
+          limit: 50,
+          offset: 0,
+        })
 
   return (
     <main className="max-w-7xl mx-auto px-4 py-8">

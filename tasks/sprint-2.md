@@ -50,7 +50,7 @@ TASK_ID: S2-DASH-001
 TITLE: Build agent dashboard
 BRANCH: feat/s2-dash-001-agent-dashboard
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: in_progress
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Data fetch returns agency videos with joined talent name, status, comment count, last activity, version number

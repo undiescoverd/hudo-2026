@@ -50,6 +50,15 @@ type VideoRow = {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Escape Postgres ilike metacharacters to prevent pattern injection. */
+function escapeIlike(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
+// ---------------------------------------------------------------------------
 // Query builder
 // ---------------------------------------------------------------------------
 
@@ -101,7 +110,7 @@ export async function getAgencyVideos({
 
   if (q && q.trim().length > 0) {
     // ilike search on title; talent name filtering is done client-side after join
-    query = query.ilike('title', `%${q.trim()}%`)
+    query = query.ilike('title', `%${escapeIlike(q.trim())}%`)
   }
 
   const { data: videoRows, error: videoError } = await query

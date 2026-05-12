@@ -76,7 +76,7 @@ function makeSupabaseStub(
 }
 
 describe('getCurrentUserRole — with stubbed Supabase client', () => {
-  it('returns { user: null, role: talent, agency_ids: [] } when not authenticated', async () => {
+  it('returns { user: null, role: talent, agency_ids: [], agent_agency_ids: [] } when not authenticated', async () => {
     const { getCurrentUserRole } = await import('./auth-helpers')
 
     const stub = {
@@ -92,6 +92,7 @@ describe('getCurrentUserRole — with stubbed Supabase client', () => {
     assert.equal(result.user, null)
     assert.equal(result.role, 'talent')
     assert.deepEqual(result.agency_ids, [])
+    assert.deepEqual(result.agent_agency_ids, [])
   })
 
   it('returns correct role and agency_ids from memberships', async () => {
@@ -108,6 +109,7 @@ describe('getCurrentUserRole — with stubbed Supabase client', () => {
     const result = await getCurrentUserRole(stub as any)
     assert.equal(result.role, 'admin_agent') // highest privilege
     assert.deepEqual(result.agency_ids.sort(), ['ag1', 'ag2'])
+    assert.deepEqual(result.agent_agency_ids.sort(), ['ag1', 'ag2'])
   })
 
   it('returns owner when owner membership exists', async () => {
@@ -135,5 +137,44 @@ describe('getCurrentUserRole — with stubbed Supabase client', () => {
     const result = await getCurrentUserRole(stub as any)
     assert.equal(result.role, 'talent')
     assert.deepEqual(result.agency_ids, [])
+    assert.deepEqual(result.agent_agency_ids, [])
+  })
+
+  // ---- agent_agency_ids separation tests ----------------------------------
+
+  it('agent_agency_ids excludes agencies where caller is only talent', async () => {
+    // Case (a): user is admin_agent in A, talent in B
+    const { getCurrentUserRole } = await import('./auth-helpers')
+
+    const user: StubUser = { id: 'u4', email: 'a@c.com', user_metadata: {} }
+    const memberships = [
+      { role: 'admin_agent', agency_id: 'agA' },
+      { role: 'talent', agency_id: 'agB' },
+    ]
+
+    const stub = makeSupabaseStub(user, memberships)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- narrow Supabase shim
+    const result = await getCurrentUserRole(stub as any)
+    assert.equal(result.role, 'admin_agent')
+    assert.deepEqual(result.agency_ids.sort(), ['agA', 'agB'])
+    assert.deepEqual(result.agent_agency_ids, ['agA'])
+  })
+
+  it('agent_agency_ids is empty when user is only talent across all memberships', async () => {
+    // Case (b): user is talent everywhere
+    const { getCurrentUserRole } = await import('./auth-helpers')
+
+    const user: StubUser = { id: 'u5', email: 'b@c.com', user_metadata: {} }
+    const memberships = [
+      { role: 'talent', agency_id: 'agX' },
+      { role: 'talent', agency_id: 'agY' },
+    ]
+
+    const stub = makeSupabaseStub(user, memberships)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- narrow Supabase shim
+    const result = await getCurrentUserRole(stub as any)
+    assert.equal(result.role, 'talent')
+    assert.deepEqual(result.agency_ids.sort(), ['agX', 'agY'])
+    assert.deepEqual(result.agent_agency_ids, [])
   })
 })

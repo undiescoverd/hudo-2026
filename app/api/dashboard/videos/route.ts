@@ -6,20 +6,20 @@
  *
  * Query params:
  *   status  — comma-separated list of VideoStatus values (optional)
- *   q       — search string for title (optional)
+ *   q       — search string for title (optional, max 200 chars)
  *   limit   — page size (default 50, max 100)
  *   offset  — pagination offset (default 0)
  */
 
+// TODO(post-MVP): rate-limit if query cost becomes a concern
+
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
-import { getCurrentUserRole } from '@/lib/auth-helpers'
+import { getCurrentUserRole, AGENT_ROLES } from '@/lib/auth-helpers'
 import { getAgencyVideos } from '@/lib/dashboard'
 import { isVideoStatus, VIDEO_STATUSES } from '@/lib/video-status'
 import type { VideoStatus } from '@/lib/video-status'
-
-const AGENT_PLUS_ROLES = new Set(['owner', 'admin_agent', 'agent'])
 
 export async function GET(req: NextRequest) {
   // ---- Auth ---------------------------------------------------------------
@@ -28,17 +28,17 @@ export async function GET(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  const { user, role, agency_ids } = await getCurrentUserRole(supabase)
+  const { user, role, agent_agency_ids } = await getCurrentUserRole(supabase)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 
-  if (!AGENT_PLUS_ROLES.has(role)) {
+  if (!AGENT_ROLES.has(role)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  if (agency_ids.length === 0) {
+  if (agent_agency_ids.length === 0) {
     return NextResponse.json({ data: [] })
   }
 
@@ -54,7 +54,11 @@ export async function GET(req: NextRequest) {
     if (valid.length > 0) statusFilter = valid
   }
 
-  const q = searchParams.get('q') ?? undefined
+  const rawQ = searchParams.get('q')
+  if (rawQ !== null && rawQ.length > 200) {
+    return NextResponse.json({ error: 'Invalid query' }, { status: 400 })
+  }
+  const q = rawQ ?? undefined
 
   const rawLimit = parseInt(searchParams.get('limit') ?? '50', 10)
   const limit = Number.isNaN(rawLimit) ? 50 : Math.min(Math.max(1, rawLimit), 100)
@@ -65,7 +69,7 @@ export async function GET(req: NextRequest) {
   // ---- Data ---------------------------------------------------------------
   const { data, error } = await getAgencyVideos({
     supabase,
-    agency_ids,
+    agency_ids: agent_agency_ids,
     status: statusFilter,
     q,
     limit,

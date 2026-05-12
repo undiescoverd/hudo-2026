@@ -13,10 +13,16 @@ export type { UserRole }
 /** Role hierarchy ordered highest-privilege first. */
 const HIERARCHY: UserRole[] = ['owner', 'admin_agent', 'agent', 'talent']
 
+/** Roles that may act as agents (non-talent). Exported for reuse in route guards. */
+export const AGENT_ROLES = new Set<UserRole>(['owner', 'admin_agent', 'agent'])
+
 export type CurrentUserRole = {
-  user: { id: string; email?: string; user_metadata?: Record<string, unknown> } | null
+  user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> } | null
   role: UserRole
+  /** Union of all agency IDs the user is a member of (any role). */
   agency_ids: string[]
+  /** Agencies where the caller holds owner | admin_agent | agent role. Use this for agent-scoped queries. */
+  agent_agency_ids: string[]
 }
 
 /**
@@ -24,9 +30,10 @@ export type CurrentUserRole = {
  * all agency IDs they belong to.
  *
  * Returns:
- *  - `user`       — the Supabase auth user (or null if unauthenticated)
- *  - `role`       — highest-privilege role across all memberships (defaults to 'talent')
- *  - `agency_ids` — every agency_id the user is a member of
+ *  - `user`             — the Supabase auth user (or null if unauthenticated)
+ *  - `role`             — highest-privilege role across all memberships (defaults to 'talent')
+ *  - `agency_ids`       — every agency_id the user is a member of (any role)
+ *  - `agent_agency_ids` — agencies where caller holds owner|admin_agent|agent
  */
 export async function getCurrentUserRole(supabase: SupabaseClient): Promise<CurrentUserRole> {
   const {
@@ -34,7 +41,7 @@ export async function getCurrentUserRole(supabase: SupabaseClient): Promise<Curr
   } = await supabase.auth.getUser()
 
   if (!user) {
-    return { user: null, role: 'talent', agency_ids: [] }
+    return { user: null, role: 'talent', agency_ids: [], agent_agency_ids: [] }
   }
 
   const { data: memberships } = await supabase
@@ -44,6 +51,9 @@ export async function getCurrentUserRole(supabase: SupabaseClient): Promise<Curr
 
   const rows = (memberships ?? []) as Array<{ role: string; agency_id: string }>
   const agency_ids = rows.map((m) => m.agency_id)
+  const agent_agency_ids = rows
+    .filter((m) => AGENT_ROLES.has(m.role as UserRole))
+    .map((m) => m.agency_id)
 
   const roles = rows.map((m) => m.role as UserRole)
 
@@ -58,5 +68,6 @@ export async function getCurrentUserRole(supabase: SupabaseClient): Promise<Curr
     user: user as any,
     role,
     agency_ids,
+    agent_agency_ids,
   }
 }
