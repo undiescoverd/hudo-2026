@@ -71,7 +71,11 @@ export function AgentDashboard({ initialVideos }: Props) {
       </div>
 
       {/* Bulk actions row */}
-      <BulkStatusUpdate selectedCount={selectedIds.length} />
+      <BulkStatusUpdate
+        selectedCount={selectedIds.length}
+        videoIds={selectedIds}
+        onComplete={() => setSelectedIds([])}
+      />
 
       {/* Table */}
       <div className={isPending ? 'opacity-60 pointer-events-none' : ''}>
