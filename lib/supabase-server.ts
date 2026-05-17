@@ -9,8 +9,12 @@ export async function createSupabaseServerClient(url: string, anonKey: string) {
         return cookieStore.getAll()
       },
       setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options)
+        try {
+          for (const { name, value, options } of cookiesToSet) {
+            cookieStore.set(name, value, options)
+          }
+        } catch {
+          // Server components cannot set cookies; the middleware refresh handles that path.
         }
       },
     },

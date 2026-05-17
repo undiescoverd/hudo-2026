@@ -8,6 +8,37 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-05-13 — Schema backfill round 2: dev/staging migration sync complete
+
+- **Task:** Bring hudo-dev + hudo-staging fully in sync with `supabase/migrations/0004–0014` after round 1 (storage_quota_rpcs) cleared `/api/videos/upload/complete`. Round 2 unblocks the next 500: PATCH `/api/videos/[id]` failing on missing `description` column.
+- **Models:** planner=opus, executor=opus (single-session MCP applies)
+- **Outcome:** done. All three audit booleans (`has_thumb`, `has_desc`, `has_comment_reads`) = true on both projects.
+- **Notes:**
+  - Audit (verified via Supabase MCP, not SESSIONNOTES claims):
+
+    | #    | Migration                   | dev                   | staging               |
+    | ---- | --------------------------- | --------------------- | --------------------- |
+    | 0004 | RLS comments soft-delete    | trust ✓               | trust ✓               |
+    | 0005 | invitations RLS docs        | n/a                   | n/a                   |
+    | 0006 | RPC caller validation       | function SECDEF ✓     | function SECDEF ✓     |
+    | 0007 | storage quota RPCs          | applied (round 1)     | applied (round 1)     |
+    | 0008 | comments nesting + realtime | column ✓              | column ✓              |
+    | 0009 | videos.thumbnail_r2_key     | **applied (round 2)** | **applied (round 2)** |
+    | 0010 | SECDEF soft-delete fix      | trust ✓               | trust ✓               |
+    | 0011 | videos.description          | **applied (round 2)** | **applied (round 2)** |
+    | 0012 | notifications batched email | columns ✓             | columns ✓             |
+    | 0013 | guest links indexes         | trust ✓               | trust ✓               |
+    | 0014 | comment_reads               | table ✓               | **applied (round 2)** |
+
+  - Applied via MCP `apply_migration` (so `supabase_migrations.schema_migrations` now tracks them) — no SQL editor pastes.
+  - dev `list_migrations` now shows: initial_schema, rls_policies, rls_fix_memberships_recursion, storage_quota_rpcs, videos_thumbnail_r2_key, videos_add_description.
+  - staging adds `comment_reads` to that list.
+
+- **Gotcha:** Round 1 fixed the upload, but the _next_ user step (save title/description) hit the same class of bug — confirms that "schema cache miss" errors arrive one-per-column, one-per-route. When backfilling, audit the _whole_ migration range, not just the column the user complained about.
+- **Out of scope (flagged):** verify 0006 caller-validation `IF p_uploaded_by != auth.uid()` block is in the live `create_video_version` body; full `supabase db diff` for trust-only entries (0004/0010/0013); Upstash `res.map` rate-limiter bug; `app/middleware.ts` location.
+
+---
+
 ## 2026-05-12 — S2 Wave 2 closeout: GUEST-001 + DASH-002 + DASH-003 shipped
 
 - **Task:** S2-GUEST-001 (PR #73), S2-DASH-002 (PR #75), S2-DASH-003 (PR #76) merged. The agent-reviews-talent-video walkable loop is now live.
@@ -94,3 +125,32 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Outcome:** done
 - **Notes:** Added `## Model & Workflow Rule` section to CLAUDE.md after Agent Rules. Created this file. Merged a `Stop` hook into `.claude/settings.json` that prints a `systemMessage` if `.ts/.tsx/.sql/.js` files changed but SESSIONNOTES.md was not modified. Existing PreToolUse / PostToolUse hooks left untouched.
 - **Gotcha (if any):** Stop hook uses `;` not `&&` between commands — `&&` breaks the chain when `grep` finds no match (exit 1) and the reminder never fires.
+
+---
+
+## 2026-05-12 22:00 — Dev environment debugging
+
+- **Task:** Fix localhost:3000 startup errors and apply pending migrations
+- **Models:** executor=sonnet
+- **Outcome:** partial
+- **Notes:** Fixed CSP (added unsafe-eval for dev HMR, EU PostHog domains to script-src/connect-src). Applied migrations 0004–0013 via Supabase SQL editor. Migration 0009 (thumbnail_r2_key) still pending — user needs membership+agency seed data to test upload flow.
+- **Gotcha (if any):** Hook output (⎿ Stop says...) bleeds into SQL when user copies from Claude Code response — always write SQL to scripts/ file instead of inline code blocks.
+
+---
+
+## 2026-05-13 12:35 — Storage-quota RPC missing in hudo-dev/staging (PGRST202)
+
+- **Task:** Fix `/api/videos/upload/complete` 500 — diagnosed as PGRST202 "Could not find function public.increment_storage_usage" in `/tmp/hudo-dev.log`.
+- **Models:** planner=opus, executor=opus (DB-only ops via Supabase MCP, no code path)
+- **Outcome:** done (root cause); follow-ups noted below
+- **Notes:**
+  - Verified via Supabase MCP: hudo-dev's `pg_proc` had `create_video_version` + `get_current_user_agency_ids` but **not** `increment_storage_usage`/`decrement_storage_usage`. hudo-staging same gap, plus `comment_reads` table missing (0014).
+  - `supabase_migrations.schema_migrations` tracks only 0001–0003 on dev — confirming SESSIONNOTES 2026-05-12's "Applied migrations 0004–0013 via Supabase SQL editor" only updated schema, not the tracking table. So 0007 was likely paste-applied but at some point the storage RPCs were dropped/never landed.
+  - Applied `0007_storage_quota_rpcs.sql` to both dev (`xyeqnjboqimvhdwnyqbt`) and staging (`egabjtxrrcuzooyclwgw`) via MCP `apply_migration` — both now tracked in `schema_migrations` as `storage_quota_rpcs`. Verified functions present with signature `(uuid, bigint)`.
+  - **No application code changes.** Round-1 edits in dirty tree (`lib/storage-quota.ts` predicate broadening, structured log in `route.ts:194`, `lib/supabase-server.ts`, `next.config.js`) are unrelated to this fix and stay as they are for their own PR.
+- **Gotcha (if any):** **PGRST202 = the function is missing from PostgREST's schema cache, almost always because the migration wasn't applied to that project.** Verify with `mcp__plugin_supabase_supabase__execute_sql` against `pg_proc` before assuming a code bug. Bonus trap: `components/upload/UploadProgress.tsx` matches any error string containing `"quota"` and shows the friendly over-quota panel — broad matcher hid the real failure. `MEMORY.md`'s "0001–0003 applied" note was stale and reinforced the misdiagnosis; updated.
+- **Follow-ups (out of scope, file as tasks):**
+  - hudo-staging missing `comment_reads` table (migration 0014). Apply before staging hits 0014-dependent code paths.
+  - Upstash Redis pipeline `TypeError: res.map is not a function` at top of `/tmp/hudo-dev.log` — caught by rate limiter so requests proceed unrate-limited. Real bug.
+  - `app/middleware.ts` location — Next.js expects middleware at the project root; verify it's being invoked.
+  - Audit other `MEMORY.md` "applied" claims; the SQL-editor-vs-MCP tracking gap means any project's actual migration state should be verified via `list_migrations` + `pg_proc` probes, not memory.
