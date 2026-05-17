@@ -13,10 +13,13 @@ export const QUOTA_EXCEEDED_CODE = 'P0402'
 /**
  * Check if a Supabase RPC error is a quota exceeded error.
  */
-export function isQuotaExceededError(error: { message?: string; code?: string }): boolean {
-  return (
-    error.code === QUOTA_EXCEEDED_CODE || error.message?.includes('Storage quota exceeded') === true
-  )
+export function isQuotaExceededError(error: {
+  message?: string
+  code?: string
+  details?: string
+}): boolean {
+  const haystack = `${error.code ?? ''} ${error.message ?? ''} ${error.details ?? ''}`.toLowerCase()
+  return haystack.includes('p0402') || haystack.includes('storage quota exceeded')
 }
 
 /**
