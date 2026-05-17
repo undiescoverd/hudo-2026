@@ -8,6 +8,21 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-05-17 — S2 walkable-MVP guest-link path: GUEST-002/003/004 stacked PRs
+
+- **Task:** S2-GUEST-002 (PR #79), S2-GUEST-003 (PR #80, base #79), S2-GUEST-004 (PR #81, base #80). Plus chore PR #78 (quota logging + dev CSP).
+- **Models:** planner=opus, executors: sonnet (002+003), haiku (004). Reviewers: pr-review-toolkit:code-reviewer + devsecops-security-engineer for 002+003; code-simplifier on 002.
+- **Outcome:** done. Walkable agent MVP: create guest link → external viewer plays + sees comments → revoke → 404. Manual browser walkthrough still pending — see PR #81 test plan.
+- **Notes:**
+  - GUEST-002 ships 4 routes + migration 0015 (`increment_guest_link_view` RPC for atomic view count, applied to hudo-dev + hudo-staging via MCP). Security review flagged the read-modify-write race; fixed via the RPC. 59 unit tests pass.
+  - GUEST-003 initially did a server-side self-`fetch()` of its own API route to derive baseUrl from headers. Both reviewers flagged host-header injection risk. Fixed by extracting the lookup to `lib/guest/get-guest-metadata.ts` and calling it in-process from `page.tsx`. Also added Sentry `beforeBreadcrumb`/`beforeSend` scrubbers so the plaintext token can never reach Sentry via breadcrumbs even from a previously-consented browser profile.
+  - GUEST-004 wired a Share button into `app/(dashboard)/videos/[id]/page.tsx`. Inline Tailwind modal (no shadcn Dialog primitive in repo). Plaintext token shown once + Copy with brief "Copied!" flip.
+  - PR stack: rebase the bases as each one merges.
+- **Gotcha:** Server-side `fetch()` of a same-origin API route from a Next app-router page tempts you to compute baseUrl from `headers()`. That's a host-header SSRF / token-exfil hole unless `NEXT_PUBLIC_BASE_URL` is enforced. Prefer extracting the data-fetch into a `lib/` helper and calling it in-process. Bonus: token no longer hits Vercel access logs.
+- **Gotcha:** The repo has no `pnpm test` script. Tests run via `cd <test-dir> && npx tsx --test route.test.ts` (the `[bracket]` path chars break globs from the repo root). They're source-pattern-match tests, not handler-execution tests — useful but weaker than integration tests.
+
+---
+
 ## 2026-05-13 — Schema backfill round 2: dev/staging migration sync complete
 
 - **Task:** Bring hudo-dev + hudo-staging fully in sync with `supabase/migrations/0004–0014` after round 1 (storage_quota_rpcs) cleared `/api/videos/upload/complete`. Round 2 unblocks the next 500: PATCH `/api/videos/[id]` failing on missing `description` column.
