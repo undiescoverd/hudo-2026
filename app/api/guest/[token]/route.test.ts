@@ -5,6 +5,10 @@
  * Matches the node:test style of the project.
  *
  * Run: node --experimental-strip-types app/api/guest/\[token\]/route.test.ts
+ *
+ * Note: the DB lookup, verifyGuestToken call, service-role client construction,
+ * and comment soft-delete filter all live in lib/guest/get-guest-metadata.ts.
+ * Source-pattern assertions for those now target that module.
  */
 
 import assert from 'node:assert/strict'
@@ -106,6 +110,7 @@ describe('guest metadata — rate limit key', () => {
 
 // ---------------------------------------------------------------------------
 // Security invariants — no sensitive data in response
+// These patterns live in the lib helper; tests target get-guest-metadata.ts.
 // ---------------------------------------------------------------------------
 
 describe('guest metadata — response shape (no sensitive data)', () => {
@@ -113,14 +118,18 @@ describe('guest metadata — response shape (no sensitive data)', () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
 
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
+    // Pattern lives in the lib helper, not the route
+    const helperPath = path.resolve(
+      import.meta.dirname ?? __dirname,
+      '../../../../lib/guest/get-guest-metadata.ts'
+    )
+    const source = fs.readFileSync(helperPath, 'utf8')
 
     // video_versions select for metadata route must not include r2_key
     const versionSelectMatches =
       source.match(/from\('video_versions'\)[^;]+\.select\('([^']+)'\)/g) ?? []
     for (const sel of versionSelectMatches) {
-      assert.doesNotMatch(sel, /r2_key/, 'Metadata route version select must not include r2_key')
+      assert.doesNotMatch(sel, /r2_key/, 'Metadata helper version select must not include r2_key')
     }
   })
 
@@ -128,11 +137,15 @@ describe('guest metadata — response shape (no sensitive data)', () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
 
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
+    // Pattern lives in the lib helper, not the route
+    const helperPath = path.resolve(
+      import.meta.dirname ?? __dirname,
+      '../../../../lib/guest/get-guest-metadata.ts'
+    )
+    const source = fs.readFileSync(helperPath, 'utf8')
 
     // The final return block must not expose sensitive fields
-    const returnBlock = source.slice(source.lastIndexOf('return NextResponse.json({'))
+    const returnBlock = source.slice(source.lastIndexOf('return {'))
     assert.doesNotMatch(returnBlock, /agency_id/, 'Response must not include agency_id')
     assert.doesNotMatch(returnBlock, /token_hash/, 'Response must not include token_hash')
   })
@@ -141,13 +154,17 @@ describe('guest metadata — response shape (no sensitive data)', () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
 
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
+    // verifyGuestToken call lives in the lib helper
+    const helperPath = path.resolve(
+      import.meta.dirname ?? __dirname,
+      '../../../../lib/guest/get-guest-metadata.ts'
+    )
+    const source = fs.readFileSync(helperPath, 'utf8')
 
     assert.match(
       source,
       /verifyGuestToken\(token,\s*link\.token_hash\)/,
-      'Route must use verifyGuestToken for timing-safe comparison'
+      'Helper must use verifyGuestToken for timing-safe comparison'
     )
   })
 
@@ -155,14 +172,18 @@ describe('guest metadata — response shape (no sensitive data)', () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
 
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
+    // Service-role client construction lives in the lib helper
+    const helperPath = path.resolve(
+      import.meta.dirname ?? __dirname,
+      '../../../../lib/guest/get-guest-metadata.ts'
+    )
+    const source = fs.readFileSync(helperPath, 'utf8')
 
-    assert.match(source, /SUPABASE_SERVICE_ROLE_KEY/, 'Route must use service role key')
+    assert.match(source, /SUPABASE_SERVICE_ROLE_KEY/, 'Helper must use service role key')
     assert.match(
       source,
       /createClient\(supabaseUrl,\s*serviceRoleKey\)/,
-      'Route must create admin client with service role'
+      'Helper must create admin client with service role'
     )
   })
 
@@ -170,8 +191,12 @@ describe('guest metadata — response shape (no sensitive data)', () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
 
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
+    // Soft-delete filter lives in the lib helper
+    const helperPath = path.resolve(
+      import.meta.dirname ?? __dirname,
+      '../../../../lib/guest/get-guest-metadata.ts'
+    )
+    const source = fs.readFileSync(helperPath, 'utf8')
 
     assert.match(
       source,
