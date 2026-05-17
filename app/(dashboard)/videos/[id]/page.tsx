@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation'
 import { VideoPlayer } from '@/components/player/VideoPlayer'
 import { VersionSelector } from '@/components/versions/VersionSelector'
 import { MobilePlayerLayout } from '@/components/player/MobilePlayerLayout'
+import { GuestShareButton } from '@/components/guest/GuestShareButton'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -22,13 +23,14 @@ export default function VideoPage({ params }: Props) {
 
   return (
     <main className="min-h-screen">
-      <div className="px-4 pt-4 pb-2">
+      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
         <Link
           href="/videos"
           className="text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           ← Back to videos
         </Link>
+        <GuestShareButton videoId={params.id} />
       </div>
       <div className="px-4 pt-2">
         <VersionSelector
