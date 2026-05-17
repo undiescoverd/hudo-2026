@@ -16,19 +16,19 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Notes:**
   - Audit (verified via Supabase MCP, not SESSIONNOTES claims):
 
-    | #                                | Migration             | dev                   | staging |
-    | -------------------------------- | --------------------- | --------------------- | ------- |
-    | 0004 RLS comments soft-delete    | trust ✓               | trust ✓               |
-    | 0005 invitations RLS docs        | n/a                   | n/a                   |
-    | 0006 RPC caller validation       | function SECDEF ✓     | function SECDEF ✓     |
-    | 0007 storage quota RPCs          | applied (round 1)     | applied (round 1)     |
-    | 0008 comments nesting + realtime | column ✓              | column ✓              |
-    | 0009 videos.thumbnail_r2_key     | **applied (round 2)** | **applied (round 2)** |
-    | 0010 SECDEF soft-delete fix      | trust ✓               | trust ✓               |
-    | 0011 videos.description          | **applied (round 2)** | **applied (round 2)** |
-    | 0012 notifications batched email | columns ✓             | columns ✓             |
-    | 0013 guest links indexes         | trust ✓               | trust ✓               |
-    | 0014 comment_reads               | table ✓               | **applied (round 2)** |
+    | #    | Migration                   | dev                   | staging               |
+    | ---- | --------------------------- | --------------------- | --------------------- |
+    | 0004 | RLS comments soft-delete    | trust ✓               | trust ✓               |
+    | 0005 | invitations RLS docs        | n/a                   | n/a                   |
+    | 0006 | RPC caller validation       | function SECDEF ✓     | function SECDEF ✓     |
+    | 0007 | storage quota RPCs          | applied (round 1)     | applied (round 1)     |
+    | 0008 | comments nesting + realtime | column ✓              | column ✓              |
+    | 0009 | videos.thumbnail_r2_key     | **applied (round 2)** | **applied (round 2)** |
+    | 0010 | SECDEF soft-delete fix      | trust ✓               | trust ✓               |
+    | 0011 | videos.description          | **applied (round 2)** | **applied (round 2)** |
+    | 0012 | notifications batched email | columns ✓             | columns ✓             |
+    | 0013 | guest links indexes         | trust ✓               | trust ✓               |
+    | 0014 | comment_reads               | table ✓               | **applied (round 2)** |
 
   - Applied via MCP `apply_migration` (so `supabase_migrations.schema_migrations` now tracks them) — no SQL editor pastes.
   - dev `list_migrations` now shows: initial_schema, rls_policies, rls_fix_memberships_recursion, storage_quota_rpcs, videos_thumbnail_r2_key, videos_add_description.
