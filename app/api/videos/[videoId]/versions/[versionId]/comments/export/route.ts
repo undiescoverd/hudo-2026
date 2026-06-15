@@ -21,6 +21,12 @@ import { buildCommentExportPdf, canExport, type CommentRow } from '@/lib/pdf-exp
 const EXPORT_RATE_LIMIT = 10 // max requests per window per user
 const EXPORT_RATE_WINDOW = 60 // 1 minute
 
+/** Safety cap: prevents unbounded memory use + PDF build time on large comment sets. */
+const MAX_EXPORT_COMMENTS = 1000
+
+/** Explicit serverless timeout (seconds). Keeps the function predictable regardless of platform default. */
+export const maxDuration = 30
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: { videoId: string; versionId: string } }
@@ -98,13 +104,14 @@ export async function GET(
     return NextResponse.json({ error: 'Version not found' }, { status: 404 })
   }
 
-  // Fetch non-deleted comments for this version
+  // Fetch non-deleted comments for this version (capped at MAX_EXPORT_COMMENTS)
   const { data: rawComments, error: commentsError } = await admin
     .from('comments')
     .select('id, user_id, content, timestamp_seconds, resolved')
     .eq('video_version_id', versionId)
     .is('deleted_at', null)
     .order('timestamp_seconds', { ascending: true })
+    .limit(MAX_EXPORT_COMMENTS)
 
   if (commentsError) {
     console.error('[comments/export:GET] Failed to fetch comments:', commentsError)
@@ -112,6 +119,7 @@ export async function GET(
   }
 
   const comments = rawComments ?? []
+  const truncated = comments.length === MAX_EXPORT_COMMENTS
 
   // Resolve commenter names — batch fetch to avoid N+1
   const userIds = [...new Set(comments.map((c) => c.user_id).filter(Boolean))]
@@ -166,11 +174,13 @@ export async function GET(
 
   const filename = `comments-${safeTitle}-v${version.version_number}.pdf`
 
-  return new NextResponse(Buffer.from(bytes), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${filename}"`,
-    },
-  })
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${filename}"`,
+  }
+  if (truncated) {
+    headers['X-Truncated'] = 'true'
+  }
+
+  return new NextResponse(Buffer.from(bytes), { status: 200, headers })
 }

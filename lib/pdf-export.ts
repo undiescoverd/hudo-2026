@@ -149,10 +149,7 @@ export async function buildCommentExportPdf(input: ExportInput): Promise<Uint8Ar
       // Each comment block: need at least header row + 2 body rows
       ensureSpace(LINE_HEIGHT * 3)
 
-      const ts =
-        c.timestamp_seconds !== null && c.timestamp_seconds !== undefined
-          ? formatTimestamp(c.timestamp_seconds)
-          : '—'
+      const ts = formatTimestampLabel(c.timestamp_seconds)
 
       const status = c.resolved ? '[Resolved]' : '[Open]'
       const commenter = sanitiseText(c.commenter_name)
@@ -176,6 +173,16 @@ export async function buildCommentExportPdf(input: ExportInput): Promise<Uint8Ar
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Returns the display label for a comment's timestamp.
+ * Exported for unit testing; not part of the public API surface.
+ * Uses ASCII-safe '--' for null so sanitiseText does not corrupt it.
+ */
+export function formatTimestampLabel(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return '--'
+  return formatTimestamp(seconds)
+}
 
 function formatTimestamp(seconds: number): string {
   const totalSecs = Math.floor(seconds)
