@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
-import { canExport, buildCommentExportPdf } from './pdf-export.js'
+import { canExport, buildCommentExportPdf, formatTimestampLabel } from './pdf-export.js'
 
 // ---------------------------------------------------------------------------
 // canExport — pure authz logic
@@ -180,5 +180,78 @@ describe('isValidUUID', () => {
     assert.equal(isValidUUID('not-a-uuid'), false)
     assert.equal(isValidUUID(''), false)
     assert.equal(isValidUUID('123'), false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// formatTimestampLabel — ASCII fallback for null timestamps
+// ---------------------------------------------------------------------------
+
+describe('formatTimestampLabel', () => {
+  test('returns ASCII "--" for null (not "?" or em-dash)', () => {
+    const label = formatTimestampLabel(null)
+    assert.equal(label, '--', 'null timestamp must produce ASCII "--"')
+    // Verify every character is within printable ASCII range (0x20–0x7E)
+    for (const ch of label) {
+      const code = ch.charCodeAt(0)
+      assert.ok(
+        code >= 0x20 && code <= 0x7e,
+        `char "${ch}" (0x${code.toString(16)}) is not ASCII-safe`
+      )
+    }
+  })
+
+  test('returns ASCII "--" for undefined', () => {
+    assert.equal(formatTimestampLabel(undefined), '--')
+  })
+
+  test('returns formatted HH:MM:SS for timestamps >= 1 hour', () => {
+    assert.equal(formatTimestampLabel(3661), '1:01:01')
+  })
+
+  test('returns formatted M:SS for timestamps < 1 hour', () => {
+    assert.equal(formatTimestampLabel(65), '1:05')
+    assert.equal(formatTimestampLabel(0), '0:00')
+  })
+
+  test('null-timestamp label is ASCII-safe and survives sanitiseText unmodified', () => {
+    // The label goes through sanitiseText (strips >0xFF → '?') before hitting the PDF.
+    // '--' is 0x2D 0x2D — well within 0x20–0x7E, so it must pass through unchanged.
+    const label = formatTimestampLabel(null)
+    // Every char must be within printable WinAnsi range that sanitiseText preserves.
+    const safe = label.split('').every((ch) => ch.charCodeAt(0) >= 0x20 && ch.charCodeAt(0) <= 0xff)
+    assert.ok(safe, `label "${label}" contains chars that would be stripped by sanitiseText`)
+    assert.notEqual(label, '?', 'null-timestamp label must not be "?" (em-dash was stripped)')
+    assert.equal(label, '--', 'null-timestamp label must be ASCII "--"')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// MAX_EXPORT_COMMENTS cap — pure helper verification
+// ---------------------------------------------------------------------------
+
+describe('MAX_EXPORT_COMMENTS cap behaviour', () => {
+  // The cap is enforced in the route (not in a pure lib function), so we test
+  // that buildCommentExportPdf handles exactly 1000 comments without throwing
+  // and produces a valid PDF — ensuring the PDF builder itself does not break
+  // at the cap boundary.
+  test('buildCommentExportPdf handles 1000 comments without error', async () => {
+    const comments = Array.from({ length: 1000 }, (_, i) => ({
+      id: String(i),
+      timestamp_seconds: i,
+      commenter_name: `User ${i}`,
+      content: 'A comment.',
+      resolved: false,
+    }))
+    const bytes = await buildCommentExportPdf({
+      videoTitle: 'Big Export',
+      versionNumber: 1,
+      exportDate: new Date('2026-06-16T00:00:00Z'),
+      generatorName: 'Agent',
+      comments,
+    })
+    assert.ok(bytes instanceof Uint8Array, 'result is Uint8Array')
+    assert.equal(bytes[0], 0x25, 'starts with PDF magic %')
+    assert.ok(bytes.length > 10000, 'PDF with 1000 comments exceeds 10KB')
   })
 })
