@@ -17,7 +17,11 @@ import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import { isValidUUID } from '@/lib/validation'
 import { checkRateLimit } from '@/lib/api-helpers'
-import { checkPlanLimit, invalidatePlanLimitCache } from '@/lib/plan-gates'
+import {
+  checkPlanLimit,
+  invalidatePlanLimitCache,
+  PlanLimitUnavailableError,
+} from '@/lib/plan-gates'
 
 // Roles that may add talent members (owner and admin_agent only)
 const ADD_TALENT_ROLES = new Set(['owner', 'admin_agent'])
@@ -112,7 +116,16 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   // ---- Plan gate -----------------------------------------------------------
   const { redis } = await import('@/lib/redis')
 
-  const gate = await checkPlanLimit(admin, redis, agencyId, 'talent')
+  let gate: Awaited<ReturnType<typeof checkPlanLimit>>
+  try {
+    gate = await checkPlanLimit(admin, redis, agencyId, 'talent')
+  } catch (err) {
+    if (err instanceof PlanLimitUnavailableError) {
+      console.error('[agencies/[id]/talent:POST] Plan gate unavailable:', err)
+      return NextResponse.json({ error: 'seat_count_unavailable' }, { status: 503 })
+    }
+    throw err
+  }
   if (!gate.allowed) {
     return NextResponse.json(
       { error: 'plan_limit_exceeded', limit: gate.limit, current: gate.current },

@@ -17,7 +17,11 @@ import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import { isValidUUID } from '@/lib/validation'
 import { checkRateLimit } from '@/lib/api-helpers'
-import { checkPlanLimit, invalidatePlanLimitCache } from '@/lib/plan-gates'
+import {
+  checkPlanLimit,
+  invalidatePlanLimitCache,
+  PlanLimitUnavailableError,
+} from '@/lib/plan-gates'
 
 const ALLOWED_MEMBER_ROLES = ['owner', 'admin_agent', 'agent'] as const
 type AllowedMemberRole = (typeof ALLOWED_MEMBER_ROLES)[number]
@@ -123,7 +127,16 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   // ---- Plan gate -----------------------------------------------------------
   const { redis } = await import('@/lib/redis')
 
-  const gate = await checkPlanLimit(admin, redis, agencyId, 'agents')
+  let gate: Awaited<ReturnType<typeof checkPlanLimit>>
+  try {
+    gate = await checkPlanLimit(admin, redis, agencyId, 'agents')
+  } catch (err) {
+    if (err instanceof PlanLimitUnavailableError) {
+      console.error('[agencies/[id]/members:POST] Plan gate unavailable:', err)
+      return NextResponse.json({ error: 'seat_count_unavailable' }, { status: 503 })
+    }
+    throw err
+  }
   if (!gate.allowed) {
     return NextResponse.json(
       { error: 'plan_limit_exceeded', limit: gate.limit, current: gate.current },

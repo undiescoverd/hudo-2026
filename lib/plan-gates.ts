@@ -97,15 +97,27 @@ async function getAgencyLimits(admin: SupabaseClient, agencyId: string): Promise
 }
 
 /**
+ * Thrown by checkPlanLimit when the seat count query fails and the gate
+ * cannot be evaluated. Callers should return HTTP 503 (service unavailable).
+ */
+export class PlanLimitUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super('[plan-gates] Seat count unavailable — denying add (fail closed)')
+    this.name = 'PlanLimitUnavailableError'
+    if (cause instanceof Error) this.cause = cause
+  }
+}
+
+/**
  * Count current seats in a category for an agency.
  * Uses the admin client so RLS doesn't filter rows.
- * Returns 0 on error (fail-open on count — the insert will still be RLS-guarded).
+ * Returns null on error (caller must fail closed — do NOT cache null).
  */
 async function countSeats(
   admin: SupabaseClient,
   agencyId: string,
   category: MemberCategory
-): Promise<number> {
+): Promise<number | null> {
   let query = admin
     .from('memberships')
     .select('id', { count: 'exact', head: true })
@@ -120,7 +132,7 @@ async function countSeats(
   const { count, error } = await query
   if (error) {
     console.error('[plan-gates] countSeats error:', error)
-    return 0
+    return null
   }
   return count ?? 0
 }
@@ -160,7 +172,14 @@ export async function checkPlanLimit(
     current = Number(cached)
   } else {
     // Cache miss — read from DB and populate cache
-    current = await countSeats(admin, agencyId, category)
+    const counted = await countSeats(admin, agencyId, category)
+    if (counted === null) {
+      // Count failed — fail CLOSED. Do NOT cache the error value.
+      throw new PlanLimitUnavailableError(
+        new Error(`countSeats returned null for agency ${agencyId}:${category}`)
+      )
+    }
+    current = counted
     await cache.set(cacheKey, current, { ex: PLAN_LIMIT_CACHE_TTL })
   }
 

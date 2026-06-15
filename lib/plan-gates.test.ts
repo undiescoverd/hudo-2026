@@ -16,6 +16,7 @@ import {
   planLimitCacheKey,
   PLAN_LIMITS,
   PLAN_LIMIT_CACHE_TTL,
+  PlanLimitUnavailableError,
   type CacheClient,
 } from './plan-gates'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -27,15 +28,19 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 /** Simple in-memory cache mock */
 function makeCache(initial: Record<string, unknown> = {}): CacheClient & {
   store: Record<string, unknown>
+  setCalls: Array<{ key: string; value: unknown; options: { ex: number } }>
 } {
   const store: Record<string, unknown> = { ...initial }
+  const setCalls: Array<{ key: string; value: unknown; options: { ex: number } }> = []
   return {
     store,
+    setCalls,
     async get<T>(key: string) {
       return (key in store ? store[key] : null) as T | null
     },
-    async set(key: string, value: unknown) {
+    async set(key: string, value: unknown, options: { ex: number }) {
       store[key] = value
+      setCalls.push({ key, value, options })
       return 'OK'
     },
     async del(key: string) {
@@ -266,6 +271,54 @@ describe('checkPlanLimit — cache miss', () => {
     assert.equal(result.allowed, true)
     assert.equal(result.limit, PLAN_LIMITS.studio.agents)
   })
+
+  it('calls cache.set with options.ex === PLAN_LIMIT_CACHE_TTL on cache miss + successful count', async () => {
+    const agencyId = 'agency-ttl-check'
+    const cache = makeCache() // empty — forces DB read
+    const admin = makeAdminFull({ plan: 'freemium', count: 2 })
+
+    await checkPlanLimit(admin, cache, agencyId, 'agents')
+
+    assert.equal(cache.setCalls.length, 1)
+    assert.equal(cache.setCalls[0].options.ex, PLAN_LIMIT_CACHE_TTL)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// checkPlanLimit — fail-closed on count error
+// ---------------------------------------------------------------------------
+
+describe('checkPlanLimit — fail-closed on count error', () => {
+  it('throws PlanLimitUnavailableError when countSeats returns null (DB error)', async () => {
+    const agencyId = 'agency-db-error'
+    const cache = makeCache() // empty — forces DB read
+    const admin = makeAdminFull({
+      plan: 'freemium',
+      countError: { message: 'connection refused', code: 'PGRST000' },
+    })
+
+    await assert.rejects(
+      () => checkPlanLimit(admin, cache, agencyId, 'agents'),
+      (err: unknown) => err instanceof PlanLimitUnavailableError
+    )
+  })
+
+  it('does NOT call cache.set when count query errors', async () => {
+    const agencyId = 'agency-no-cache-on-error'
+    const cache = makeCache() // empty — forces DB read
+    const admin = makeAdminFull({
+      plan: 'freemium',
+      countError: { message: 'timeout', code: 'PGRST000' },
+    })
+
+    try {
+      await checkPlanLimit(admin, cache, agencyId, 'agents')
+    } catch {
+      // expected
+    }
+
+    assert.equal(cache.setCalls.length, 0)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -347,6 +400,11 @@ describe('members route — source invariants', () => {
   it('error body uses exact string plan_limit_exceeded', () => {
     assert.match(src, /error:\s*'plan_limit_exceeded'/)
   })
+
+  it('returns 503 on PlanLimitUnavailableError (fail-closed)', () => {
+    assert.match(src, /PlanLimitUnavailableError/)
+    assert.match(src, /status:\s*503/)
+  })
 })
 
 describe('talent route — source invariants', () => {
@@ -402,6 +460,11 @@ describe('talent route — source invariants', () => {
   it('error body uses exact string plan_limit_exceeded', () => {
     assert.match(src, /error:\s*'plan_limit_exceeded'/)
   })
+
+  it('returns 503 on PlanLimitUnavailableError (fail-closed)', () => {
+    assert.match(src, /PlanLimitUnavailableError/)
+    assert.match(src, /status:\s*503/)
+  })
 })
 
 describe('plan-gates.ts — source invariants', () => {
@@ -430,5 +493,13 @@ describe('plan-gates.ts — source invariants', () => {
   it('uses CacheClient interface (not a direct redis import)', () => {
     assert.match(src, /CacheClient/)
     assert.doesNotMatch(src, /from '@\/lib\/redis'/)
+  })
+
+  it('exports PlanLimitUnavailableError class', () => {
+    assert.match(src, /export class PlanLimitUnavailableError/)
+  })
+
+  it('countSeats returns null on error (fail-closed signal)', () => {
+    assert.match(src, /return null/)
   })
 })
