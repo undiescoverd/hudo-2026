@@ -8,6 +8,21 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-15 — S2-NOTIF-002 notification batching
+
+- **Task:** S2-NOTIF-002
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done
+- **Notes:**
+  - Shipped: `lib/email-templates/comments-batch.tsx` (HTML digest template), `lib/notifications.ts` (`enqueueCommentNotification` + `batchAndSendNotifications`), `app/api/cron/notifications/route.ts` (CRON_SECRET-gated GET), `vercel.json` cron entry (`*/5 * * * *`). Wired enqueue into comment POST route.
+  - 11 tests pass: 5 lib/notifications unit tests + 6 cron route source-invariant tests.
+  - End-to-end pipeline validated via `scripts/playwright-notif-test.mts`: 3 comments → 3 unsent notification rows targeting recipient (not author) → 1 digest email → all `sent_at` stamped → idempotent second run returns `{sent:0,errors:0}`.
+- **Browser walk:** Cron endpoint not tested via browser (requires `CRON_SECRET` in `.env.local` — add manually). Pipeline validated via direct script test above.
+- **Gotcha:** `batch_window_minutes` check constraint only allows `IN (5, 15, 30, 60)` — cannot set 0 for testing. Workaround: backdate notification `created_at` to 6+ min ago before calling batchAndSend in the test script.
+- **Gotcha:** Node v25.3.0 incompatible with Upstash Redis auto-pipeline (`res.map is not a function`) — rate limiter fails-closed → 429 on all comment POST calls. Workaround for testing: insert comments directly into DB via admin client, bypassing the API route.
+
+---
+
 ## 2026-05-17 — S2 walkable-MVP guest-link path: GUEST-002/003/004 stacked PRs
 
 - **Task:** S2-GUEST-002 (PR #79), S2-GUEST-003 (PR #80, base #79), S2-GUEST-004 (PR #81, base #80). Plus chore PR #78 (quota logging + dev CSP).
