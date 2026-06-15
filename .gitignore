@@ -57,3 +57,4 @@ supabase/.temp/
 .figma-prototype/
 .playwright-mcp/
 designs/
+.env*.local
