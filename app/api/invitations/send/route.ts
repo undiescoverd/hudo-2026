@@ -156,8 +156,8 @@ export async function POST(request: NextRequest) {
   // Get agency name for the email
   const { data: agency } = await admin.from('agencies').select('name').eq('id', agencyId).single()
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  const inviteUrl = `${appUrl}/auth/invite/${tokenHex}`
+  const origin = new URL(request.url).origin
+  const inviteUrl = `${origin}/auth/invite/${tokenHex}`
 
   // Send email — graceful fallback if Resend not configured
   try {

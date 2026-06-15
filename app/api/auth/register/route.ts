@@ -66,14 +66,14 @@ export async function POST(request: NextRequest) {
 
   // Sign up via anon key — Supabase sends confirmation email automatically.
   const supabase = createClient(supabaseUrl, anonKey)
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  const origin = new URL(request.url).origin
 
   const { data, error } = await supabase.auth.signUp({
     email: email.trim(),
     password,
     options: {
       // After email confirmation, redirect to app root (future: /onboarding — S4-LAUNCH-004)
-      emailRedirectTo: `${siteUrl}/`,
+      emailRedirectTo: `${origin}/auth/callback`,
     },
   })
 
