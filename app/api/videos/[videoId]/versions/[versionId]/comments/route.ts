@@ -270,7 +270,11 @@ export async function POST(
     commentId: comment.id,
     commentAuthorId: user.id,
   }).catch((err) => {
-    console.error('[comments:POST] Notification enqueue error:', err)
+    console.error('[comments:POST] Notification enqueue error:', {
+      videoId,
+      commentId: comment.id,
+      err,
+    })
   })
 
   return NextResponse.json({ comment }, { status: 201 })

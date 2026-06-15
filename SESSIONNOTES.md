@@ -8,6 +8,28 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-15 — S2-NOTIF-002 gate closeout (PR #82)
+
+- **Task:** S2-NOTIF-002 pre-merge gates
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done
+- **Notes:**
+  - `{sent:0,errors:6}` from brief: incorrect — session output was `{sent:0,errors:0}`. Code correctly filters `.is('sent_at', null)`; second run hits early return. Re-run on Node 20 confirmed: step 6 returns `{"sent":0,"errors":0}` ✅
+  - Added `.nvmrc` pinning Node 20 (package.json already had `>=20.0.0`). Node 25 causes Upstash incompatibility.
+  - Enqueue `.catch()` now logs `{ videoId, commentId: comment.id, err }` — dropped notifications now observable in production logs.
+  - Cron cadence rationale documented in `docs/ops/cron-schedule.md` (Hobby plan cap → hourly; Pro needed for `*/5`).
+  - Stale cron route comment ("every 5 minutes") updated to "currently hourly (Hobby plan limit)".
+  - Security review (devsecops-security-engineer): PASS — LOW severity only. Applied `timingSafeEqual` from `crypto` for constant-time CRON_SECRET comparison. No blocking findings. Three reliability findings deferred (soft-deleted notification rows never stamped; no .limit() on unsent fetch; no per-run email cap) — tracked for S3.
+  - Rate-limiter fail-open (lib/redis.ts throws on Redis failure) deferred to S3 — touches multiple routes, widens scope.
+  - `pnpm format:check && pnpm type-check && pnpm lint` green on Node 20 ✅
+- **Browser walk:** Not completed — `CRON_SECRET` must be added to `.env.local` manually before dev-server test. E2E script test confirmed pipeline on Node 20.
+- **Human actions required:**
+  1. Add `CRON_SECRET` to Vercel project env vars (all envs). Until set, deployed cron returns 500 — no emails sent in production.
+  2. Approve and merge PR #82 once CI is green.
+- **Gotcha:** `*/5` inside a JSDoc block comment (`/** ... */`) is parsed as end-of-comment by Prettier → SyntaxError. Workaround: write "every-5-min cadence" instead of literal cron syntax in JSDoc comments.
+
+---
+
 ## 2026-06-15 — S2-NOTIF-002 notification batching
 
 - **Task:** S2-NOTIF-002

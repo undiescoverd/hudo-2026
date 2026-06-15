@@ -1,9 +1,10 @@
+import { timingSafeEqual } from 'crypto'
 import { type NextRequest, NextResponse } from 'next/server'
 import { batchAndSendNotifications } from '@/lib/notifications'
 
 /**
  * GET /api/cron/notifications
- * Vercel cron — runs every 5 minutes (see vercel.json).
+ * Vercel cron — currently hourly (Hobby plan limit; upgrade to Pro for every-5-min cadence).
  * Requires Authorization: Bearer <CRON_SECRET>.
  */
 export async function GET(request: NextRequest) {
@@ -13,7 +14,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
   }
 
-  if (request.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+  const incomingHeader = request.headers.get('authorization') ?? ''
+  const expected = `Bearer ${cronSecret}`
+  const safe =
+    incomingHeader.length === expected.length &&
+    timingSafeEqual(Buffer.from(incomingHeader), Buffer.from(expected))
+  if (!safe) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
