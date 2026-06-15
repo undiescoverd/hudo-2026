@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { NotificationBell } from '@/components/notifications/NotificationBell'
 
 type Props = {
   displayName: string
@@ -44,6 +45,10 @@ export function AppHeader({ displayName, role }: Props) {
 
         <div className="ml-auto flex items-center gap-3">
           <span className="text-sm text-muted-foreground hidden sm:block">{displayName}</span>
+          <NotificationBell />
+          <Link href="/settings/notifications" className={navClass('/settings/notifications')}>
+            Settings
+          </Link>
           <form action="/api/auth/signout" method="POST">
             <button
               type="submit"
