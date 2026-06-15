@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getClientIp } from '@/lib/rate-limit'
+import { getSiteOrigin } from '@/lib/site-url'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -58,11 +59,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  const origin = getSiteOrigin(request)
   const supabase = createClient(supabaseUrl, anonKey)
 
   const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-    redirectTo: `${siteUrl}/auth/reset-password`,
+    redirectTo: `${origin}/auth/callback?next=/auth/reset-password`,
   })
 
   if (error) {
