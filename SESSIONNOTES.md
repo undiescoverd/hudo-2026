@@ -8,6 +8,31 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-16 — Sprint 2 closeout: final 4 tasks via parallel worktree agents (+ new WIRE-001)
+
+- **Task:** S2-DASH-004, S2-GATE-001, S2-NOTIF-003, S2-NOTIF-004 (Wave 1, parallel) + S2-WIRE-001 (Wave 2, new). Closes S2 to 15/15.
+- **Models:** planner/orchestrator=opus; executors=sonnet (DASH-004, GATE-001, NOTIF-003, NOTIF-004 — bumped from haiku as it adds an API route); haiku (WIRE-001).
+- **Outcome:** done — PRs #86 (NOTIF-004), #87 (NOTIF-003), #88 (GATE-001), #89 (DASH-004), #90 (WIRE-001) all merged. pdf-lib@1.17.1 added (user-approved) for DASH-004.
+- **Notes:**
+  - **Parallel isolation via git worktrees.** Disjoint FILES is NOT enough for parallel agents — git's current-branch + working tree are global shared state. Each build agent ran in its own worktree (Agent `isolation: worktree`), symlinking the main repo's `node_modules` as step 0 (worktrees are gitignored-clean → no node_modules → pnpm/type-check/PostToolUse hook all fail without the symlink). Static checks (tsc/eslint) are node-version-agnostic so ran fine on Node 22/25.
+  - **Orchestrator owns status, not agents.** Skipped `orchestrate.js start` (it pre-branches in the main dir, which collides with worktrees) and had agents skip `review/done`; main thread ran `done` after each merge. Avoided the known `review`-dirties-sprint-2.md-blocks-merge gotcha entirely.
+  - **Three task NOTES were stale and would have caused runtime 500s** if trusted: (1) `notifications` table uses `recipient_id`, but `notification_preferences` uses `user_id` (PK) — different tables, NOTIF-001's "keep recipient_id" note only applied to the former; the NOTIF-004 agent caught this from primary source. (2) GATE-001's "Plan limits live in `plans` table" — NO such table exists; used a static `PLAN_LIMITS` config in lib/plan-gates.ts keyed off `agencies.plan`. Always verify schema claims in NOTES against migrations.
+  - **Review chain run from main thread** (code-reviewer + security), not nested in subagents. Found + fixed before merge: NOTIF-003 realtime subscription race (blind 500ms timer → never subscribes on slow auth; made reactive to resolved userId) + panel unread-count computed from capped 50-list; GATE-001 cache fail-open (countSeats returned 0 on DB error and cached it 60s → seat-limit bypass; now returns null, fails closed with `PlanLimitUnavailableError` → 503, never caches errors).
+  - **Deferred (logged, not fixed):** GATE-001 check-then-insert TOCTOU — two concurrent adds can both pass the gate and exceed the seat cap. Needs a DB-level atomic count+insert (Postgres RPC/constraint, à la create_video_version), which is out of the task's FILES. File as an S3 hardening task.
+- **Gotcha (if any):** (1) `devsecops-security-engineer` subagent died twice on "socket connection closed" (infra flakiness) — did the security review directly from the diffs instead; the mandatory gate was still met. (2) `pnpm add` inside a worktree with symlinked node_modules writes package.json/pnpm-lock into the MAIN repo working tree too — revert those on main (`git checkout -- package.json pnpm-lock.yaml`); they arrive correctly when the feature PR merges. (3) NOTIF-003 realtime needs `ALTER PUBLICATION supabase_realtime ADD TABLE notifications;` at deploy — S1 only added `comments`; without it the unread badge won't update live. (4) GATE-001 `invalidatePlanLimitCache` is exported but must be wired into future plan-change / member-remove handlers.
+
+## 2026-06-16 — Supabase Auth SMTP wired to Resend
+
+- **Task:** Configure Resend SMTP in Supabase Auth (hudo-dev + hudo-staging)
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done
+- **Notes:**
+  - Applied via Supabase Management API PATCH `/v1/projects/{ref}/config/auth`
+  - Both projects: `smtp_host=smtp.resend.com`, port `465`, user `resend`, sender name `Hudo`, from `noreply@resend.com`
+  - `smtp_port` must be a **string** (`"465"` not `465`) — API returns 400 otherwise
+  - Currently using Resend's shared domain (`noreply@resend.com`) — no custom domain yet
+- **Gotcha:** Before production: verify a custom domain in Resend and re-PATCH `smtp_admin_email` + re-apply for both projects. Emails from shared domain may land in spam.
+
 ## 2026-06-15 — S2-NOTIF-002 gate closeout (PR #82)
 
 - **Task:** S2-NOTIF-002 pre-merge gates
