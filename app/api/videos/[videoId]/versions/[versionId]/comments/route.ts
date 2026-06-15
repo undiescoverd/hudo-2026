@@ -9,6 +9,7 @@ import {
   COMMENTS_POST_RATE_LIMIT,
   COMMENTS_RATE_WINDOW,
 } from '@/lib/comments'
+import { enqueueCommentNotification } from '@/lib/notifications'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -259,6 +260,18 @@ export async function POST(
     console.error('[comments:POST] Insert failed:', insertError)
     return NextResponse.json({ error: 'Failed to create comment' }, { status: 500 })
   }
+
+  // Await enqueue so the notification row is definitely inserted before the
+  // function exits (serverless: promises after return may not complete).
+  // .catch() ensures a notification failure never breaks the 201 response.
+  await enqueueCommentNotification({
+    agencyId,
+    videoId,
+    commentId: comment.id,
+    commentAuthorId: user.id,
+  }).catch((err) => {
+    console.error('[comments:POST] Notification enqueue error:', err)
+  })
 
   return NextResponse.json({ comment }, { status: 201 })
 }
