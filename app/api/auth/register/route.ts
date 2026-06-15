@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { validatePassword } from '@/lib/auth-validation'
 import { checkAuthRateLimit, getClientIp, AUTH_RATE_WINDOW } from '@/lib/rate-limit'
+import { getSiteOrigin } from '@/lib/site-url'
 
 /**
  * POST /api/auth/register
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
 
   // Sign up via anon key — Supabase sends confirmation email automatically.
   const supabase = createClient(supabaseUrl, anonKey)
-  const origin = new URL(request.url).origin
+  const origin = getSiteOrigin(request)
 
   const { data, error } = await supabase.auth.signUp({
     email: email.trim(),

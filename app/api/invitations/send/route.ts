@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
+import { getSiteOrigin } from '@/lib/site-url'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -156,7 +157,7 @@ export async function POST(request: NextRequest) {
   // Get agency name for the email
   const { data: agency } = await admin.from('agencies').select('name').eq('id', agencyId).single()
 
-  const origin = new URL(request.url).origin
+  const origin = getSiteOrigin(request)
   const inviteUrl = `${origin}/auth/invite/${tokenHex}`
 
   // Send email — graceful fallback if Resend not configured
