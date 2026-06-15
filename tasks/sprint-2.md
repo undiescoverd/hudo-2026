@@ -185,13 +185,13 @@ NOTES: Base tables + RLS already exist (0001/0002). Migration is ALTER + CREATE 
 
 ---
 
-- [ ] **S2-NOTIF-002** — Implement notification batching
+- [x] **S2-NOTIF-002** — Implement notification batching
 
 TASK_ID: S2-NOTIF-002
 TITLE: Implement notification batching
 BRANCH: feat/s2-notif-002-batching
 MODEL: sonnet-4.6
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: S2-NOTIF-001
 ACCEPTANCE_CRITERIA:
   - On comment creation, insert notification rows with `sent_at = NULL` for each recipient
@@ -283,13 +283,13 @@ NOTES: Base table + RLS already exist (0001/0002). Migration is CREATE INDEX IF 
 
 ---
 
-- [ ] **S2-GUEST-002** — Build guest link API
+- [x] **S2-GUEST-002** — Build guest link API
 
 TASK_ID: S2-GUEST-002
 TITLE: Build guest link API
 BRANCH: feat/s2-guest-002-api
 MODEL: sonnet-4.6
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: S2-GUEST-001
 ACCEPTANCE_CRITERIA:
   - POST /api/videos/:id/guest-links generates a link, returns plaintext token ONCE (never again)
@@ -307,13 +307,13 @@ NOTES: Mandatory devsecops-security-engineer review. Use timingSafeEqual; never 
 
 ---
 
-- [ ] **S2-GUEST-003** — Build guest playback
+- [x] **S2-GUEST-003** — Build guest playback
 
 TASK_ID: S2-GUEST-003
 TITLE: Build guest playback
 BRANCH: feat/s2-guest-003-playback
 MODEL: sonnet-4.6
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: S2-GUEST-002
 ACCEPTANCE_CRITERIA:
   - Public route /guest/:token loads without sign-in
@@ -331,13 +331,13 @@ NOTES: Mandatory devsecops-security-engineer review. Reuse VideoPlayer; pass rea
 
 ---
 
-- [ ] **S2-GUEST-004** — Guest link management UI
+- [x] **S2-GUEST-004** — Guest link management UI
 
 TASK_ID: S2-GUEST-004
 TITLE: Guest link management UI
 BRANCH: feat/s2-guest-004-management-ui
 MODEL: haiku-4.5
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: S2-GUEST-002
 ACCEPTANCE_CRITERIA:
   - Agent can generate a guest link from the video page; modal shows plaintext token + copy button (shown once)
