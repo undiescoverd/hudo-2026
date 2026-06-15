@@ -8,6 +8,45 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-15 — S2-NOTIF-002 gate closeout (PR #82)
+
+- **Task:** S2-NOTIF-002 pre-merge gates
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done
+- **Notes:**
+  - `{sent:0,errors:6}` from brief: incorrect — session output was `{sent:0,errors:0}`. Code correctly filters `.is('sent_at', null)`; second run hits early return. Re-run on Node 20 confirmed: step 6 returns `{"sent":0,"errors":0}` ✅
+  - Added `.nvmrc` pinning Node 20 (package.json already had `>=20.0.0`). Node 25 causes Upstash incompatibility.
+  - Enqueue `.catch()` now logs `{ videoId, commentId: comment.id, err }` — dropped notifications now observable in production logs.
+  - Vercel Hobby plan: max once-per-day cron. `0 * * * *` (hourly) failed Vercel deploy just like `*/5`. Fixed to `0 0 * * *` (daily midnight UTC). Cron route comment and ops doc updated.
+  - Cron cadence rationale documented in `docs/ops/cron-schedule.md` (Hobby plan = daily max; Pro needed for `*/5`).
+  - Security review (devsecops-security-engineer): PASS — LOW severity only. Applied `timingSafeEqual` from `crypto` for constant-time CRON_SECRET comparison. No blocking findings. Three reliability findings deferred (soft-deleted notification rows never stamped; no .limit() on unsent fetch; no per-run email cap) — tracked for S3.
+  - Rate-limiter fail-open (lib/redis.ts throws on Redis failure) deferred to S3 — touches multiple routes, widens scope.
+  - `pnpm format:check && pnpm type-check && pnpm lint` green on Node 20 ✅
+- **Browser walk:** Not completed — `CRON_SECRET` must be added to `.env.local` manually before dev-server test. E2E script test confirmed pipeline on Node 20.
+- **Human actions required:**
+  1. Add `CRON_SECRET` to Vercel project env vars (all envs). Until set, deployed cron returns 500 — no emails sent in production.
+  2. Approve and merge PR #82 once CI is green.
+- **Gotcha:** `*/5` inside a JSDoc block comment (`/** ... */`) is parsed as end-of-comment by Prettier → SyntaxError. Workaround: write "every-5-min cadence" instead of literal cron syntax in JSDoc comments.
+- **Gotcha:** `new Resend('')` throws at module load time — Next.js "Collecting page data" build step imports route modules, triggering the constructor and crashing the CI build when `RESEND_API_KEY` is absent. Fixed by lazy-instantiating inside `sendEmail()`.
+- **Gotcha:** `pull_request: synchronize` events stopped firing for PR #82 after close/reopen burst. Added `workflow_dispatch` to `ci.yml` and manually triggered to unblock. ✅ CI green on run 27527132283.
+
+---
+
+## 2026-06-15 — S2-NOTIF-002 notification batching
+
+- **Task:** S2-NOTIF-002
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done
+- **Notes:**
+  - Shipped: `lib/email-templates/comments-batch.tsx` (HTML digest template), `lib/notifications.ts` (`enqueueCommentNotification` + `batchAndSendNotifications`), `app/api/cron/notifications/route.ts` (CRON_SECRET-gated GET), `vercel.json` cron entry (`*/5 * * * *`). Wired enqueue into comment POST route.
+  - 11 tests pass: 5 lib/notifications unit tests + 6 cron route source-invariant tests.
+  - End-to-end pipeline validated via `scripts/playwright-notif-test.mts`: 3 comments → 3 unsent notification rows targeting recipient (not author) → 1 digest email → all `sent_at` stamped → idempotent second run returns `{sent:0,errors:0}`.
+- **Browser walk:** Cron endpoint not tested via browser (requires `CRON_SECRET` in `.env.local` — add manually). Pipeline validated via direct script test above.
+- **Gotcha:** `batch_window_minutes` check constraint only allows `IN (5, 15, 30, 60)` — cannot set 0 for testing. Workaround: backdate notification `created_at` to 6+ min ago before calling batchAndSend in the test script.
+- **Gotcha:** Node v25.3.0 incompatible with Upstash Redis auto-pipeline (`res.map is not a function`) — rate limiter fails-closed → 429 on all comment POST calls. Workaround for testing: insert comments directly into DB via admin client, bypassing the API route.
+
+---
+
 ## 2026-05-17 — S2 walkable-MVP guest-link path: GUEST-002/003/004 stacked PRs
 
 - **Task:** S2-GUEST-002 (PR #79), S2-GUEST-003 (PR #80, base #79), S2-GUEST-004 (PR #81, base #80). Plus chore PR #78 (quota logging + dev CSP).
@@ -20,6 +59,37 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - PR stack: rebase the bases as each one merges.
 - **Gotcha:** Server-side `fetch()` of a same-origin API route from a Next app-router page tempts you to compute baseUrl from `headers()`. That's a host-header SSRF / token-exfil hole unless `NEXT_PUBLIC_BASE_URL` is enforced. Prefer extracting the data-fetch into a `lib/` helper and calling it in-process. Bonus: token no longer hits Vercel access logs.
 - **Gotcha:** The repo has no `pnpm test` script. Tests run via `cd <test-dir> && npx tsx --test route.test.ts` (the `[bracket]` path chars break globs from the repo root). They're source-pattern-match tests, not handler-execution tests — useful but weaker than integration tests.
+
+---
+
+## 2026-05-13 — Schema backfill round 2: dev/staging migration sync complete
+
+- **Task:** Bring hudo-dev + hudo-staging fully in sync with `supabase/migrations/0004–0014` after round 1 (storage_quota_rpcs) cleared `/api/videos/upload/complete`. Round 2 unblocks the next 500: PATCH `/api/videos/[id]` failing on missing `description` column.
+- **Models:** planner=opus, executor=opus (single-session MCP applies)
+- **Outcome:** done. All three audit booleans (`has_thumb`, `has_desc`, `has_comment_reads`) = true on both projects.
+- **Notes:**
+  - Audit (verified via Supabase MCP, not SESSIONNOTES claims):
+
+    | #    | Migration                   | dev                   | staging               |
+    | ---- | --------------------------- | --------------------- | --------------------- |
+    | 0004 | RLS comments soft-delete    | trust ✓               | trust ✓               |
+    | 0005 | invitations RLS docs        | n/a                   | n/a                   |
+    | 0006 | RPC caller validation       | function SECDEF ✓     | function SECDEF ✓     |
+    | 0007 | storage quota RPCs          | applied (round 1)     | applied (round 1)     |
+    | 0008 | comments nesting + realtime | column ✓              | column ✓              |
+    | 0009 | videos.thumbnail_r2_key     | **applied (round 2)** | **applied (round 2)** |
+    | 0010 | SECDEF soft-delete fix      | trust ✓               | trust ✓               |
+    | 0011 | videos.description          | **applied (round 2)** | **applied (round 2)** |
+    | 0012 | notifications batched email | columns ✓             | columns ✓             |
+    | 0013 | guest links indexes         | trust ✓               | trust ✓               |
+    | 0014 | comment_reads               | table ✓               | **applied (round 2)** |
+
+  - Applied via MCP `apply_migration` (so `supabase_migrations.schema_migrations` now tracks them) — no SQL editor pastes.
+  - dev `list_migrations` now shows: initial_schema, rls_policies, rls_fix_memberships_recursion, storage_quota_rpcs, videos_thumbnail_r2_key, videos_add_description.
+  - staging adds `comment_reads` to that list.
+
+- **Gotcha:** Round 1 fixed the upload, but the _next_ user step (save title/description) hit the same class of bug — confirms that "schema cache miss" errors arrive one-per-column, one-per-route. When backfilling, audit the _whole_ migration range, not just the column the user complained about.
+- **Out of scope (flagged):** verify 0006 caller-validation `IF p_uploaded_by != auth.uid()` block is in the live `create_video_version` body; full `supabase db diff` for trust-only entries (0004/0010/0013); Upstash `res.map` rate-limiter bug; `app/middleware.ts` location.
 
 ---
 
@@ -109,3 +179,32 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Outcome:** done
 - **Notes:** Added `## Model & Workflow Rule` section to CLAUDE.md after Agent Rules. Created this file. Merged a `Stop` hook into `.claude/settings.json` that prints a `systemMessage` if `.ts/.tsx/.sql/.js` files changed but SESSIONNOTES.md was not modified. Existing PreToolUse / PostToolUse hooks left untouched.
 - **Gotcha (if any):** Stop hook uses `;` not `&&` between commands — `&&` breaks the chain when `grep` finds no match (exit 1) and the reminder never fires.
+
+---
+
+## 2026-05-12 22:00 — Dev environment debugging
+
+- **Task:** Fix localhost:3000 startup errors and apply pending migrations
+- **Models:** executor=sonnet
+- **Outcome:** partial
+- **Notes:** Fixed CSP (added unsafe-eval for dev HMR, EU PostHog domains to script-src/connect-src). Applied migrations 0004–0013 via Supabase SQL editor. Migration 0009 (thumbnail_r2_key) still pending — user needs membership+agency seed data to test upload flow.
+- **Gotcha (if any):** Hook output (⎿ Stop says...) bleeds into SQL when user copies from Claude Code response — always write SQL to scripts/ file instead of inline code blocks.
+
+---
+
+## 2026-05-13 12:35 — Storage-quota RPC missing in hudo-dev/staging (PGRST202)
+
+- **Task:** Fix `/api/videos/upload/complete` 500 — diagnosed as PGRST202 "Could not find function public.increment_storage_usage" in `/tmp/hudo-dev.log`.
+- **Models:** planner=opus, executor=opus (DB-only ops via Supabase MCP, no code path)
+- **Outcome:** done (root cause); follow-ups noted below
+- **Notes:**
+  - Verified via Supabase MCP: hudo-dev's `pg_proc` had `create_video_version` + `get_current_user_agency_ids` but **not** `increment_storage_usage`/`decrement_storage_usage`. hudo-staging same gap, plus `comment_reads` table missing (0014).
+  - `supabase_migrations.schema_migrations` tracks only 0001–0003 on dev — confirming SESSIONNOTES 2026-05-12's "Applied migrations 0004–0013 via Supabase SQL editor" only updated schema, not the tracking table. So 0007 was likely paste-applied but at some point the storage RPCs were dropped/never landed.
+  - Applied `0007_storage_quota_rpcs.sql` to both dev (`xyeqnjboqimvhdwnyqbt`) and staging (`egabjtxrrcuzooyclwgw`) via MCP `apply_migration` — both now tracked in `schema_migrations` as `storage_quota_rpcs`. Verified functions present with signature `(uuid, bigint)`.
+  - **No application code changes.** Round-1 edits in dirty tree (`lib/storage-quota.ts` predicate broadening, structured log in `route.ts:194`, `lib/supabase-server.ts`, `next.config.js`) are unrelated to this fix and stay as they are for their own PR.
+- **Gotcha (if any):** **PGRST202 = the function is missing from PostgREST's schema cache, almost always because the migration wasn't applied to that project.** Verify with `mcp__plugin_supabase_supabase__execute_sql` against `pg_proc` before assuming a code bug. Bonus trap: `components/upload/UploadProgress.tsx` matches any error string containing `"quota"` and shows the friendly over-quota panel — broad matcher hid the real failure. `MEMORY.md`'s "0001–0003 applied" note was stale and reinforced the misdiagnosis; updated.
+- **Follow-ups (out of scope, file as tasks):**
+  - hudo-staging missing `comment_reads` table (migration 0014). Apply before staging hits 0014-dependent code paths.
+  - Upstash Redis pipeline `TypeError: res.map is not a function` at top of `/tmp/hudo-dev.log` — caught by rate limiter so requests proceed unrate-limited. Real bug.
+  - `app/middleware.ts` location — Next.js expects middleware at the project root; verify it's being invoked.
+  - Audit other `MEMORY.md` "applied" claims; the SQL-editor-vs-MCP tracking gap means any project's actual migration state should be verified via `list_migrations` + `pg_proc` probes, not memory.

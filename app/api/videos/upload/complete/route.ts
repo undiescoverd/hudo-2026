@@ -191,7 +191,12 @@ export async function POST(request: NextRequest) {
         { status: 402 }
       )
     }
-    console.error('[upload/complete] Quota increment failed:', quotaError.message)
+    console.error('[upload/complete] Quota increment failed:', {
+      code: quotaError.code,
+      message: quotaError.message,
+      details: quotaError.details,
+      hint: quotaError.hint,
+    })
     return NextResponse.json({ error: 'Failed to verify storage quota' }, { status: 500 })
   }
 

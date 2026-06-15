@@ -1,5 +1,7 @@
 const { withSentryConfig } = require('@sentry/nextjs')
 
+const isDev = process.env.NODE_ENV === 'development'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async headers() {
@@ -12,9 +14,10 @@ const nextConfig = {
             value: [
               "default-src 'self'",
               // TODO: Replace 'unsafe-inline' with nonce-based CSP in S1
-              "script-src 'self' 'unsafe-inline'",
+              // 'unsafe-eval' required in dev for Next.js React Fast Refresh (HMR)
+              `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval' https://eu-assets.i.posthog.com" : ''}`,
               "style-src 'self' 'unsafe-inline'",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://us.i.posthog.com https://*.r2.cloudflarestorage.com",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://*.i.posthog.com https://*.posthog.com https://*.r2.cloudflarestorage.com",
               "img-src 'self' data: blob:",
               "media-src 'self' blob:",
               "frame-src 'self'",

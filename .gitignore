@@ -52,3 +52,8 @@ get-jwt.sh
 # Supabase CLI scratch dirs
 supabase/.branches/
 supabase/.temp/
+
+# Local design/scratch dirs (kept out of repo)
+.figma-prototype/
+.playwright-mcp/
+designs/
