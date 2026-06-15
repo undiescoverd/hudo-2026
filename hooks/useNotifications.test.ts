@@ -107,11 +107,24 @@ describe('useNotifications hook — source invariants', () => {
     )
   })
 
-  it('resolves user id before subscribing', () => {
-    // userId must be resolved first; the subscription uses userIdRef.current
+  it('resolves user id before subscribing (reactive state, no timer)', () => {
+    // userId must be stored in React state so the subscription effect is
+    // reactive — it re-runs once userId is non-null, eliminating the old
+    // 500ms setTimeout race condition on slow/cold connections.
     assert.ok(
-      source.includes('userIdRef.current'),
-      'User id must be tracked before subscribing to avoid filter race condition'
+      source.includes('useState<string | null>(null)') &&
+        source.includes('setUserId(') &&
+        !source.includes('setTimeout'),
+      'User id must be stored in state (setUserId) and subscription effect must depend on [userId] — no setTimeout hack'
+    )
+  })
+
+  it('subscription effect depends on userId state (not a ref)', () => {
+    // The second useEffect's dependency array must include userId so it
+    // re-subscribes reactively when the user id resolves.
+    assert.ok(
+      source.includes('[userId, fetchNotifications]'),
+      'Realtime subscription useEffect must list [userId, fetchNotifications] as deps'
     )
   })
 

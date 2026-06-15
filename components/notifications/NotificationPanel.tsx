@@ -39,6 +39,7 @@ function notificationLabel(type: Notification['type']): string {
 
 interface NotificationPanelProps {
   notifications: Notification[]
+  unreadCount: number
   isLoading: boolean
   onMarkRead: (id: string) => Promise<void>
   onMarkAllRead: () => Promise<void>
@@ -47,6 +48,7 @@ interface NotificationPanelProps {
 
 export function NotificationPanel({
   notifications,
+  unreadCount,
   isLoading,
   onMarkRead,
   onMarkAllRead,
@@ -65,8 +67,6 @@ export function NotificationPanel({
   const handleMarkAllRead = async () => {
     await onMarkAllRead()
   }
-
-  const unreadCount = notifications.filter((n) => !n.read_at).length
 
   return (
     <div

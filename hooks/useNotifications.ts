@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/auth'
 
 // ---------------------------------------------------------------------------
@@ -65,8 +65,8 @@ export function useNotifications(): UseNotificationsResult {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Track the current user id for realtime subscription scoping
-  const userIdRef = useRef<string | null>(null)
+  // Resolved user id drives the Realtime subscription reactively
+  const [userId, setUserId] = useState<string | null>(null)
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -96,7 +96,7 @@ export function useNotifications(): UseNotificationsResult {
       } = await supabase.auth.getUser()
 
       if (cancelled) return
-      userIdRef.current = user?.id ?? null
+      setUserId(user?.id ?? null)
 
       await fetchNotifications()
     }
@@ -107,53 +107,33 @@ export function useNotifications(): UseNotificationsResult {
     }
   }, [fetchNotifications])
 
-  // Realtime subscription — scoped per-user via recipient_id filter
+  // Realtime subscription — reactive to resolved userId, scoped per-user via recipient_id filter
   useEffect(() => {
+    if (!userId) return
+
     const supabase = createClient()
-
-    // We need the userId before subscribing. Poll until it's resolved.
-    let channel: ReturnType<typeof supabase.channel> | null = null
-
-    function subscribe(userId: string) {
-      const channelName = `notifications:${userId}`
-      channel = supabase
-        .channel(channelName)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'notifications',
-            filter: `recipient_id=eq.${userId}`,
-          },
-          () => {
-            // On any change, refetch from the server to stay authoritative
-            void fetchNotifications()
-          }
-        )
-        .subscribe()
-    }
-
-    // If userId is already known (from the init effect), subscribe immediately.
-    // Otherwise wait briefly for the init to resolve (avoids race condition).
-    if (userIdRef.current) {
-      subscribe(userIdRef.current)
-    } else {
-      const timer = setTimeout(() => {
-        if (userIdRef.current) {
-          subscribe(userIdRef.current)
+    const channelName = `notifications:${userId}`
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `recipient_id=eq.${userId}`,
+        },
+        () => {
+          // On any change, refetch from the server to stay authoritative
+          void fetchNotifications()
         }
-      }, 500)
-      return () => {
-        clearTimeout(timer)
-        if (channel) void supabase.removeChannel(channel)
-      }
-    }
+      )
+      .subscribe()
 
     return () => {
-      if (channel) void supabase.removeChannel(channel)
+      void supabase.removeChannel(channel)
     }
-  }, [fetchNotifications])
+  }, [userId, fetchNotifications])
 
   const markRead = useCallback(async (id: string) => {
     try {

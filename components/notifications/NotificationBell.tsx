@@ -86,6 +86,7 @@ export function NotificationBell() {
       {open && (
         <NotificationPanel
           notifications={notifications}
+          unreadCount={unreadCount}
           isLoading={isLoading}
           onMarkRead={markRead}
           onMarkAllRead={markAllRead}
