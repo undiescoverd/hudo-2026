@@ -14,8 +14,9 @@ function createAdminClient(): SupabaseClient {
 }
 
 /**
- * Inserts one notification row per agency member (excluding the comment author).
- * Errors are caught and logged; never thrown — comment creation must not fail.
+ * Inserts one notification row per eligible agency member (excluding the comment author).
+ * Talent users are only notified if the video belongs to them (`talent_id`).
+ * Caller wraps in .catch() — this function must not throw.
  */
 export async function enqueueCommentNotification({
   agencyId,
@@ -36,9 +37,20 @@ export async function enqueueCommentNotification({
     return
   }
 
+  // Fetch video to know which talent owns it
+  const { data: video, error: videoErr } = await admin
+    .from('videos')
+    .select('talent_id')
+    .eq('id', videoId)
+    .single()
+  if (videoErr) {
+    console.error('[notifications:enqueue] Failed to fetch video:', videoErr)
+    return
+  }
+
   const { data: members, error } = await admin
     .from('memberships')
-    .select('user_id')
+    .select('user_id, role')
     .eq('agency_id', agencyId)
     .neq('user_id', commentAuthorId)
 
@@ -49,7 +61,11 @@ export async function enqueueCommentNotification({
 
   if (!members?.length) return
 
-  const rows = members.map((m) => ({
+  // Talent members only receive notifications for their own video
+  const eligible = members.filter((m) => m.role !== 'talent' || m.user_id === video.talent_id)
+  if (!eligible.length) return
+
+  const rows = eligible.map((m) => ({
     agency_id: agencyId,
     recipient_id: m.user_id,
     type: 'new_comment' as const,
@@ -132,6 +148,7 @@ export async function batchAndSendNotifications(deps?: BatchSendDeps): Promise<B
             .from('comments')
             .select('id, content, timestamp_seconds, user_id')
             .in('id', commentIds)
+            .is('deleted_at', null)
         : Promise.resolve({ data: [], error: null }),
     ])
 
@@ -188,14 +205,22 @@ export async function batchAndSendNotifications(deps?: BatchSendDeps): Promise<B
         subject: 'New comments on your Hudo videos',
         html,
       })
-      await admin
+      const { error: updateErr } = await admin
         .from('notifications')
         .update({ sent_at: new Date().toISOString() })
         .in(
           'id',
           due.map((n) => n.id)
         )
-      sent++
+      if (updateErr) {
+        console.error(
+          `[notifications:batch] sent_at stamp failed for ${recipientId} — will retry next tick:`,
+          updateErr
+        )
+        errors++
+      } else {
+        sent++
+      }
     } catch (err) {
       console.error(`[notifications:batch] Send failed for ${recipientId}:`, err)
       errors++
