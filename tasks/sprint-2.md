@@ -191,7 +191,7 @@ TASK_ID: S2-NOTIF-002
 TITLE: Implement notification batching
 BRANCH: feat/s2-notif-002-batching
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: S2-NOTIF-001
 ACCEPTANCE_CRITERIA:
   - On comment creation, insert notification rows with `sent_at = NULL` for each recipient
@@ -289,7 +289,7 @@ TASK_ID: S2-GUEST-002
 TITLE: Build guest link API
 BRANCH: feat/s2-guest-002-api
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: S2-GUEST-001
 ACCEPTANCE_CRITERIA:
   - POST /api/videos/:id/guest-links generates a link, returns plaintext token ONCE (never again)
@@ -313,7 +313,7 @@ TASK_ID: S2-GUEST-003
 TITLE: Build guest playback
 BRANCH: feat/s2-guest-003-playback
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: S2-GUEST-002
 ACCEPTANCE_CRITERIA:
   - Public route /guest/:token loads without sign-in
@@ -337,7 +337,7 @@ TASK_ID: S2-GUEST-004
 TITLE: Guest link management UI
 BRANCH: feat/s2-guest-004-management-ui
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: S2-GUEST-002
 ACCEPTANCE_CRITERIA:
   - Agent can generate a guest link from the video page; modal shows plaintext token + copy button (shown once)

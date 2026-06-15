@@ -8,6 +8,60 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-15 — S2-NOTIF-002 gate closeout (PR #82)
+
+- **Task:** S2-NOTIF-002 pre-merge gates
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done
+- **Notes:**
+  - `{sent:0,errors:6}` from brief: incorrect — session output was `{sent:0,errors:0}`. Code correctly filters `.is('sent_at', null)`; second run hits early return. Re-run on Node 20 confirmed: step 6 returns `{"sent":0,"errors":0}` ✅
+  - Added `.nvmrc` pinning Node 20 (package.json already had `>=20.0.0`). Node 25 causes Upstash incompatibility.
+  - Enqueue `.catch()` now logs `{ videoId, commentId: comment.id, err }` — dropped notifications now observable in production logs.
+  - Vercel Hobby plan: max once-per-day cron. `0 * * * *` (hourly) failed Vercel deploy just like `*/5`. Fixed to `0 0 * * *` (daily midnight UTC). Cron route comment and ops doc updated.
+  - Cron cadence rationale documented in `docs/ops/cron-schedule.md` (Hobby plan = daily max; Pro needed for `*/5`).
+  - Security review (devsecops-security-engineer): PASS — LOW severity only. Applied `timingSafeEqual` from `crypto` for constant-time CRON_SECRET comparison. No blocking findings. Three reliability findings deferred (soft-deleted notification rows never stamped; no .limit() on unsent fetch; no per-run email cap) — tracked for S3.
+  - Rate-limiter fail-open (lib/redis.ts throws on Redis failure) deferred to S3 — touches multiple routes, widens scope.
+  - `pnpm format:check && pnpm type-check && pnpm lint` green on Node 20 ✅
+- **Browser walk:** Not completed — `CRON_SECRET` must be added to `.env.local` manually before dev-server test. E2E script test confirmed pipeline on Node 20.
+- **Human actions required:**
+  1. Add `CRON_SECRET` to Vercel project env vars (all envs). Until set, deployed cron returns 500 — no emails sent in production.
+  2. Approve and merge PR #82 once CI is green.
+- **Gotcha:** `*/5` inside a JSDoc block comment (`/** ... */`) is parsed as end-of-comment by Prettier → SyntaxError. Workaround: write "every-5-min cadence" instead of literal cron syntax in JSDoc comments.
+- **Gotcha:** `new Resend('')` throws at module load time — Next.js "Collecting page data" build step imports route modules, triggering the constructor and crashing the CI build when `RESEND_API_KEY` is absent. Fixed by lazy-instantiating inside `sendEmail()`.
+- **Gotcha:** `pull_request: synchronize` events stopped firing for PR #82 after close/reopen burst. Added `workflow_dispatch` to `ci.yml` and manually triggered to unblock. ✅ CI green on run 27527132283.
+
+---
+
+## 2026-06-15 — S2-NOTIF-002 notification batching
+
+- **Task:** S2-NOTIF-002
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done
+- **Notes:**
+  - Shipped: `lib/email-templates/comments-batch.tsx` (HTML digest template), `lib/notifications.ts` (`enqueueCommentNotification` + `batchAndSendNotifications`), `app/api/cron/notifications/route.ts` (CRON_SECRET-gated GET), `vercel.json` cron entry (`*/5 * * * *`). Wired enqueue into comment POST route.
+  - 11 tests pass: 5 lib/notifications unit tests + 6 cron route source-invariant tests.
+  - End-to-end pipeline validated via `scripts/playwright-notif-test.mts`: 3 comments → 3 unsent notification rows targeting recipient (not author) → 1 digest email → all `sent_at` stamped → idempotent second run returns `{sent:0,errors:0}`.
+- **Browser walk:** Cron endpoint not tested via browser (requires `CRON_SECRET` in `.env.local` — add manually). Pipeline validated via direct script test above.
+- **Gotcha:** `batch_window_minutes` check constraint only allows `IN (5, 15, 30, 60)` — cannot set 0 for testing. Workaround: backdate notification `created_at` to 6+ min ago before calling batchAndSend in the test script.
+- **Gotcha:** Node v25.3.0 incompatible with Upstash Redis auto-pipeline (`res.map is not a function`) — rate limiter fails-closed → 429 on all comment POST calls. Workaround for testing: insert comments directly into DB via admin client, bypassing the API route.
+
+---
+
+## 2026-05-17 — S2 walkable-MVP guest-link path: GUEST-002/003/004 stacked PRs
+
+- **Task:** S2-GUEST-002 (PR #79), S2-GUEST-003 (PR #80, base #79), S2-GUEST-004 (PR #81, base #80). Plus chore PR #78 (quota logging + dev CSP).
+- **Models:** planner=opus, executors: sonnet (002+003), haiku (004). Reviewers: pr-review-toolkit:code-reviewer + devsecops-security-engineer for 002+003; code-simplifier on 002.
+- **Outcome:** done. Walkable agent MVP: create guest link → external viewer plays + sees comments → revoke → 404. Manual browser walkthrough still pending — see PR #81 test plan.
+- **Notes:**
+  - GUEST-002 ships 4 routes + migration 0015 (`increment_guest_link_view` RPC for atomic view count, applied to hudo-dev + hudo-staging via MCP). Security review flagged the read-modify-write race; fixed via the RPC. 59 unit tests pass.
+  - GUEST-003 initially did a server-side self-`fetch()` of its own API route to derive baseUrl from headers. Both reviewers flagged host-header injection risk. Fixed by extracting the lookup to `lib/guest/get-guest-metadata.ts` and calling it in-process from `page.tsx`. Also added Sentry `beforeBreadcrumb`/`beforeSend` scrubbers so the plaintext token can never reach Sentry via breadcrumbs even from a previously-consented browser profile.
+  - GUEST-004 wired a Share button into `app/(dashboard)/videos/[id]/page.tsx`. Inline Tailwind modal (no shadcn Dialog primitive in repo). Plaintext token shown once + Copy with brief "Copied!" flip.
+  - PR stack: rebase the bases as each one merges.
+- **Gotcha:** Server-side `fetch()` of a same-origin API route from a Next app-router page tempts you to compute baseUrl from `headers()`. That's a host-header SSRF / token-exfil hole unless `NEXT_PUBLIC_BASE_URL` is enforced. Prefer extracting the data-fetch into a `lib/` helper and calling it in-process. Bonus: token no longer hits Vercel access logs.
+- **Gotcha:** The repo has no `pnpm test` script. Tests run via `cd <test-dir> && npx tsx --test route.test.ts` (the `[bracket]` path chars break globs from the repo root). They're source-pattern-match tests, not handler-execution tests — useful but weaker than integration tests.
+
+---
+
 ## 2026-05-13 — Schema backfill round 2: dev/staging migration sync complete
 
 - **Task:** Bring hudo-dev + hudo-staging fully in sync with `supabase/migrations/0004–0014` after round 1 (storage_quota_rpcs) cleared `/api/videos/upload/complete`. Round 2 unblocks the next 500: PATCH `/api/videos/[id]` failing on missing `description` column.
