@@ -4,7 +4,7 @@ import { batchAndSendNotifications } from '@/lib/notifications'
 
 /**
  * GET /api/cron/notifications
- * Vercel cron — currently hourly (Hobby plan limit; upgrade to Pro for every-5-min cadence).
+ * Vercel cron — currently daily at midnight UTC (Hobby plan: max once/day; upgrade to Pro for every-5-min cadence).
  * Requires Authorization: Bearer <CRON_SECRET>.
  */
 export async function GET(request: NextRequest) {
