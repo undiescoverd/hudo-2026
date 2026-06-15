@@ -112,13 +112,13 @@ NOTES: audit_log is insert-only — no update/delete policy. Use existing audit_
 
 ---
 
-- [ ] **S2-DASH-004** — Build PDF export
+- [x] **S2-DASH-004** — Build PDF export
 
 TASK_ID: S2-DASH-004
 TITLE: Build PDF export
 BRANCH: feat/s2-dash-004-pdf-export
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - GET /api/videos/:id/versions/:versionId/comments/export returns a PDF
@@ -137,13 +137,13 @@ NOTES: Use a serverless-compatible PDF lib (e.g. pdfkit or @react-pdf/renderer).
 
 ---
 
-- [ ] **S2-GATE-001** — Implement agent and talent count plan gates
+- [x] **S2-GATE-001** — Implement agent and talent count plan gates
 
 TASK_ID: S2-GATE-001
 TITLE: Implement agent and talent count plan gates
 BRANCH: feat/s2-gate-001-plan-gates
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Before adding an agent or talent, current count is checked against plan limits
@@ -209,13 +209,13 @@ NOTES: Size L — must run pr-review-toolkit:code-reviewer before merge. Cron se
 
 ---
 
-- [ ] **S2-NOTIF-003** — Build in-app notification panel
+- [x] **S2-NOTIF-003** — Build in-app notification panel
 
 TASK_ID: S2-NOTIF-003
 TITLE: Build in-app notification panel
 BRANCH: feat/s2-notif-003-in-app-panel
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S2-NOTIF-001
 ACCEPTANCE_CRITERIA:
   - Bell icon in header shows unread count badge
@@ -233,13 +233,13 @@ NOTES: Realtime channel scoped per CLAUDE.md — filter by user_id, never broadc
 
 ---
 
-- [ ] **S2-NOTIF-004** — Build notification preferences UI
+- [x] **S2-NOTIF-004** — Build notification preferences UI
 
 TASK_ID: S2-NOTIF-004
 TITLE: Build notification preferences UI
 BRANCH: feat/s2-notif-004-preferences
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S2-NOTIF-001
 ACCEPTANCE_CRITERIA:
   - Settings page exposes email_enabled toggle and batch_window_minutes select (5, 15, 30, 60)
@@ -350,3 +350,27 @@ FILES:
   - components/guest/GuestLinkList.tsx
   - app/(dashboard)/videos/[id]/page.tsx
 NOTES: Plaintext token displayed exactly once at creation — make this obvious in the UI.
+
+---
+
+### WAVE 4 — Wiring (solo, after NOTIF-003 + NOTIF-004)
+
+---
+
+- [x] **S2-WIRE-001** — Wire notification bell + settings nav into app header
+
+TASK_ID: S2-WIRE-001
+TITLE: Wire notification bell + settings nav into app header
+BRANCH: feat/s2-wire-001-header-wiring
+MODEL: haiku-4.5
+STATUS: done
+BLOCKED_BY: S2-NOTIF-003, S2-NOTIF-004
+ACCEPTANCE_CRITERIA:
+  - <AppHeader> mounts <NotificationBell> (from NOTIF-003) for signed-in users
+  - <AppHeader> includes a nav/menu link to /settings/notifications (from NOTIF-004)
+  - Bell and settings link only render for authenticated dashboard users (not guests)
+  - No regression to existing header nav (logo, Videos, Upload, user name, sign-out)
+  - pnpm type-check && pnpm lint green
+FILES:
+  - components/layout/AppHeader.tsx
+NOTES: This is the ONLY shared surface across S2's final wave — NotificationBell and the settings page live in NOTIF-003/004's FILES, but mounting them edits the shared AppHeader, which is in neither task's FILES. Single solo agent does both edits once, after both upstream tasks merge, to avoid a parallel collision on AppHeader.tsx. Do not change the bell/panel/preferences internals — only mount + link.
