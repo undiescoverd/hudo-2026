@@ -8,6 +8,17 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-16 — Fix playback CSP (allowlist R2 in `media-src`)
+
+- **Task:** Last of the three `STAGING_WALKTHROUGH_REPORT.md` P1s — playback dead because `media-src 'self' blob:` blocked the signed R2 URL the `<video>` loads. Branch `fix/playback-media-src-csp`, single PR.
+- **Models:** planner=opus, executor=opus (one-line config + small test); gate=devsecops-security-engineer (sonnet).
+- **Outcome:** done — added `https://*.r2.cloudflarestorage.com` to `media-src` (mirrors `connect-src`); extracted `CSP_DIRECTIVES` const + added `next.config.test.ts` regression guard (4 tests pass). format/type-check/lint clean. Existing playback suites green (22 tests, 0 fail). Security review PASS/LOW.
+- **Notes:** One global CSP (`/(.*)`) covers both authed `/videos/[id]` and guest `/guest/[token]`. Rejected proxy/stream-through-app alternative per user decision (egress + Range cost).
+- **Gotcha:** Pre-existing unrelated failure in `app/api/cron/notifications/route.test.ts` — a stale source-invariant regex that no longer matches the `timingSafeEqual`-based CRON_SECRET check; not touched by this PR, flag for a separate fix.
+- **Gotcha:** `npx tsx --test` treats `[videoId]`/`[token]` dirs as glob char-classes, so passing those paths directly matches nothing (silent "0 tests"). Run the suite via a recursive glob like `npx tsx --test 'app/api/**/*.test.ts'` instead.
+
+---
+
 ## 2026-06-16 — Fix both dashboards (ambiguous embed) + wire comment UI into video page
 
 - **Task:** Two of the three P1s from `STAGING_WALKTHROUGH_REPORT.md` (playback CSP left out of scope). Branch `fix/dashboard-embed-and-comment-wiring`, single PR.
