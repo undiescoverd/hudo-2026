@@ -9,6 +9,15 @@
             "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // \"\"'); if echo \"$FILE\" | grep -qE '\\.env'; then echo \"BLOCKED: Direct .env edit detected. Update credential values manually.\"; exit 2; fi"
           }
         ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // \"\"'); if echo \"$FILE\" | grep -qE 'supabase/migrations/.*\\.sql$'; then echo '{\"systemMessage\":\"Apply via Supabase MCP apply_migration (updates schema_migrations), not the SQL editor \u2014 and apply to BOTH hudo-dev and hudo-staging.\"}'; fi"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -17,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // \"\"'); if echo \"$FILE\" | grep -qE '\\.(ts|tsx)$'; then cd /Users/ianvincent/workspace/hudo-2026 && pnpm type-check 2>&1 | tail -20; fi"
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // \"\"'); if echo \"$FILE\" | grep -qE '\\.(ts|tsx)$'; then cd /Users/ianvincent/workspace/hudo-2026 && pnpm type-check 2>&1 | tail -20; case \"$FILE\" in *.test.ts|*.test.tsx) echo \"--- unit test: $FILE ---\"; pnpm exec tsx --test \"$FILE\" 2>&1 | tail -20 ;; *.ts) for T in \"${FILE%.ts}.test.ts\" \"${FILE%.ts}.test.tsx\"; do [ -f \"$T\" ] && { echo \"--- unit test: $T ---\"; pnpm exec tsx --test \"$T\" 2>&1 | tail -20; }; done ;; *.tsx) for T in \"${FILE%.tsx}.test.ts\" \"${FILE%.tsx}.test.tsx\"; do [ -f \"$T\" ] && { echo \"--- unit test: $T ---\"; pnpm exec tsx --test \"$T\" 2>&1 | tail -20; }; done ;; esac; fi"
           }
         ]
       }

@@ -12,16 +12,17 @@ Run:
 gh pr view --json number,headRefName,statusCheckRollup 2>/dev/null
 ```
 
-If this returns an error (no PR open), output:
-<promise>NO PR OPEN</promise>
+If this returns an error (no PR open):
+No open PR found — nothing to fix.
+<promise>RALPH DONE</promise>
 and stop.
 
 ### Step 2 — Wait for any in-progress DeepSeek review
 
-Check if the "PR Review" check is currently running:
+Check if the "AI Code Review" check is currently running:
 
 ```bash
-gh pr checks 2>/dev/null | grep "PR Review"
+gh pr checks 2>/dev/null | grep "AI Code Review"
 ```
 
 If it shows "in_progress" or "queued", wait for it to complete:
@@ -29,7 +30,7 @@ If it shows "in_progress" or "queued", wait for it to complete:
 ```bash
 for i in $(seq 1 12); do
   sleep 15
-  status=$(gh pr checks 2>/dev/null | grep "PR Review" | awk '{print $2}')
+  status=$(gh pr checks 2>/dev/null | grep "AI Code Review" | awk '{print $2}')
   echo "Check status: $status"
   if [ "$status" != "in_progress" ] && [ "$status" != "queued" ]; then break; fi
 done
@@ -47,13 +48,13 @@ gh pr view --json comments --jq '
 ```
 
 **If the comment contains "## Approved" or "No issues found":**
-Output:
-<promise>APPROVED</promise>
+Review approved — no changes required.
+<promise>RALPH DONE</promise>
 and stop.
 
 **If there is no review comment yet:**
-Output:
-<promise>NO REVIEW YET</promise>
+No automated review has posted yet — it will trigger on the next push.
+<promise>RALPH DONE</promise>
 and stop. (Push a trivial commit or wait — the review will trigger on the next push.)
 
 **If the comment contains "## Changes Required":** continue to Step 4.
@@ -119,4 +120,4 @@ Do not output a promise. Exit normally. Ralph will re-run this prompt and pick u
 - If a finding is a false positive, add a comment in the code explaining why it is safe, and note it in your commit message.
 - Always run `pnpm type-check && pnpm lint` before pushing.
 - If you cannot fix a finding (requires architectural change, missing context, etc.), skip it and flag it with a `TODO: PR-REVIEW:` comment in the code.
-- Max 10 fix commits per Ralph session. If you reach 10, output: <promise>MANUAL REVIEW NEEDED</promise>
+- Max 10 fix commits per Ralph session. If you reach 10: Reached the 10-commit limit — manual review needed. <promise>RALPH DONE</promise>
