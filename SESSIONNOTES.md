@@ -8,6 +8,26 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-16 — Wire up `pnpm test` (tsx) + fix MEMORY.md dead pointer
+
+- **Task:** `chore/wire-unit-tests` — two audit follow-ups: (1) fix MEMORY.md's dead `docs/gotchas-and-lessons.md` pointer → point at the 3 real homes (CLAUDE.md Failure Log + SESSIONNOTES.md + `docs/Hudo App 2026/` vault); (2) add a runnable `pnpm test`.
+- **Models:** planner=opus, executor=opus (small mechanical change)
+- **Outcome:** done — `pnpm test` = `tsx --test '**/*.test.ts' '**/*.test.tsx'`; `tsx@^4.19.2` added as a devDependency (was only a transitive peer). 42 test files / 649 cases, 647 pass.
+- **Notes:** User decided (mid-task) **not** to wire a CI step and **not** to fix the 2 failing tests now — so `.github/workflows/ci.yml` is untouched and CLAUDE.md's "Unit tests gap" note was reworded (not deleted) to stay honest: script exists, CI still doesn't run it, 2 known-stale tests fail.
+- **Gotcha (if any):** Both failures are **stale source-pattern assertions**, not code bugs — `components/guest/GuestComments.test.tsx:43` (`doesNotMatch(/resolve|reply|delete/i)` matches the file's own doc comment) and `app/api/cron/notifications/route.test.ts:26` (single-line `.` regex can't span the multi-line `timingSafeEqual` auth check). Fix these two before ever adding `pnpm test` to CI. The 3 `.test.tsx` files are source-invariant (no DOM) so they run fine under `tsx --test` — the glob just needs both extensions.
+
+---
+
+## 2026-06-16 — Vercel Deployment Protection intentionally disabled
+
+- **Task:** N/A — deliberate config decision
+- **Models:** N/A
+- **Outcome:** done
+- **Notes:** Deployment Protection on `hudo-2026` was disabled (via Vercel API) during the S2 Playwright walkthrough and is being left off intentionally to keep staging testing frictionless during S3 development. Re-enable before any external-facing exposure or before go-live.
+- **Gotcha (if any):** Staging is effectively public while protection is off — do not share the preview URL publicly or commit real credentials to branches.
+
+---
+
 ## 2026-06-16 15:40 — Fix seed-staging: backfill R2 bytes so seeded video plays
 
 - **Task:** `chore/seed-staging-r2-upload` — `scripts/seed-staging.mjs` inserted the video/version rows but never uploaded any R2 object, so the seeded "Staging Test Reel" (`7cb31754…`) returned `403 NoSuchKey` → `<video>` format error. Fix the script durably **and** backfill the existing seed.
