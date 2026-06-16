@@ -150,6 +150,37 @@ fetch('https://<presigned-url>', {
 - **Audit**: Every upload and playback request is logged in the `audit_log` table.
 - **Rate Limiting**: All R2 upload endpoints are rate-limited via Upstash Redis.
 
+## Seeding Staging Videos (`scripts/seed-staging.mjs`)
+
+The staging seed creates a walkable video (`videos` + `video_versions` rows) **and**
+backfills its R2 bytes so the seeded video actually plays. It does this without any
+committed binary by copying, server-side, from a stable seed-owned asset.
+
+**One-time bootstrap** of that stable asset (a copy of a known-good upload). Run once
+per bucket before the first seed:
+
+```bash
+R2_BUCKET_NAME=hudo-staging node --env-file=.env.staging scripts/seed-staging.mjs --bootstrap
+# → creates seed/staging/_assets/sample-v1.mp4
+```
+
+**Seed run** (idempotent — safe to re-run; backfills the existing seed video too):
+
+```bash
+R2_BUCKET_NAME=hudo-staging node --env-file=.env.staging scripts/seed-staging.mjs
+```
+
+The backfill `HeadObject`s the video's `r2_key`; on a miss it `CopyObject`s the stable
+asset onto the key and syncs `file_size_bytes`/`duration_seconds` to the real object.
+
+> [!IMPORTANT]
+> **Always override `R2_BUCKET_NAME=hudo-staging`.** The deployed staging app signs
+> upload/playback URLs against the **`hudo-staging`** bucket, but local `.env.staging`
+> ships a stale `R2_BUCKET_NAME="hudo-dev"`. Without the override, bytes land in the
+> wrong (empty) bucket and the app 404s them. Same account/endpoint, only the bucket
+> name differs. (The `.env.staging` value should be reconciled separately — it's a
+> gitignored secret.)
+
 ## References
 
 - [Cloudflare R2 Docs](https://developers.cloudflare.com/r2/)
