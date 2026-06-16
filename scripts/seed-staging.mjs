@@ -7,14 +7,19 @@
  *   - 1 video owned by the talent, in the agency, with 1 version
  *   - 2 timestamped comments by the agent (gives the export + dashboards data)
  *
- * Usage (point at STAGING — never prod):
- *   NEXT_PUBLIC_SUPABASE_URL="https://egabjtxrrcuzooyclwgw.supabase.co" \
- *   SUPABASE_SERVICE_ROLE_KEY="<staging service_role key>" \
- *   node scripts/seed-staging.mjs
+ * Usage (point at STAGING — never prod). Override the bucket: the deployed staging
+ * app signs URLs against the `hudo-staging` bucket, but local .env.staging carries a
+ * stale `R2_BUCKET_NAME="hudo-dev"`, so override it on the command line:
+ *   R2_BUCKET_NAME=hudo-staging node --env-file=.env.staging scripts/seed-staging.mjs
+ *
+ * One-time, before the first seed run: bootstrap the stable sample asset in R2
+ * (a server-side copy from a known-good upload — no repo binary, no external dep):
+ *   R2_BUCKET_NAME=hudo-staging node --env-file=.env.staging scripts/seed-staging.mjs --bootstrap
  *
  * The service_role key bypasses RLS — only run this against dev/staging.
  */
 import { createClient } from '@supabase/supabase-js'
+import { CopyObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3'
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -34,6 +39,42 @@ console.log(`→ Seeding project: ${url.replace(/^https?:\/\//, '').split('.')[0
 const admin = createClient(url, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
+
+// Stable, seed-owned R2 asset that backs the seeded video's playback. Bootstrapped
+// once (server-side copy from BOOTSTRAP_SOURCE_KEY) so the seed is self-contained
+// within the bucket — no random per-upload UUID path, no repo binary.
+const SEED_ASSET_KEY = 'seed/staging/_assets/sample-v1.mp4'
+// Real duration of the sample mp4 (~3s) — keeps DB metadata honest with the bytes.
+const SAMPLE_DURATION_SECONDS = 3
+// Known-good upload that plays, used only by `--bootstrap` to seed SEED_ASSET_KEY.
+const BOOTSTRAP_SOURCE_KEY =
+  '3e44aa4d-76ec-4acf-8959-eeac95b40a40/55c07ab0-90fc-4764-995c-03ab6a14754d/d6b735f2-7621-48b7-864e-0ab48ed2fd38.mp4'
+
+/** Build an R2 (S3-compatible) client from env, mirroring lib/storage.ts. Returns null if unconfigured. */
+function createR2() {
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY
+  const accountId = process.env.R2_ACCOUNT_ID
+  const bucket = process.env.R2_BUCKET_NAME
+  const endpoint = process.env.R2_ENDPOINT
+  if (!accessKeyId || !secretAccessKey || !accountId || !bucket) return null
+  const client = new S3Client({
+    region: 'auto',
+    endpoint: endpoint || `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+  })
+  return { client, bucket }
+}
+
+/** HeadObject helper — returns the response metadata, or null if the object does not exist. */
+async function headObject(client, bucket, key) {
+  try {
+    return await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+  } catch (err) {
+    if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) return null
+    throw err
+  }
+}
 
 const PASSWORD = 'HudoStaging2026!'
 const USERS = [
@@ -138,7 +179,7 @@ async function main() {
         talent_id: ids.talent,
         title: VIDEO_TITLE,
         status: 'in_review',
-        description: 'Seeded video for staging walkthroughs (no real R2 object — playback will 404).',
+        description: 'Seeded video for staging walkthroughs (R2 object backfilled — playback works).',
       })
       .select('id')
       .single()
@@ -187,16 +228,122 @@ async function main() {
     console.log(`  • video already existed ${video.id}`)
   }
 
+  // 6) Backfill the video's R2 bytes (runs whether the video was just created or
+  // already existed — the block above is guarded by `if (!video)`, so this must
+  // live outside it to fix the already-seeded row). Idempotent.
+  console.log('Backfilling R2 object…')
+  await backfillVideoBytes(video.id)
+
   console.log('\n✓ Seed complete. Test logins (password for all):')
   console.log(`    password: ${PASSWORD}`)
   for (const u of USERS) console.log(`    ${u.role.padEnd(7)} ${u.email}`)
   console.log('\nWalk: sign in as agent (sees agency dashboard + the seeded video/comments),')
   console.log('post a comment as the agent → sign in as talent → notification bell should light up.')
-  console.log('Video playback will 404 (no real R2 object) — dashboards, comments, notifications,')
-  console.log('preferences, seat gates and PDF export all work without it.')
+  console.log('Video playback now works (seeded ~3s sample mp4) — open the video to play it.')
 }
 
-main().catch((err) => {
+/** Ensure the seeded video's R2 object exists (idempotent) and sync DB metadata to it. */
+async function backfillVideoBytes(videoId) {
+  const r2 = createR2()
+  if (!r2) {
+    console.warn(
+      '  • R2 env not configured — skipping R2 backfill (playback will 404 until seeded).'
+    )
+    return
+  }
+  const { client, bucket } = r2
+
+  // Re-read from the DB — don't trust the in-memory `video` object: on a fresh create
+  // its active_version_id is unset (the insert .select('id') only), so re-query it.
+  const { data: vid } = await admin
+    .from('videos')
+    .select('active_version_id')
+    .eq('id', videoId)
+    .single()
+  if (!vid?.active_version_id) {
+    console.warn('  • no active_version_id on the seed video — skipping R2 backfill.')
+    return
+  }
+  const { data: ver } = await admin
+    .from('video_versions')
+    .select('id, r2_key')
+    .eq('id', vid.active_version_id)
+    .single()
+  if (!ver?.r2_key) {
+    console.warn('  • active version has no r2_key — skipping R2 backfill.')
+    return
+  }
+
+  let head = await headObject(client, bucket, ver.r2_key)
+  if (head) {
+    console.log(`  • object already present (${ver.r2_key})`)
+  } else {
+    const asset = await headObject(client, bucket, SEED_ASSET_KEY)
+    if (!asset) {
+      throw new Error(
+        `seed asset missing: ${SEED_ASSET_KEY} in bucket "${bucket}". Bootstrap it once with: ` +
+          `R2_BUCKET_NAME=${bucket} node --env-file=.env.staging scripts/seed-staging.mjs --bootstrap`
+      )
+    }
+    await client.send(
+      new CopyObjectCommand({
+        Bucket: bucket,
+        CopySource: `${bucket}/${SEED_ASSET_KEY}`,
+        Key: ver.r2_key,
+        ContentType: 'video/mp4',
+        MetadataDirective: 'REPLACE',
+      })
+    )
+    head = await headObject(client, bucket, ver.r2_key)
+    console.log(`  • copied ${SEED_ASSET_KEY} → ${ver.r2_key}`)
+  }
+
+  if (head?.ContentType && head.ContentType !== 'video/mp4') {
+    console.warn(`  ⚠ unexpected ContentType on ${ver.r2_key}: ${head.ContentType}`)
+  }
+  await admin
+    .from('video_versions')
+    .update({
+      file_size_bytes: head?.ContentLength ?? null,
+      duration_seconds: SAMPLE_DURATION_SECONDS,
+    })
+    .eq('id', ver.id)
+  console.log(
+    `  • synced metadata (file_size_bytes=${head?.ContentLength}, duration_seconds=${SAMPLE_DURATION_SECONDS})`
+  )
+}
+
+/** One-time: copy a known-good upload to the stable seed asset key. Run with `--bootstrap`. */
+async function bootstrap() {
+  const r2 = createR2()
+  if (!r2) {
+    console.error('✗ R2 env not configured — cannot bootstrap the seed asset.')
+    process.exit(1)
+  }
+  const { client, bucket } = r2
+  console.log(`→ Bootstrapping seed asset in bucket "${bucket}"…`)
+  const source = await headObject(client, bucket, BOOTSTRAP_SOURCE_KEY)
+  if (!source) {
+    console.error(`✗ Bootstrap source missing in "${bucket}": ${BOOTSTRAP_SOURCE_KEY}`)
+    process.exit(1)
+  }
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: bucket,
+      CopySource: `${bucket}/${BOOTSTRAP_SOURCE_KEY}`,
+      Key: SEED_ASSET_KEY,
+      ContentType: 'video/mp4',
+      MetadataDirective: 'REPLACE',
+    })
+  )
+  const asset = await headObject(client, bucket, SEED_ASSET_KEY)
+  console.log(
+    `✓ Seed asset ready: ${SEED_ASSET_KEY} (ContentLength=${asset?.ContentLength}, ContentType=${asset?.ContentType})`
+  )
+}
+
+const entry = process.argv.includes('--bootstrap') ? bootstrap : main
+entry().catch((err) => {
   console.error('✗ Seed failed:', err.message ?? err)
   process.exit(1)
 })
