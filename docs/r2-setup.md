@@ -160,26 +160,27 @@ committed binary by copying, server-side, from a stable seed-owned asset.
 per bucket before the first seed:
 
 ```bash
-R2_BUCKET_NAME=hudo-staging node --env-file=.env.staging scripts/seed-staging.mjs --bootstrap
+node --env-file=.env.staging scripts/seed-staging.mjs --bootstrap
 # → creates seed/staging/_assets/sample-v1.mp4
 ```
 
 **Seed run** (idempotent — safe to re-run; backfills the existing seed video too):
 
 ```bash
-R2_BUCKET_NAME=hudo-staging node --env-file=.env.staging scripts/seed-staging.mjs
+node --env-file=.env.staging scripts/seed-staging.mjs
 ```
 
 The backfill `HeadObject`s the video's `r2_key`; on a miss it `CopyObject`s the stable
 asset onto the key and syncs `file_size_bytes`/`duration_seconds` to the real object.
 
 > [!IMPORTANT]
-> **Always override `R2_BUCKET_NAME=hudo-staging`.** The deployed staging app signs
-> upload/playback URLs against the **`hudo-staging`** bucket, but local `.env.staging`
-> ships a stale `R2_BUCKET_NAME="hudo-dev"`. Without the override, bytes land in the
-> wrong (empty) bucket and the app 404s them. Same account/endpoint, only the bucket
-> name differs. (The `.env.staging` value should be reconciled separately — it's a
-> gitignored secret.)
+> **Bytes must land in the `hudo-staging` bucket** — that's what the deployed staging
+> app signs upload/playback URLs against. `.env.staging` was reconciled on 2026-06-16
+> via `vercel env pull .env.staging --environment=preview --yes`; its canonical
+> `R2_BUCKET_NAME` is already `hudo-staging`, so the commands above need **no** bucket
+> override. (Before that, the local file had drifted to a stale `R2_BUCKET_NAME="hudo-dev"`
+> — if you ever see that again, re-pull from Vercel rather than hand-editing the secret,
+> or prepend `R2_BUCKET_NAME=hudo-staging` as a one-off.)
 
 ## References
 
