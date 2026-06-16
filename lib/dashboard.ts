@@ -97,7 +97,7 @@ export async function getAgencyVideos({
       talent_id,
       agency_id,
       users!videos_talent_id_fkey ( full_name ),
-      video_versions ( version_number, created_at )
+      video_versions!video_versions_video_id_fkey ( version_number, created_at )
     `
     )
     .in('agency_id', agency_ids)

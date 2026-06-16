@@ -34,15 +34,19 @@ export default async function DashboardPage() {
 
   // Fetch initial data server-side for first paint
   // agent_agency_ids is empty only if the user has no agent-role memberships yet
-  const { data: initialVideos } =
+  const { data: initialVideos, error } =
     agent_agency_ids.length === 0
-      ? { data: [] }
+      ? { data: [], error: null }
       : await getAgencyVideos({
           supabase,
           agency_ids: agent_agency_ids,
           limit: 50,
           offset: 0,
         })
+
+  if (error) {
+    console.error('[dashboard-page] getAgencyVideos failed:', error)
+  }
 
   return (
     <main className="max-w-7xl mx-auto px-4 py-8">
@@ -51,7 +55,7 @@ export default async function DashboardPage() {
         <p className="text-sm text-muted-foreground mt-1">All videos across your agencies.</p>
       </div>
 
-      <AgentDashboard initialVideos={initialVideos} />
+      <AgentDashboard initialVideos={initialVideos ?? []} error={error} />
     </main>
   )
 }

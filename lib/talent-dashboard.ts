@@ -86,7 +86,7 @@ export async function getTalentVideos({
       status,
       thumbnail_r2_key,
       created_at,
-      video_versions ( id, version_number )
+      video_versions!video_versions_video_id_fkey ( id, version_number )
     `
     )
     .eq('talent_id', user_id)

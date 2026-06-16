@@ -83,6 +83,7 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
   }
 
   return NextResponse.json({
+    agencyId: video.agency_id,
     versions: (versions ?? []).map((v) => ({
       id: v.id,
       versionNumber: v.version_number,
