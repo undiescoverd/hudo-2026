@@ -5,6 +5,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import {
   validateCreateInput,
   getVideoVersionWithAccess,
+  rowToComment,
   COMMENTS_GET_RATE_LIMIT,
   COMMENTS_POST_RATE_LIMIT,
   COMMENTS_RATE_WINDOW,
@@ -110,7 +111,7 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
   }
 
-  return NextResponse.json({ comments: comments ?? [] })
+  return NextResponse.json({ comments: (comments ?? []).map(rowToComment) })
 }
 
 /**
@@ -277,5 +278,5 @@ export async function POST(
     })
   })
 
-  return NextResponse.json({ comment }, { status: 201 })
+  return NextResponse.json({ comment: rowToComment(comment) }, { status: 201 })
 }
