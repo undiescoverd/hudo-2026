@@ -22,12 +22,13 @@ export default function VideoPage({ params }: Props) {
   const [userId, setUserId] = useState<string | null>(null)
   const [agencyId, setAgencyId] = useState<string | null>(null)
 
-  if (!UUID_RE.test(params.id)) {
-    notFound()
-  }
+  // Validate up front, but declare all hooks before the conditional notFound()
+  // below so hook order stays stable (React rules-of-hooks).
+  const isValidId = UUID_RE.test(params.id)
 
   // Fetch the current user id once on mount
   useEffect(() => {
+    if (!isValidId) return
     const supabase = createClient()
     supabase.auth
       .getUser()
@@ -37,10 +38,11 @@ export default function VideoPage({ params }: Props) {
       .catch((err: unknown) => {
         console.error('[video-page] getUser failed:', err)
       })
-  }, [])
+  }, [isValidId])
 
   // Fetch agencyId from the versions endpoint once the videoId is known
   useEffect(() => {
+    if (!isValidId) return
     fetch(`/api/videos/${params.id}/versions`)
       .then(async (res) => {
         if (!res.ok) throw new Error(`versions fetch failed (${res.status})`)
@@ -50,7 +52,11 @@ export default function VideoPage({ params }: Props) {
       .catch((err: unknown) => {
         console.error('[video-page] agencyId fetch failed:', err)
       })
-  }, [params.id])
+  }, [params.id, isValidId])
+
+  if (!isValidId) {
+    notFound()
+  }
 
   return (
     <main className="min-h-screen">
