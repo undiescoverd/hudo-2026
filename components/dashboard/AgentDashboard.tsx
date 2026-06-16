@@ -16,9 +16,10 @@ import type { VideoStatus } from '@/lib/video-status'
 
 type Props = {
   initialVideos: AgencyVideoRow[]
+  error?: string | null
 }
 
-export function AgentDashboard({ initialVideos }: Props) {
+export function AgentDashboard({ initialVideos, error }: Props) {
   const [videos, setVideos] = useState<AgencyVideoRow[]>(initialVideos)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState<VideoStatus[]>([])
@@ -54,6 +55,14 @@ export function AgentDashboard({ initialVideos }: Props) {
     const q = e.target.value
     setSearchQuery(q)
     fetchVideos(statusFilter, q)
+  }
+
+  if (error) {
+    return (
+      <p className="text-sm text-destructive">
+        Couldn&apos;t load videos right now. Please try again later.
+      </p>
+    )
   }
 
   return (

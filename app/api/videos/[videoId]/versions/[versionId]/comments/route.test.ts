@@ -231,6 +231,14 @@ describe('comments collection route — source invariants', () => {
   it('uses createServerClient for auth', () => {
     assert.match(source, /createServerClient/)
   })
+
+  it('serializes responses to camelCase via rowToComment (GET + POST)', () => {
+    // The client Comment type and CommentPanel/CommentInput are camelCase;
+    // returning raw snake_case rows makes the thread render empty. Both paths
+    // must map through rowToComment.
+    assert.match(source, /\.map\(rowToComment\)/) // GET list
+    assert.match(source, /comment:\s*rowToComment\(comment\)/) // POST echo
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -255,5 +263,59 @@ describe('lib/comments constants', () => {
 
   it('COMMENTS_POST_RATE_LIMIT is 30', () => {
     assert.equal(mod.COMMENTS_POST_RATE_LIMIT, 30)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// rowToComment — snake_case DB row → camelCase Comment contract
+// ---------------------------------------------------------------------------
+
+describe('rowToComment', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let rowToComment: (row: Record<string, any>) => any
+
+  before(async () => {
+    ;({ rowToComment } = await import('@/lib/comments'))
+  })
+
+  const row = {
+    id: 'cd71b97f-ad41-464e-b30c-cf8e0532c33b',
+    video_version_id: 'c8a40130-be14-43e8-b075-4cb849bf2263',
+    agency_id: '3e44aa4d-76ec-4acf-8959-eeac95b40a40',
+    user_id: 'ad1e2e82-61ab-4065-a3ec-bc435db0a48a',
+    content: 'Great energy here',
+    comment_type: 'point',
+    timestamp_seconds: 4.2,
+    end_timestamp_seconds: null,
+    parent_id: null,
+    resolved: false,
+    resolved_at: null,
+    resolved_by: null,
+    deleted_at: null,
+    created_at: '2026-06-16T02:29:01.223860+00:00',
+  }
+
+  it('maps every field to its camelCase key', () => {
+    const c = rowToComment(row)
+    assert.equal(c.videoVersionId, row.video_version_id)
+    assert.equal(c.agencyId, row.agency_id)
+    assert.equal(c.userId, row.user_id)
+    assert.equal(c.commentType, row.comment_type)
+    assert.equal(c.timestampSeconds, row.timestamp_seconds)
+    assert.equal(c.endTimestampSeconds, row.end_timestamp_seconds)
+    assert.equal(c.parentId, row.parent_id)
+    assert.equal(c.createdAt, row.created_at)
+  })
+
+  it('preserves null parentId so top-level comments pass the `parentId === null` filter', () => {
+    const c = rowToComment(row)
+    assert.strictEqual(c.parentId, null) // not undefined — CommentPanel filters on === null
+  })
+
+  it('does not leak snake_case keys', () => {
+    const c = rowToComment(row) as Record<string, unknown>
+    assert.equal(c.parent_id, undefined)
+    assert.equal(c.timestamp_seconds, undefined)
+    assert.equal(c.comment_type, undefined)
   })
 })

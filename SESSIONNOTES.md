@@ -8,6 +8,17 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-16 — Fix both dashboards (ambiguous embed) + wire comment UI into video page
+
+- **Task:** Two of the three P1s from `STAGING_WALKTHROUGH_REPORT.md` (playback CSP left out of scope). Branch `fix/dashboard-embed-and-comment-wiring`, single PR.
+- **Models:** planner=opus, executor=sonnet; reviews=code-reviewer + devsecops-security-engineer + code-simplifier (all sonnet).
+- **Outcome:** done — type-check/lint clean, 30/30 unit tests pass, code review found no high-confidence issues, security review LOW/safe, simplifier found nothing to change.
+- **Notes:**
+  - **Dashboard embed fix:** named the FK on both unhinted `videos→video_versions` embeds (`video_versions!video_versions_video_id_fkey`) at `lib/dashboard.ts:100` and `lib/talent-dashboard.ts:89`. Grep confirmed these were the only two unhinted sites; the comment-count queries select `FROM video_versions` (not ambiguous). Anti-recurrence: `/dashboard` page now captures `getAgencyVideos` `error` and `AgentDashboard` renders an inline "couldn't load" state (it previously dropped the error and rendered silently empty).
+  - **Comment UI wiring (provider lift):** new `components/player/VideoPlayerProvider.tsx` owns the player engine (`videoRef`, `useVideoPlayer`, range state, `usePlayerShortcuts`, the `handle` memo) and provides 3 contexts so a sibling `CommentPanel` reaches the _live_ player context. `VideoPlayer.tsx` slimmed to presentational (reads contexts; dropped `forwardRef`). `app/(dashboard)/videos/[id]/page.tsx` wraps `VideoPlayerProvider` and mounts `CommentPanel` in the `MobilePlayerLayout` panel slot. `agencyId` added to `GET /api/videos/[videoId]/versions` (additive, behind existing authz) so the page sources the _video's_ agency (correct for multi-agency users).
+  - **Advisor caught a regression trap pre-delegation:** `PlayerControls` needs the full `VideoPlayerState` (volume/mute/fullscreen), which is NOT on `VideoPlayerHandle`. The provider exposes a separate `VideoPlayerStateContext` for it; without that the tempting "fix" is deleting those props — invisible to Playwright since media is CSP-blocked on preview.
+- **Gotcha (if any):** Comment components import `useVideoPlayerContext`/`VideoPlayerHandle` from `@/components/player/VideoPlayer`; to keep them unchanged after moving the context into the provider, `VideoPlayer.tsx` _re-exports_ both from `./VideoPlayerProvider`. Also: no `test` script in package.json — `node:test` unit suites run via `npx tsx --test <files>` (path-alias `@/` imports fail under bare `node --test`).
+
 ## 2026-06-16 — Sprint 2 closeout: final 4 tasks via parallel worktree agents (+ new WIRE-001)
 
 - **Task:** S2-DASH-004, S2-GATE-001, S2-NOTIF-003, S2-NOTIF-004 (Wave 1, parallel) + S2-WIRE-001 (Wave 2, new). Closes S2 to 15/15.
@@ -233,3 +244,19 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - Upstash Redis pipeline `TypeError: res.map is not a function` at top of `/tmp/hudo-dev.log` — caught by rate limiter so requests proceed unrate-limited. Real bug.
   - `app/middleware.ts` location — Next.js expects middleware at the project root; verify it's being invoked.
   - Audit other `MEMORY.md` "applied" claims; the SQL-editor-vs-MCP tracking gap means any project's actual migration state should be verified via `list_migrations` + `pg_proc` probes, not memory.
+
+## 2026-06-16 14:50 — First live Playwright walkthrough of deployed staging
+
+- **Task:** Autonomous end-to-end drive of deployed staging (Playwright MCP) — screenshot-backed pass/fail per feature. Report: `STAGING_WALKTHROUGH_REPORT.md`.
+- **Models:** planner=opus, executor=opus (interactive browser drive)
+- **Outcome:** done — 11 features exercised against the live stack (not mocks)
+- **Notes:** Disabled Vercel Deployment Protection via API (`PATCH /v9/projects/{id}` `{ssoProtection:null}`) — staging now PUBLIC, re-enable before exposure. Seeded via `scripts/seed-staging.mjs` + 3 filler agents (agency at 5/5 agent cap) + 2 spare gate-test users. **Crown jewel PASS: R2 key reaches `hudo-staging`** — upload PUT `200 OK` to `hudo-staging.…r2.cloudflarestorage.com`. PASS: notifications (incl. true realtime postgres_changes push), preferences persist, seat gate `402`/`201`, PDF export (`%PDF`), guest link read-only with zero auth. **3 P1 FAILs found** (all invisible to the mocked suite) — see Failure Log.
+- **Gotcha:** Every prior "pass" was a mocked unit test; the live drive immediately exposed 3 broken core flows. A thin live smoke test (dashboard query, playback-url, comment render) against a preview would have caught all three.
+
+## 2026-06-16 06:00 — PR #95 live verification complete (talent side)
+
+- **Task:** Finish live talent-side verification of PR #95 (`fix/dashboard-embed-and-comment-wiring`) on the Vercel preview; close out.
+- **Models:** planner=opus, executor=opus (interactive browser drive)
+- **Outcome:** done — all live checks pass; PR is green and merge-ready (hand back to user to merge).
+- **Notes:** Signed in as `talent@hudo.test` on the preview. `/talent` now lists "Staging Test Reel" (in review, v1) — no longer "Unable to load" (embed FK-hint fix confirmed live for the talent dashboard too). Notifications bell shows **1 unread**; panel renders the unread `new_comment` (51m ago = the owner comment posted earlier this session) above the two seeded ones — comment→notification path fires end-to-end through the mounted UI. Only console error is the benign `vercel.live/feedback.js` CSP block (no video on this page, so no `media-src` errors). Owner-side checks (dashboard list, CommentPanel mount + 3 seeded comments, post persists camelCase, notifications created in DB) were confirmed earlier in the session.
+- **Gotcha (if any):** Vercel Deployment Protection is still DISABLED on `hudo-2026` (turned off via API for the drive) — must be re-enabled in Vercel → hudo-2026 → Settings → Deployment Protection. Out-of-scope items deferred to separate PRs: playback `media-src` CSP, PostHog CSP, sign-out 405, `/dashboard` Talent "Unknown" (null seed `full_name`).

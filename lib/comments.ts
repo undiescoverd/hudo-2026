@@ -31,6 +31,36 @@ export interface CreateCommentInput {
 }
 
 // ---------------------------------------------------------------------------
+// Serialization
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a snake_case `comments` DB row to the camelCase {@link Comment} the
+ * client expects. The REST routes (GET/POST) must serialize through this so
+ * their responses match the contract the comment UI and realtime path
+ * (`useRealtimeComments` uses an identical mapper) already rely on.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase row shape
+export function rowToComment(row: Record<string, any>): Comment {
+  return {
+    id: row.id as string,
+    videoVersionId: row.video_version_id as string,
+    agencyId: row.agency_id as string,
+    userId: row.user_id as string,
+    content: row.content as string,
+    commentType: row.comment_type as 'point' | 'range',
+    timestampSeconds: row.timestamp_seconds as number,
+    endTimestampSeconds: row.end_timestamp_seconds as number | null,
+    parentId: row.parent_id as string | null,
+    resolved: row.resolved as boolean,
+    resolvedAt: row.resolved_at as string | null,
+    resolvedBy: row.resolved_by as string | null,
+    deletedAt: row.deleted_at as string | null,
+    createdAt: row.created_at as string,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 

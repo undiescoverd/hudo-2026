@@ -1,43 +1,15 @@
 'use client'
 
-import {
-  createContext,
-  forwardRef,
-  useCallback,
-  useContext,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { useState, useEffect } from 'react'
 import { PlayerControls } from './PlayerControls'
 import { CommentTimeline } from './CommentTimeline'
 import { useSignedUrl } from '@/hooks/useSignedUrl'
-import { useVideoPlayer } from '@/hooks/useVideoPlayer'
-import { usePlayerShortcuts } from '@/hooks/usePlayerShortcuts'
+import { useVideoElementRef, useVideoPlayerState } from './VideoPlayerProvider'
 import type { Comment } from '@/lib/comments'
 
-export interface VideoPlayerHandle {
-  currentTime: number
-  duration: number
-  seek: (t: number) => void
-  play: () => void
-  pause: () => void
-  rangeIn: number | null
-  rangeOut: number | null
-  setRangeIn: (t: number | null) => void
-  setRangeOut: (t: number | null) => void
-  openCommentAtTime: () => void
-}
-
-const VideoPlayerContext = createContext<VideoPlayerHandle | null>(null)
-
-export function useVideoPlayerContext(): VideoPlayerHandle {
-  const ctx = useContext(VideoPlayerContext)
-  if (!ctx) throw new Error('useVideoPlayerContext must be used inside VideoPlayer')
-  return ctx
-}
+// Re-export for backward compat — comment components import from here
+export { useVideoPlayerContext } from './VideoPlayerProvider'
+export type { VideoPlayerHandle } from './VideoPlayerProvider'
 
 interface VideoPlayerProps {
   videoId: string
@@ -48,19 +20,17 @@ interface VideoPlayerProps {
   className?: string
 }
 
-export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer(
-  { videoId, versionId, captionsSrc, comments, onSeekToComment, className },
-  ref
-) {
-  const videoRef = useRef<HTMLVideoElement>(null)
+export function VideoPlayer({
+  videoId,
+  versionId,
+  captionsSrc,
+  comments,
+  onSeekToComment,
+  className,
+}: VideoPlayerProps) {
+  const videoRef = useVideoElementRef()
+  const playerState = useVideoPlayerState()
   const { url, loading, error, fetchUrl, applyPendingUrl } = useSignedUrl(videoId, versionId)
-  const playerState = useVideoPlayer(videoRef)
-
-  const [rangeIn, setRangeIn] = useState<number | null>(null)
-  const [rangeOut, setRangeOut] = useState<number | null>(null)
-
-  // Stub — will be overridden by PLAYER-003 via a ref callback
-  const openCommentAtTime = useCallback(() => {}, [])
 
   // Remove native controls and show custom controls after hydration
   const [showCustomControls, setShowCustomControls] = useState(false)
@@ -80,63 +50,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       el.removeEventListener('timeupdate', onTimeUpdate)
       el.removeEventListener('pause', onPause)
     }
-  }, [applyPendingUrl])
-
-  const handlePlayPause = useCallback(() => {
-    if (playerState.playing) {
-      playerState.pause()
-    } else {
-      playerState.play()
-    }
-  }, [playerState])
-
-  const handleRangeIn = useCallback(() => {
-    setRangeIn(playerState.currentTime)
-  }, [playerState.currentTime])
-
-  const handleRangeOut = useCallback(() => {
-    setRangeOut(playerState.currentTime)
-  }, [playerState.currentTime])
-
-  const handleClearRange = useCallback(() => {
-    setRangeIn(null)
-    setRangeOut(null)
-  }, [])
-
-  usePlayerShortcuts({
-    onPlayPause: handlePlayPause,
-    onCommentAtTime: openCommentAtTime,
-    onRangeIn: handleRangeIn,
-    onRangeOut: handleRangeOut,
-    onClearRange: handleClearRange,
-  })
-
-  const handle = useMemo<VideoPlayerHandle>(
-    () => ({
-      currentTime: playerState.currentTime,
-      duration: playerState.duration,
-      seek: playerState.seek,
-      play: playerState.play,
-      pause: playerState.pause,
-      rangeIn,
-      rangeOut,
-      setRangeIn,
-      setRangeOut,
-      openCommentAtTime,
-    }),
-    [
-      playerState.currentTime,
-      playerState.duration,
-      playerState.seek,
-      playerState.play,
-      playerState.pause,
-      rangeIn,
-      rangeOut,
-      openCommentAtTime,
-    ]
-  )
-
-  useImperativeHandle(ref, () => handle, [handle])
+  }, [applyPendingUrl, videoRef])
 
   if (error) {
     return (
@@ -154,51 +68,49 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   }
 
   return (
-    <VideoPlayerContext.Provider value={handle}>
-      <div className={className ?? 'w-full'}>
-        {/* Video + controls */}
-        <div className="relative w-full bg-black">
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
-            </div>
-          )}
+    <div className={className ?? 'w-full'}>
+      {/* Video + controls */}
+      <div className="relative w-full bg-black">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
+          </div>
+        )}
 
-          {/* controls fallback before JS hydrates */}
-          <video
-            ref={videoRef}
-            src={url ?? undefined}
-            className="aspect-video w-full"
-            controls={!showCustomControls}
-            playsInline
-          >
-            {captionsSrc && <track kind="captions" src={captionsSrc} label="Captions" default />}
-          </video>
+        {/* controls fallback before JS hydrates */}
+        <video
+          ref={videoRef}
+          src={url ?? undefined}
+          className="aspect-video w-full"
+          controls={!showCustomControls}
+          playsInline
+        >
+          {captionsSrc && <track kind="captions" src={captionsSrc} label="Captions" default />}
+        </video>
 
-          {showCustomControls && url && (
-            <div className="absolute bottom-0 left-0 right-0">
-              <PlayerControls
-                currentTime={playerState.currentTime}
-                duration={playerState.duration}
-                playing={playerState.playing}
-                volume={playerState.volume}
-                muted={playerState.muted}
-                onPlay={playerState.play}
-                onPause={playerState.pause}
-                onSeek={playerState.seek}
-                onVolumeChange={playerState.setVolume}
-                onToggleMute={playerState.toggleMute}
-                onFullscreen={playerState.toggleFullscreen}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Comment timeline bar below video */}
-        {showCustomControls && comments && comments.length > 0 && (
-          <CommentTimeline comments={comments} onSeekToComment={onSeekToComment} />
+        {showCustomControls && url && (
+          <div className="absolute bottom-0 left-0 right-0">
+            <PlayerControls
+              currentTime={playerState.currentTime}
+              duration={playerState.duration}
+              playing={playerState.playing}
+              volume={playerState.volume}
+              muted={playerState.muted}
+              onPlay={playerState.play}
+              onPause={playerState.pause}
+              onSeek={playerState.seek}
+              onVolumeChange={playerState.setVolume}
+              onToggleMute={playerState.toggleMute}
+              onFullscreen={playerState.toggleFullscreen}
+            />
+          </div>
         )}
       </div>
-    </VideoPlayerContext.Provider>
+
+      {/* Comment timeline bar below video */}
+      {showCustomControls && comments && comments.length > 0 && (
+        <CommentTimeline comments={comments} onSeekToComment={onSeekToComment} />
+      )}
+    </div>
   )
-})
+}
