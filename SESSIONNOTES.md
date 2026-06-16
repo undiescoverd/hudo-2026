@@ -8,6 +8,16 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-16 15:40 — Fix seed-staging: backfill R2 bytes so seeded video plays
+
+- **Task:** `chore/seed-staging-r2-upload` — `scripts/seed-staging.mjs` inserted the video/version rows but never uploaded any R2 object, so the seeded "Staging Test Reel" (`7cb31754…`) returned `403 NoSuchKey` → `<video>` format error. Fix the script durably **and** backfill the existing seed.
+- **Models:** planner=opus, executor=opus (single `.mjs` + live R2/Playwright verification)
+- **Outcome:** done — script fixed, asset bootstrapped, seed backfilled, playback live-verified.
+- **Notes:** Added an idempotent R2 backfill **outside** the `if (!video)` guard (so it fixes the already-seeded row): re-reads `active_version_id` → version `r2_key` from the DB (don't trust the in-memory `video` — fresh-create path never refreshes it), `HeadObject`s the key, and on `NotFound` `CopyObject`s from a stable seed-owned asset `seed/staging/_assets/sample-v1.mp4`, then syncs `file_size_bytes`/`duration_seconds`. The asset is bootstrapped once (`--bootstrap` flag) via server-side copy from the crown-jewel upload (`3e44aa4d…/55c07ab0…/d6b735f2….mp4`) — no repo binary, self-contained in the bucket. **Must target bucket `hudo-staging`** (override `R2_BUCKET_NAME=hudo-staging`) — the deployed app signs against `hudo-staging`, but local `.env.staging` carries a stale `R2_BUCKET_NAME="hudo-dev"`. Verified: HeadObject crown-jewel = 200 in `hudo-staging` / 404 in `hudo-dev` (creds are account-wide, confirms object's home bucket). Live Playwright (preview, `owner@hudo.test`): video plays — `readyState 4`, `error: null`, `currentTime` advanced to 3, decoded 320×240, src is the seed key in `hudo-staging`; console clean of `media-src`/format errors. Idempotent re-run logs "object already present".
+- **Gotcha:** Local `.env.staging` has `R2_BUCKET_NAME="hudo-dev"` but the deployed staging app reads/writes the **`hudo-staging`** bucket — any seed/backfill MUST override `R2_BUCKET_NAME=hudo-staging` or bytes land in the wrong bucket. Also: the deployed **production**-target domain (`hudo-2026-…vercel.app`) points at a _different_ Supabase than staging (seed users 401 there) — drive the **Preview** branch URL (`…-git-<branch>-…vercel.app`) for staging-data verification.
+
+---
+
 ## 2026-06-16 — Fix playback CSP (allowlist R2 in `media-src`)
 
 - **Task:** Last of the three `STAGING_WALKTHROUGH_REPORT.md` P1s — playback dead because `media-src 'self' blob:` blocked the signed R2 URL the `<video>` loads. Branch `fix/playback-media-src-csp`, single PR.
