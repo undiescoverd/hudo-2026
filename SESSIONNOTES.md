@@ -8,6 +8,31 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-16 — Fix the Ralph Loop so it can't run forever
+
+- **Task:** Make the bounded `/pr-fix` path the only path the model can take, and unify the loop's exit promises so every terminal state stops cleanly. (`.claude/` + CLAUDE.md only — plugin cache untouched.)
+- **Models:** planner=opus, executor=opus (verbatim-fidelity config/doc edits)
+- **Outcome:** done.
+  - `.claude/skills/pr-fix/SKILL.md`: `completion-promise: APPROVED` → `RALPH DONE`; `max-iterations: 10` + `disable-model-invocation: true` unchanged.
+  - `.claude/pr-fix-loop.md`: all four terminal `<promise>` outputs (no-PR, approved, no-review-yet, 10-commit cap) now emit `RALPH DONE`, each with the distinguishing reason in prose above it; Step 8 still emits no promise (loop continues). Step 2 check name `PR Review` → `AI Code Review` in both the `grep` and the status `awk` line.
+  - `CLAUDE.md`: line-63 trigger bullet rewritten to _read & follow_ the bounded SKILL.md and forbid unbounded `ralph-loop:ralph-loop`; added Failure Log entry `[Ralph] Unbounded loop from a model-disabled /pr-fix`.
+- **Gotcha:** the ralph-loop stop-hook literal-matches exactly ONE completion-promise string (`[[ "$PROMISE_TEXT" = "$COMPLETION_PROMISE" ]]`) — emitting four distinct promise tokens meant only `APPROVED` ever stopped the loop; the other three terminal states only died via the max-10 backstop. Any multi-exit Ralph prompt must funnel every terminal state through the single configured token.
+
+## 2026-06-16 23:30 — Build all 6 recommended Claude Code automations
+
+- **Task:** Implement the `/claude-automation-recommender` output — turn recurring Failure-Log gotchas into enforced `.claude/` automations. No app code touched.
+- **Models:** planner=opus, executor=opus (local-author config artifacts — precise verbatim fidelity to CLAUDE.md rules required)
+- **Outcome:** done — added 2 subagents, 2 user-only skills, 1 shared MCP, 2 hooks, docs pass.
+  - **Subagents** (`.claude/agents/`): `hudo-security-reviewer` (Critical Architecture Rules + Security surfaces), `rls-tenancy-auditor` (memberships tenancy / 0003 recursion / two-FK embed / soft-delete). Frontmatter: `name`/`description`/`tools: Read, Grep, Glob, Bash`/`model: sonnet`.
+  - **Skills** (`.claude/skills/`, `disable-model-invocation: true`): `apply-migration` (MCP `apply_migration` → both dev+staging, never SQL editor; PGRST202 probe), `live-smoke-test` (Playwright on a Preview branch URL — dashboard render, playback `readyState 4`, comment thread, clean `media-src`).
+  - **MCP** (`.mcp.json`): added `context7` alongside existing servers (user chose project-scoped/shared over local).
+  - **Hooks** (`.claude/settings.json`): (1) PreToolUse `Write` on `supabase/migrations/*.sql` → advisory `systemMessage` (apply via MCP to both DBs); (2) PostToolUse extended — after type-check, runs the colocated `*.test.ts(x)` (edited test directly, else sibling) via `pnpm exec tsx --test`, non-blocking.
+  - **Docs:** CLAUDE.md Code Quality section rewritten to describe both new hooks + the agents/skills/MCP; MEMORY.md gained a "Claude Code Automations" note.
+- **Notes:** `.mcp.json` already existed (MCP_DOCKER, figma-desktop, figma-remote) — appended context7 rather than overwriting. settings.json built via a Python script (json.dump) to avoid hand-escaping the shell-in-JSON; both JSON files validated with `python3 -m json.tool`. Verified live: migration-warn fires on `.sql` and is silent on `.md`; PostToolUse on `lib/rate-limit.ts` ran type-check then its sibling test (11/11 pass) and is silent on `.md` (no false positive that could block edits).
+- **Gotcha (if any):** When generating shell-command strings for settings.json via Python, `\\\"` in a Python double-quoted literal yields a literal `\"` (backslash+quote) — wrong inside a shell single-quoted `echo '{...}'` where the inner double-quotes must be bare. Use a single `\"` (= bare `"`). Always decode-and-eyeball the generated `command` strings, not just `json.tool`-validate.
+
+---
+
 ## 2026-06-16 — Wire up `pnpm test` (tsx) + fix MEMORY.md dead pointer
 
 - **Task:** `chore/wire-unit-tests` — two audit follow-ups: (1) fix MEMORY.md's dead `docs/gotchas-and-lessons.md` pointer → point at the 3 real homes (CLAUDE.md Failure Log + SESSIONNOTES.md + `docs/Hudo App 2026/` vault); (2) add a runnable `pnpm test`.

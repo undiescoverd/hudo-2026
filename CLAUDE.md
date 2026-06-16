@@ -60,7 +60,7 @@ node orchestrate.js status    # live sprint/task state
 - Do not add dependencies without flagging first
 - **Branch naming:** sprint tasks use `feat/s<N>-<TASK_ID>-<slug>`; chores/cleanup use `chore/<slug>`. Never commit directly to `main`.
 - Commit → push branch → open PR → run `orchestrate.js review`
-- After opening a PR, always run `/pr-fix` to start the Ralph Loop — do not wait for manual invocation
+- After opening a PR, start the bounded review-fix loop by reading **`.claude/skills/pr-fix/SKILL.md`** and following it (it invokes `ralph-loop:ralph-loop` with the prompt from `.claude/pr-fix-loop.md`, a completion-promise, and `max-iterations`). **Never invoke `ralph-loop:ralph-loop` with unbounded defaults** — any Ralph loop you start MUST pass both a finite `--max-iterations` **and** a `--completion-promise`, or it runs forever and can't be stopped manually.
 - Before committing, run `pnpm format:check && pnpm type-check && pnpm lint` to catch CI issues locally
 - Do not start a task while any `BLOCKED_BY` task is not `done`
 - After completing work, update CLAUDE.md with any learnings. If anything broke or surprised you, add an entry to the **Failure Log** section before closing the session — never defer it.
@@ -116,7 +116,15 @@ Entry format:
 ## Code Quality
 
 - **Pre-commit hooks** via Husky + lint-staged. Staged files are auto-formatted (Prettier) and linted (ESLint) on every commit. Config in `package.json` under `lint-staged`.
-- **Claude hooks** in `.claude/settings.json`: PreToolUse blocks any Edit/Write to `.env*` files (exit 2); PostToolUse runs `pnpm type-check` after any `.ts`/`.tsx` edit and surfaces the last 20 lines.
+- **Claude hooks** in `.claude/settings.json`:
+  - **PreToolUse** — blocks any Edit/Write to `.env*` files (exit 2); **and** on a `Write` to `supabase/migrations/*.sql` emits an advisory `systemMessage` (non-blocking) reminding you to apply via Supabase MCP `apply_migration` to **both** hudo-dev and hudo-staging, not the SQL editor.
+  - **PostToolUse** — after any `.ts`/`.tsx` edit runs `pnpm type-check` (last 20 lines); **then** runs the colocated unit test: if the edited file is `*.test.ts(x)` it runs that file, else if a sibling `<base>.test.ts(x)` exists it runs `pnpm exec tsx --test <sibling>` and surfaces `tail -20`. Non-blocking/informational — closes the "42 unit tests, no CI step" gap at edit time (a failing/stale test only prints, never blocks the edit).
+  - **Stop** — reminds you to update `SESSIONNOTES.md` when code changed but the file wasn't touched.
+- **Project subagents** in `.claude/agents/` — name these in the mandatory review/security steps above:
+  - `hudo-security-reviewer` — audits a diff against the Critical Architecture Rules + Security surfaces (R2 signed-URL playback, guest isolation, audit-log immutability, soft-delete, Stripe key segregation, consent-gated PostHog, rate limiting, version RPC).
+  - `rls-tenancy-auditor` — audits RLS policies / migrations / PostgREST embeds against the `memberships` tenancy model, the 0003 recursion trap, the `videos`↔`video_versions` two-FK ambiguity, and soft-delete filters.
+- **User-only skills** in `.claude/skills/` (run with `/<name>`): `apply-migration` (the safe MCP-`apply_migration`-to-both-DBs migration flow) and `live-smoke-test` (thin Playwright walkthrough of a Preview branch URL — the check that would have caught the 3 P1s the mocked suite missed).
+- **Local MCP** in `.mcp.json` (gitignored — **not** team-shared): `context7` for live Next.js 14 App Router / AWS SDK presigner docs. Teammates who want it add it themselves: `claude mcp add context7 -- npx -y @upstash/context7-mcp`.
 
 ## Failure Log
 
@@ -138,6 +146,7 @@ Format: `- **[Area] Title (YYYY-MM-DD):** what broke + fix/workaround.`
 - **[UX] Comment UI built but never mounted (2026-06-16):** `components/comments/{CommentPanel,CommentInput,CommentThread,CommentItem}` are imported by NO file under `app/`. `app/(dashboard)/videos/[id]/page.tsx` passes only `player` to `MobilePlayerLayout` (unused `panel`/`input` slots), so the authed video page has zero comment thread/input — core comment loop unreachable in-browser (the guest page renders comments fine). Grep `app/` for a component's import before assuming a feature is wired.
 - **[Process] Mocked-only suites hide live breakage (2026-06-16):** First live Playwright drive of staging found 3 P1s (both dashboards, playback, comment UI) that the fully-mocked unit suite passed green. A thin live smoke test (dashboard query, playback-url, comment render) against a preview would catch this class. See `STAGING_WALKTHROUGH_REPORT.md`.
 - **[Linear] A markdown task with no Linear issue = permanent sync-check "error" that sync-fix can't repair (2026-06-16):** `S2-WIRE-001` was added to `tasks/sprint-2.md` during S2 closeout but never got a Linear issue created, so `sync-check` reported `? (error)` (not `✗ DRIFTED`) and `sync-fix` said "Nothing to fix" — `sync-fix` only *pushes status to issues that already exist*; it never *creates* them. Fix: create the issue (mirror an existing sprint issue — same team `Resolvelabs`, project, `size:*` label, title leading with the exact `TASK_ID` since `update-linear-task.sh` matches `title.upper().startswith(TASK_ID)` via `searchIssues`), set it straight to `Done`. Gotcha: Linear's `searchIssues` full-text index lags new issues by up to a few minutes, so `sync-check` keeps showing the error until the index catches up — the issue is real, just not yet searchable. Whenever you add a task row to a sprint file, create its Linear issue in the same step.
+- **[Ralph] Unbounded loop from a model-disabled `/pr-fix` (2026-06-16):** CLAUDE.md said "auto-run `/pr-fix`", but the skill is `disable-model-invocation: true`, so the model couldn't invoke it and started the raw `ralph-loop:ralph-loop` primitive instead — unbounded (`max_iterations:0`, `completion_promise:null`), uncancellable, had to be removed by hand. Fix: CLAUDE.md now points the model to *read & follow* the bounded SKILL.md, and forbids starting any Ralph loop without both `--max-iterations` and `--completion-promise`. Also unified `pr-fix-loop.md`'s four exit promises to one token (`RALPH DONE`) because the stop-hook only literal-matches a single completion-promise string.
 
 ## Environments
 
