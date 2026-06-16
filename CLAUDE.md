@@ -18,6 +18,20 @@ Video review platform for talent agencies. Frame.io-style: upload → timestampe
 | Hosting | Vercel |
 | Package manager | pnpm, Node 20 LTS |
 
+## Commands
+
+```bash
+pnpm dev                      # Next.js dev server
+pnpm build                    # production build (CI gate)
+pnpm format:check && pnpm type-check && pnpm lint   # run before every commit
+pnpm test                     # node:test unit suite via tsx (app/, lib/, components/, root)
+pnpm test:e2e                 # Playwright e2e (tests/e2e)
+supabase test db tests/rls    # RLS pgTAP suite (CI: "RLS Policy Tests")
+node orchestrate.js status    # live sprint/task state
+```
+
+> **Unit tests run locally only — still no CI step:** `pnpm test` now exists (`tsx --test`, 42 files / ~649 cases across `app/`, `lib/`, `components/`, root). It is **not** wired into CI by decision — CI still covers Lint/Type-check/Build + RLS only, so don't assume a green CI ran the unit suite. Two **stale source-pattern tests fail** on a clean run (their regexes don't match the correct current source, not real bugs): `components/guest/GuestComments.test.tsx:43` (regex matches the file's own doc comment) and `app/api/cron/notifications/route.test.ts:26` (single-line regex can't match the multi-line `timingSafeEqual` auth check). Fix those two before wiring `pnpm test` into CI.
+
 ## Critical Architecture Rules
 
 - **Video never touches Vercel.** Browser → R2 via presigned URL. Playback via signing proxy only (`/api/videos/:id/playback-url`). Direct R2 URL never returned to any client.
@@ -137,11 +151,13 @@ Guest: read-only via signed link, no Supabase access.
 
 ## Sprints
 
-- **S0** — Infrastructure & Auth (current)
-- **S1** — Upload, Player, Comments, Versioning
-- **S2** — Dashboards, Notifications, Guest Links
-- **S3** — Billing, Compliance, Security Hardening
+- **S0** — Infrastructure & Auth ✅ done
+- **S1** — Upload, Player, Comments, Versioning ✅ done
+- **S2** — Dashboards, Notifications, Guest Links ✅ done (15/15)
+- **S3** — Billing, Compliance, Security Hardening ← next (not yet in `tasks/`)
 - **S4** — Accessibility, PWA, Launch Prep
+
+> Sprint markers above are a static summary; `node orchestrate.js status` is the live source of truth.
 
 ## Linear Sprint Tracker
 
