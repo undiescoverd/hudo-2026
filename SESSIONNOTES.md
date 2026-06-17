@@ -8,6 +8,26 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-17 — S3-BILLING-001: Configure Stripe
+
+- **Task:** S3-BILLING-001
+- **Models:** planner=sonnet, executor=sonnet
+- **Outcome:** done
+- **Notes:** Stripe MCP OAuth connected (live account, restricted permissions: Customers/Coupons/Invoices/Prices/Products/Promotion Codes/Subscriptions — Write only). Created 4 products + prices in both live and test mode. Created `FOUNDING_50` coupon (50% off, 12 months) in both modes. Added `lib/stripe.ts` (lazy singleton, both mode price IDs, `getStripePriceId()` auto-selects by key prefix), `lib/feature-flags.ts` (`isBillingEnabled()` gate), `scripts/setup-stripe-test.mjs` (idempotent test-mode bootstrap), `docs/stripe-setup.md`. Added `stripe` package (v22.2.1). Stripe Tax (UK VAT) and webhook endpoint still require manual Dashboard steps — documented in `docs/stripe-setup.md`. `NEXT_PUBLIC_BILLING_ENABLED=false` in .env.local — billing UI/API gated off until explicitly enabled.
+- **Gotcha:** Stripe MCP OAuth session expires quickly — if `complete_authentication` fails with "no OAuth flow in progress", call `authenticate` again and complete immediately. Also: MCP OAuth operates in live mode only; use the `setup-stripe-test.mjs` script with `sk_test_` key to bootstrap test mode resources. Stripe API version for v22.x is `2026-05-27.dahlia` (not the older basil version).
+
+---
+
+## 2026-06-16 — Beta strategy + founding member pricing decided
+
+- **Task:** N/A — product decision
+- **Models:** N/A
+- **Outcome:** done
+- **Notes:** Closed beta via direct invite only (no shared codes). Beta agencies get plan=studio. When billing goes live: 30-day grace period, then drop to freemium unless subscribed. Founding member reward: 50% off for 12 months via Stripe coupon `FOUNDING_50`. Tracked via `agencies.is_founding_member` (migration 0020, applied to dev + staging). Script: `node --env-file=.env.staging scripts/create-beta-agency.mjs "Name" "email" "Full Name"`. Sprint-3 task file seeded.
+- **Gotcha (if any):** legal_name, billing_address, vat_number, dpa_accepted_at, dpa_accepted_ip already exist on agencies from 0001 — BILLING-004 needs no new migration for those columns.
+
+---
+
 ## 2026-06-16 — Fix the Ralph Loop so it can't run forever
 
 - **Task:** Make the bounded `/pr-fix` path the only path the model can take, and unify the loop's exit promises so every terminal state stops cleanly. (`.claude/` + CLAUDE.md only — plugin cache untouched.)
