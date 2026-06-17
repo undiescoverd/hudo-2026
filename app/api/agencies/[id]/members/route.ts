@@ -22,6 +22,7 @@ import {
   invalidatePlanLimitCache,
   PlanLimitUnavailableError,
 } from '@/lib/plan-gates'
+import { logEvent } from '@/lib/audit'
 
 const ALLOWED_MEMBER_ROLES = ['owner', 'admin_agent', 'agent'] as const
 type AllowedMemberRole = (typeof ALLOWED_MEMBER_ROLES)[number]
@@ -165,6 +166,21 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   // ---- Invalidate cache after successful add --------------------------------
   await invalidatePlanLimitCache(redis, agencyId, 'agents')
+
+  // Audit: fire-and-forget
+  const actorName =
+    typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
+      ? user.user_metadata.full_name.trim()
+      : (user.email ?? user.id)
+  logEvent({
+    action: 'role_changed',
+    resourceType: 'membership',
+    resourceId: newMembership.id,
+    agencyId,
+    actorId: user.id,
+    actorName,
+    metadata: { user_id: newUserId, role: newRole },
+  }).catch((err) => console.error('[agencies/[id]/members] logEvent unhandled rejection:', err))
 
   return NextResponse.json({ membership: newMembership }, { status: 201 })
 }

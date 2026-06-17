@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit, requireAgentRole } from '@/lib/api-helpers'
 import { generateGuestToken, hashGuestToken } from '@/lib/guest-tokens'
 import { isValidUUID } from '@/lib/validation'
+import { logEvent } from '@/lib/audit'
 
 /**
  * POST /api/videos/:videoId/guest-links
@@ -132,6 +133,21 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
   }
 
   const guestUrl = `${request.nextUrl.origin}/guest/${token}`
+
+  // Audit: fire-and-forget
+  const actorName =
+    typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
+      ? user.user_metadata.full_name.trim()
+      : (user.email ?? user.id)
+  logEvent({
+    action: 'guest_link_created',
+    resourceType: 'guest_link',
+    resourceId: link.id,
+    agencyId: video.agency_id,
+    actorId: user.id,
+    actorName,
+    metadata: { video_id: videoId, expires_at: link.expires_at },
+  }).catch((err) => console.error('[guest-links:post] logEvent unhandled rejection:', err))
 
   return NextResponse.json(
     {
