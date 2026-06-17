@@ -4,6 +4,9 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/nextjs'
 import { createStorageClient, type StorageClient } from '@/lib/storage'
 
+/** Vercel cron function timeout; reconciliation is sequential + unbounded per agency. */
+export const maxDuration = 60
+
 /** Minimum drift (bytes) that triggers a Sentry alert: > 1 MiB. */
 const DRIFT_THRESHOLD_BYTES = 1_048_576
 
@@ -48,22 +51,40 @@ export async function reconcileStorage(deps?: ReconcileDeps): Promise<{
     throw new Error(`[cron/storage-reconcile] Failed to fetch agencies: ${error.message}`)
   }
 
+  const agencyList = (agencies as Agency[]) ?? []
   const results: Array<{ id: string; actual: number; stored: number; drift: number }> = []
 
-  for (const agency of (agencies as Agency[]) ?? []) {
-    const actual = await storage.sumSizesUnderPrefix(`${agency.id}/`)
-    const stored = agency.storage_usage_bytes ?? 0
-    const drift = Math.abs(actual - stored)
+  // Process agencies in batches of 5 for bounded concurrency
+  const batchSize = 5
+  for (let i = 0; i < agencyList.length; i += batchSize) {
+    const batch = agencyList.slice(i, i + batchSize)
 
-    results.push({ id: agency.id, actual, stored, drift })
+    const batchPromises = batch.map(async (agency) => {
+      const actual = await storage.sumSizesUnderPrefix(`${agency.id}/`)
+      const stored = agency.storage_usage_bytes ?? 0
+      const drift = Math.abs(actual - stored)
 
-    if (drift > DRIFT_THRESHOLD_BYTES) {
-      sentry.captureMessage(`[storage-reconcile] Drift detected for agency ${agency.id}`, {
-        agencyId: agency.id,
-        actualBytes: actual,
-        storedBytes: stored,
-        driftBytes: drift,
-      })
+      return { id: agency.id, actual, stored, drift }
+    })
+
+    const batchResults = await Promise.allSettled(batchPromises)
+
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        const { id, actual, stored, drift } = result.value
+        results.push({ id, actual, stored, drift })
+
+        if (drift > DRIFT_THRESHOLD_BYTES) {
+          sentry.captureMessage(`[storage-reconcile] Drift detected for agency ${id}`, {
+            agencyId: id,
+            actualBytes: actual,
+            storedBytes: stored,
+            driftBytes: drift,
+          })
+        }
+      } else {
+        console.error(`[storage-reconcile] Error processing agency:`, result.reason)
+      }
     }
   }
 

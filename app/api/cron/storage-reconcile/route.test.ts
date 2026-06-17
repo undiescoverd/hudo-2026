@@ -166,7 +166,7 @@ describe('GET /api/cron/storage-reconcile', () => {
   // -------------------------------------------------------------------------
 
   describe('R2 usage calculation (AC1)', () => {
-    it('calls sumSizesUnderPrefix with <agencyId>/ prefix for each agency', async () => {
+    it('calls sumSizesUnderPrefix with <agencyId>/ prefix for each agency (order may vary due to batching)', async () => {
       const prefixesCalled: string[] = []
       const storage: StorageClient = {
         ...makeStorage({}),
@@ -186,6 +186,7 @@ describe('GET /api/cron/storage-reconcile', () => {
       }
       const req = makeRequest(VALID_SECRET)
       await GET(req, deps)
+      // Sort because batched concurrency may invoke in any order
       assert.deepEqual(prefixesCalled.sort(), ['agency-aaa/', 'agency-bbb/'])
     })
 
@@ -314,6 +315,42 @@ describe('GET /api/cron/storage-reconcile', () => {
       assert.equal(supabaseStub.upsertCalls, 0, 'upsert must never be called')
       assert.equal(supabaseStub.insertCalls, 0, 'insert must never be called')
       assert.equal(supabaseStub.deleteCalls, 0, 'delete must never be called')
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Error resilience: one agency's failure doesn't abort others
+  // -------------------------------------------------------------------------
+
+  describe('error resilience (batched concurrency)', () => {
+    it('continues reconciling other agencies if one R2 call fails', async () => {
+      const storage: StorageClient = {
+        ...makeStorage({ 'agency-ok/': 100 }),
+        sumSizesUnderPrefix: async (prefix: string) => {
+          if (prefix === 'agency-fail/') {
+            throw new Error('R2 connection error')
+          }
+          return 100
+        },
+      }
+      const { sentry } = makeSentry()
+      const deps: ReconcileDeps = {
+        storage,
+        supabase: makeSupabase([
+          { id: 'agency-ok', storage_usage_bytes: 100 },
+          { id: 'agency-fail', storage_usage_bytes: 0 },
+        ]).client,
+        sentry,
+      }
+      const req = makeRequest(VALID_SECRET)
+      const res = await GET(req, deps)
+      const body = await res.json()
+
+      // Both agencies were processed; one succeeded, one failed
+      // The failed one is excluded from results (Promise.allSettled rejection)
+      assert.equal(body.checked, 1, 'Only the successful agency should be in checked count')
+      assert.equal(body.agencies.length, 1)
+      assert.equal(body.agencies[0].id, 'agency-ok')
     })
   })
 
