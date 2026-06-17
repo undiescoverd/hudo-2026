@@ -8,7 +8,8 @@
 import assert from 'node:assert/strict'
 import { describe, it, beforeEach } from 'node:test'
 import { NextRequest } from 'next/server'
-import { GET, type ReconcileDeps } from './route'
+import { GET } from './route'
+import type { ReconcileDeps } from '@/lib/storage-reconcile'
 import type { StorageClient } from '@/lib/storage'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
