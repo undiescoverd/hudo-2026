@@ -8,6 +8,26 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-17 — S3-BILLING-001: Configure Stripe
+
+- **Task:** S3-BILLING-001
+- **Models:** planner=sonnet, executor=sonnet
+- **Outcome:** done
+- **Notes:** Stripe MCP OAuth connected (live account, restricted permissions: Customers/Coupons/Invoices/Prices/Products/Promotion Codes/Subscriptions — Write only). Created 4 products + prices in both live and test mode. Created `FOUNDING_50` coupon (50% off, 12 months) in both modes. Added `lib/stripe.ts` (lazy singleton, both mode price IDs, `getStripePriceId()` auto-selects by key prefix), `lib/feature-flags.ts` (`isBillingEnabled()` gate), `scripts/setup-stripe-test.mjs` (idempotent test-mode bootstrap), `docs/stripe-setup.md`. Added `stripe` package (v22.2.1). Stripe Tax (UK VAT) and webhook endpoint still require manual Dashboard steps — documented in `docs/stripe-setup.md`. `NEXT_PUBLIC_BILLING_ENABLED=false` in .env.local — billing UI/API gated off until explicitly enabled.
+- **Gotcha:** Stripe MCP OAuth session expires quickly — if `complete_authentication` fails with "no OAuth flow in progress", call `authenticate` again and complete immediately. Also: MCP OAuth operates in live mode only; use the `setup-stripe-test.mjs` script with `sk_test_` key to bootstrap test mode resources. Stripe API version for v22.x is `2026-05-27.dahlia` (not the older basil version).
+
+---
+
+## 2026-06-16 — Beta strategy + founding member pricing decided
+
+- **Task:** N/A — product decision
+- **Models:** N/A
+- **Outcome:** done
+- **Notes:** Closed beta via direct invite only (no shared codes). Beta agencies get plan=studio. When billing goes live: 30-day grace period, then drop to freemium unless subscribed. Founding member reward: 50% off for 12 months via Stripe coupon `FOUNDING_50`. Tracked via `agencies.is_founding_member` (migration 0020, applied to dev + staging). Script: `node --env-file=.env.staging scripts/create-beta-agency.mjs "Name" "email" "Full Name"`. Sprint-3 task file seeded.
+- **Gotcha (if any):** legal_name, billing_address, vat_number, dpa_accepted_at, dpa_accepted_ip already exist on agencies from 0001 — BILLING-004 needs no new migration for those columns.
+
+---
+
 ## 2026-06-16 — Fix the Ralph Loop so it can't run forever
 
 - **Task:** Make the bounded `/pr-fix` path the only path the model can take, and unify the loop's exit promises so every terminal state stops cleanly. (`.claude/` + CLAUDE.md only — plugin cache untouched.)
@@ -334,3 +354,11 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Outcome:** done — PR #95 squash-merged to `main` (`82a9598`, 15 files, +558/-165); Linear now 15/15 (pending search-index propagation, see gotcha).
 - **Notes:** PR #95 (`fix/dashboard-embed-and-comment-wiring`) merged squash + branch deleted, after full live verification (owner + talent) on the preview. Doc/Linear closeout done on `chore/pr95-closeout-docs-linear-sync` (NOT main). `orchestrate.js sync-check` showed 14/15 in sync; the 15th, `S2-WIRE-001`, returned `? (error)` because **no Linear issue existed for it** — it was added to `tasks/sprint-2.md` during S2 closeout but never created in Linear (delivered via PR #90). Created it as `RES-196` (status Done, Sprint 2 project, `size:S`), mirroring `RES-195`/S2-SHELL-001 (the other retroactively-added S2 issue). `sync-fix` could NOT have fixed this — it only pushes status to _existing_ issues.
 - **Gotcha (if any):** `sync-check` "error" ≠ "drift": a missing Linear issue is a permanent error `sync-fix` won't touch — you must create the issue. And Linear's `searchIssues` index lags new issues by minutes, so `sync-check` keeps showing the error briefly after creation even though the issue exists. Logged to CLAUDE.md Failure Log. **Open decision (surfaced to user, not actioned):** `sprint-2.md` header still says "Status: In Progress" with 15/15 done — closing S2 is a gate call while the playback `media-src` CSP P1 is unresolved.
+
+## 2026-06-17 14:30 — S3 Batch 1 dispatched, reviewed, fixed, CI-green (BILLING-002 / COMPLY-001 / SEC-004)
+
+- **Task:** S3 Batch 1 — parallel Sonnet agents for S3-BILLING-002 (Stripe webhook, PR #104), S3-COMPLY-001 (audit log, PR #103), S3-SEC-004 (storage reconcile cron, PR #105).
+- **Models:** planner=opus, executors=sonnet (build) + sonnet/haiku (review-fixes)
+- **Outcome:** done (pending merge) — all 3 PRs CLEAN/green; migrations 0017 (audit indexes) + 0018 (agencies.current_period_end) applied to hudo-dev + hudo-staging and schema-verified.
+- **Notes:** Three agents ran in isolated worktrees. Corrected `tasks/sprint-3.md` first (audit_log table+RLS already exist from 0001/0002 → COMPLY-001 migration is indexes-only; real route paths differ from spec; COMPLY-003 cookie-consent already built = verify-only; 0020 already taken → free slots 0017/0018/0019). Review gates: hudo-security-reviewer ×3, devsecops ×1 (#104), rls-tenancy-auditor ×1 (#103), code-simplifier ×1 (#104). #104 had 2 BLOCKERS fixed: (1) `customer.subscription.created` was unhandled → new paid subscribers stuck on `freemium`; (2) idempotency key was claimed BEFORE processing → a crash/timeout permanently silenced the event (moved SET-NX to after success). Plus zero-row-match and missing-agency_id now throw instead of silent-200. #105: bounded concurrency + `maxDuration=60`.
+- **Gotcha (if any):** **Worktree agents ran `type-check && lint` but NOT `pnpm build`, so two build-only failures passed local checks and only failed in CI** — see Failure Log. Also: **S3-BILLING-001 is "done" on `chore/claude-config-automations` but never merged to main, so main has NO `stripe` dep** — #104 now self-carries it (ported the exact `stripe@^22.2.1` manifest+lock from commit 9312933). Stripe SDK v22 moved `current_period_end` to item-level (`subscription.items.data[0]`).

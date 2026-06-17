@@ -6,23 +6,31 @@ You are fixing issues flagged by the automated PR review on this branch.
 
 ### Step 1 — Check the review status
 
-Run:
+Run (capture stdout+stderr and the exit code — do NOT swallow stderr):
 
 ```bash
-gh pr view --json number,headRefName,statusCheckRollup 2>/dev/null
+out=$(gh pr view --json number,headRefName,statusCheckRollup 2>&1); rc=$?
+echo "$out"
 ```
 
-If this returns an error (no PR open):
-No open PR found — nothing to fix.
-<promise>RALPH DONE</promise>
-and stop.
+If `rc` is non-zero, distinguish the two cases:
+
+- If `$out` matches "no pull requests found" / "no open pull request" — there is genuinely no PR for this branch:
+  No open PR found — nothing to fix.
+  <promise>RALPH DONE</promise>
+  and stop.
+- Otherwise the failure is an auth/network/git error (e.g. "gh auth", "could not resolve host", "not a git repository"). Do NOT treat it as "no PR" — surface the actual error and stop:
+  Could not query the PR (surfacing the real error instead of assuming no PR): `$out`
+  <promise>RALPH DONE</promise>
+  and stop.
 
 ### Step 2 — Wait for any in-progress DeepSeek review
 
-Check if the "AI Code Review" check is currently running:
+Check if the "AI Code Review" check is currently running. Use a JSON query so the
+multi-word check name doesn't get sliced by whitespace splitting:
 
 ```bash
-gh pr checks 2>/dev/null | grep "AI Code Review"
+gh pr checks --json name,state --jq '.[] | select(.name=="AI Code Review") | .state'
 ```
 
 If it shows "in_progress" or "queued", wait for it to complete:
@@ -30,9 +38,9 @@ If it shows "in_progress" or "queued", wait for it to complete:
 ```bash
 for i in $(seq 1 12); do
   sleep 15
-  status=$(gh pr checks 2>/dev/null | grep "AI Code Review" | awk '{print $2}')
+  status=$(gh pr checks --json name,state --jq '.[] | select(.name=="AI Code Review") | .state' 2>/dev/null | tr '[:upper:]' '[:lower:]')
   echo "Check status: $status"
-  if [ "$status" != "in_progress" ] && [ "$status" != "queued" ]; then break; fi
+  if [ "$status" != "in_progress" ] && [ "$status" != "queued" ] && [ "$status" != "pending" ]; then break; fi
 done
 ```
 
