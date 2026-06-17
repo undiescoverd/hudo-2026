@@ -2,19 +2,25 @@
  * lib/billing.ts — Stripe billing sync helpers for Hudo.
  *
  * Sync contract:
- *   checkout.session.completed → write stripe_customer_id, stripe_subscription_id, plan, status
- *                                 onto the agency resolved via metadata.agency_id (set at checkout creation).
- *   customer.subscription.updated  → update plan, status, stripe_subscription_id for the agency
- *                                     resolved via stripe_customer_id.
+ *   checkout.session.completed → write stripe_customer_id, stripe_subscription_id, plan, status,
+ *                                 current_period_end onto the agency resolved via metadata.agency_id
+ *                                 (set at checkout creation).
+ *   customer.subscription.created/updated → update plan, status, stripe_subscription_id,
+ *                                            current_period_end for the agency resolved via
+ *                                            stripe_customer_id.
  *   customer.subscription.deleted  → set status = 'canceled', plan = 'freemium'.
  *   invoice.payment_failed         → set status = 'past_due'.
  *
- * Renewal-date gap: the agencies table has no subscription_renewal_date / current_period_end
- * column (verified against all migrations). Renewal date sync is omitted; add migration
- * 0021_agencies_subscription_renewal_date.sql before billing goes live in production.
- *
  * Status mapping: agencies.subscription_status CHECK enforces (active|trialing|past_due|canceled).
  * Stripe also emits unpaid, incomplete, incomplete_expired, paused — these are mapped below.
+ *
+ * Zero-row safety: all UPDATE handlers call .select('id', {count:'exact',head:true}) after the
+ * write and throw if count === 0. This causes the route to return 500 so Stripe retries.
+ * Out-of-order delivery (e.g. subscription.updated before checkout wrote stripe_customer_id)
+ * is therefore handled by Stripe retry rather than silently swallowed.
+ *
+ * current_period_end: read from subscription.items.data[0].current_period_end (UNIX seconds;
+ * moved off Subscription top-level in Stripe SDK v17+ / API 2026-05-27 "dahlia").
  */
 
 import type Stripe from 'stripe'
@@ -73,6 +79,8 @@ function mapStripeStatus(stripeStatus: string): DbSubscriptionStatus {
  * Resolves the agency via `session.metadata.agency_id` (the checkout caller must
  * set `metadata: { agency_id }` when creating the Stripe Checkout Session).
  * Writes: stripe_customer_id, stripe_subscription_id, plan, subscription_status.
+ * current_period_end is written by the subsequent subscription.created/updated event
+ * (checkout.session doesn't reliably carry the subscription period end inline).
  */
 export async function handleCheckoutSessionCompleted(
   session: Stripe.Checkout.Session,
@@ -82,8 +90,11 @@ export async function handleCheckoutSessionCompleted(
 
   const agencyId = session.metadata?.agency_id
   if (!agencyId) {
-    console.error('[billing:checkout] Missing metadata.agency_id — cannot resolve agency')
-    return
+    // Throw so route returns 500 and Stripe retries — a missing agency_id on a
+    // paid checkout is a critical data-loss scenario, not a graceful skip.
+    throw new Error(
+      `[billing:checkout] Missing metadata.agency_id — cannot resolve agency (session ${session.id})`
+    )
   }
 
   const customerId =
@@ -101,7 +112,7 @@ export async function handleCheckoutSessionCompleted(
   }
 
   // Determine plan from line_items if already expanded on the session object.
-  // If not expanded, falls back to 'freemium'; the subsequent subscription.updated
+  // If not expanded, falls back to 'freemium'; the subsequent subscription.created/updated
   // event will write the correct plan regardless.
   let plan = 'freemium'
   const lineItems = (
@@ -128,13 +139,37 @@ export async function handleCheckoutSessionCompleted(
     console.error('[billing:checkout] Failed to update agency', { agencyId, error })
     throw error
   }
+
+  // Zero-row guard: verify the agency row was actually updated.
+  const { count, error: countError } = await admin
+    .from('agencies')
+    .select('id', { count: 'exact', head: true })
+    .eq('id', agencyId)
+
+  if (countError) {
+    console.error('[billing:checkout] Count check failed', { agencyId, countError })
+    throw countError
+  }
+
+  if (!count || count === 0) {
+    throw new Error(`[billing:checkout] Zero rows updated for agency ${agencyId} — Stripe retry`)
+  }
 }
 
 /**
- * customer.subscription.updated
+ * customer.subscription.created / customer.subscription.updated
  *
- * Resolves the agency via stripe_customer_id.
- * Writes: plan, subscription_status, stripe_subscription_id.
+ * Both events carry the full Subscription object. Resolves the agency via
+ * stripe_customer_id. Writes: plan, subscription_status, stripe_subscription_id,
+ * current_period_end.
+ *
+ * Note: the Stripe Dashboard webhook endpoint must also be subscribed to
+ * customer.subscription.created (not just customer.subscription.updated).
+ *
+ * current_period_end is read from subscription.items.data[0].current_period_end
+ * (UNIX seconds). It was moved off Subscription top-level in Stripe SDK v17+ /
+ * API version 2026-05-27.dahlia — accessing it at the item level is correct for
+ * this pinned API version.
  */
 export async function handleSubscriptionUpdated(
   subscription: Stripe.Subscription,
@@ -149,13 +184,23 @@ export async function handleSubscriptionUpdated(
   const plan = priceId ? getPlanFromPriceId(priceId) : 'freemium'
   const status = mapStripeStatus(subscription.status)
 
+  // current_period_end lives on the SubscriptionItem in API 2026-05-27.dahlia+
+  const periodEndUnix = subscription.items.data[0]?.current_period_end
+  const currentPeriodEnd =
+    typeof periodEndUnix === 'number' ? new Date(periodEndUnix * 1000).toISOString() : undefined
+
+  const updatePayload: Record<string, unknown> = {
+    stripe_subscription_id: subscription.id,
+    plan,
+    subscription_status: status,
+  }
+  if (currentPeriodEnd !== undefined) {
+    updatePayload.current_period_end = currentPeriodEnd
+  }
+
   const { error } = await admin
     .from('agencies')
-    .update({
-      stripe_subscription_id: subscription.id,
-      plan,
-      subscription_status: status,
-    })
+    .update(updatePayload)
     .eq('stripe_customer_id', customerId)
 
   if (error) {
@@ -164,6 +209,24 @@ export async function handleSubscriptionUpdated(
       error,
     })
     throw error
+  }
+
+  // Zero-row guard: subscription.updated can arrive before checkout.session.completed
+  // has written stripe_customer_id. Throwing lets Stripe retry.
+  const { count, error: countError } = await admin
+    .from('agencies')
+    .select('id', { count: 'exact', head: true })
+    .eq('stripe_customer_id', customerId)
+
+  if (countError) {
+    console.error('[billing:subscription.updated] Count check failed', { customerId, countError })
+    throw countError
+  }
+
+  if (!count || count === 0) {
+    throw new Error(
+      `[billing:subscription.updated] Zero rows matched for customer ${customerId} — Stripe retry`
+    )
   }
 }
 
@@ -195,6 +258,23 @@ export async function handleSubscriptionDeleted(
       error,
     })
     throw error
+  }
+
+  // Zero-row guard
+  const { count, error: countError } = await admin
+    .from('agencies')
+    .select('id', { count: 'exact', head: true })
+    .eq('stripe_customer_id', customerId)
+
+  if (countError) {
+    console.error('[billing:subscription.deleted] Count check failed', { customerId, countError })
+    throw countError
+  }
+
+  if (!count || count === 0) {
+    throw new Error(
+      `[billing:subscription.deleted] Zero rows matched for customer ${customerId} — Stripe retry`
+    )
   }
 }
 
@@ -230,5 +310,22 @@ export async function handleInvoicePaymentFailed(
       error,
     })
     throw error
+  }
+
+  // Zero-row guard
+  const { count, error: countError } = await admin
+    .from('agencies')
+    .select('id', { count: 'exact', head: true })
+    .eq('stripe_customer_id', customerId)
+
+  if (countError) {
+    console.error('[billing:invoice.payment_failed] Count check failed', { customerId, countError })
+    throw countError
+  }
+
+  if (!count || count === 0) {
+    throw new Error(
+      `[billing:invoice.payment_failed] Zero rows matched for customer ${customerId} — Stripe retry`
+    )
   }
 }

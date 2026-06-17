@@ -20,18 +20,52 @@ type UpdateCapture = {
   filter: Record<string, unknown>
 }
 
-function makeAdminStub(error: unknown = null) {
-  const captures: UpdateCapture[] = []
+type SelectCapture = {
+  table: string
+  filter: Record<string, unknown>
+  count: boolean
+}
+
+/**
+ * makeAdminStub builds a fake Supabase admin client.
+ *
+ * @param updateError  - Error to return from .eq() (the update path). null = success.
+ * @param rowCount     - Row count returned by the .select({count:'exact',head:true}) check.
+ *                       Defaults to 1 (row found). Pass 0 to trigger the zero-row throw.
+ * @param selectError  - Error to return from the count-select call. null = success.
+ */
+function makeAdminStub(
+  updateError: unknown = null,
+  rowCount: number = 1,
+  selectError: unknown = null
+) {
+  const updateCaptures: UpdateCapture[] = []
+  const selectCaptures: SelectCapture[] = []
 
   const stub = {
-    _captures: captures,
+    _updateCaptures: updateCaptures,
+    _selectCaptures: selectCaptures,
+    // Alias for backwards-compat with tests that used _captures
+    get _captures() {
+      return updateCaptures
+    },
     from(table: string) {
       return {
         update(values: Record<string, unknown>) {
           return {
             eq(col: string, val: unknown) {
-              captures.push({ table, values, filter: { [col]: val } })
-              return Promise.resolve({ error })
+              updateCaptures.push({ table, values, filter: { [col]: val } })
+              // Return a resolved promise — the update is "done"
+              return Promise.resolve({ error: updateError })
+            },
+          }
+        },
+        select(_columns: string, options?: { count?: string; head?: boolean }) {
+          const isCount = options?.count === 'exact' && options?.head === true
+          return {
+            eq(col: string, val: unknown) {
+              selectCaptures.push({ table, filter: { [col]: val }, count: !!isCount })
+              return Promise.resolve({ error: selectError, count: rowCount })
             },
           }
         },
@@ -41,6 +75,8 @@ function makeAdminStub(error: unknown = null) {
 
   return stub as unknown as SupabaseClient & {
     _captures: UpdateCapture[]
+    _updateCaptures: UpdateCapture[]
+    _selectCaptures: SelectCapture[]
   }
 }
 
@@ -67,7 +103,12 @@ function makeSubscription(overrides: Record<string, unknown> = {}) {
     customer: 'cus_test_abc',
     status: 'active',
     items: {
-      data: [{ price: { id: 'price_1Tj85KPE8Ih3LOAA3nTZcplc' } }], // test studio price
+      data: [
+        {
+          price: { id: 'price_1Tj85KPE8Ih3LOAA3nTZcplc' }, // test studio price
+          current_period_end: 1750000000, // Unix seconds
+        },
+      ],
     },
     ...overrides,
   } as unknown as Stripe.Subscription
@@ -104,15 +145,27 @@ describe('billing helpers', () => {
       assert.deepEqual(cap.filter, { id: 'agency-uuid-1' })
     })
 
-    it('skips and logs when metadata.agency_id is missing', async () => {
+    it('throws when metadata.agency_id is missing (so route returns 500 and Stripe retries)', async () => {
       const { handleCheckoutSessionCompleted } = await import('./billing')
       const admin = makeAdminStub()
       const session = makeCheckoutSession({ metadata: {} })
 
-      await handleCheckoutSessionCompleted(session, { admin })
+      // Missing agency_id is now a throw, not a silent return — critical paid checkout data loss
+      await assert.rejects(
+        () => handleCheckoutSessionCompleted(session, { admin }),
+        (err: Error) => err instanceof Error && err.message.includes('Missing metadata.agency_id')
+      )
+    })
 
-      // No DB write attempted
-      assert.equal(admin._captures.length, 0)
+    it('throws when zero rows were updated (agency id not found)', async () => {
+      const { handleCheckoutSessionCompleted } = await import('./billing')
+      const admin = makeAdminStub(null, 0) // no update error, but count = 0
+      const session = makeCheckoutSession()
+
+      await assert.rejects(
+        () => handleCheckoutSessionCompleted(session, { admin }),
+        (err: Error) => err instanceof Error && err.message.includes('Zero rows updated')
+      )
     })
 
     it('throws when admin update returns error', async () => {
@@ -129,7 +182,7 @@ describe('billing helpers', () => {
   })
 
   describe('handleSubscriptionUpdated', () => {
-    it('writes plan, subscription_status, stripe_subscription_id keyed by stripe_customer_id', async () => {
+    it('writes plan, subscription_status, stripe_subscription_id, current_period_end keyed by stripe_customer_id', async () => {
       const { handleSubscriptionUpdated } = await import('./billing')
       const admin = makeAdminStub()
       const subscription = makeSubscription()
@@ -143,6 +196,57 @@ describe('billing helpers', () => {
       assert.equal(cap.values.subscription_status, 'active')
       assert.equal(cap.values.stripe_subscription_id, 'sub_test_xyz')
       assert.deepEqual(cap.filter, { stripe_customer_id: 'cus_test_abc' })
+    })
+
+    it('writes current_period_end as ISO string from UNIX timestamp on subscription item', async () => {
+      const { handleSubscriptionUpdated } = await import('./billing')
+      const admin = makeAdminStub()
+      // 1750000000 seconds = specific ISO date
+      const subscription = makeSubscription() // includes current_period_end: 1750000000
+
+      await handleSubscriptionUpdated(subscription, { admin })
+
+      const cap = admin._captures[0]
+      assert.equal(
+        cap.values.current_period_end,
+        new Date(1750000000 * 1000).toISOString(),
+        'current_period_end should be an ISO string derived from the UNIX timestamp'
+      )
+    })
+
+    it('omits current_period_end when subscription item has no period end', async () => {
+      const { handleSubscriptionUpdated } = await import('./billing')
+      const admin = makeAdminStub()
+      const subscription = makeSubscription({
+        items: {
+          data: [
+            {
+              price: { id: 'price_1Tj85KPE8Ih3LOAA3nTZcplc' },
+              // no current_period_end
+            },
+          ],
+        },
+      })
+
+      await handleSubscriptionUpdated(subscription, { admin })
+
+      const cap = admin._captures[0]
+      assert.equal(
+        'current_period_end' in cap.values,
+        false,
+        'current_period_end should not be written when absent from item'
+      )
+    })
+
+    it('throws when zero rows matched for stripe_customer_id', async () => {
+      const { handleSubscriptionUpdated } = await import('./billing')
+      const admin = makeAdminStub(null, 0)
+      const subscription = makeSubscription()
+
+      await assert.rejects(
+        () => handleSubscriptionUpdated(subscription, { admin }),
+        (err: Error) => err instanceof Error && err.message.includes('Zero rows matched')
+      )
     })
 
     it('maps Stripe past_due status to DB past_due', async () => {
@@ -211,6 +315,17 @@ describe('billing helpers', () => {
       assert.equal(cap.values.plan, 'freemium')
       assert.deepEqual(cap.filter, { stripe_customer_id: 'cus_test_abc' })
     })
+
+    it('throws when zero rows matched for stripe_customer_id', async () => {
+      const { handleSubscriptionDeleted } = await import('./billing')
+      const admin = makeAdminStub(null, 0)
+      const subscription = makeSubscription({ status: 'canceled' })
+
+      await assert.rejects(
+        () => handleSubscriptionDeleted(subscription, { admin }),
+        (err: Error) => err instanceof Error && err.message.includes('Zero rows matched')
+      )
+    })
   })
 
   describe('handleInvoicePaymentFailed', () => {
@@ -226,6 +341,17 @@ describe('billing helpers', () => {
       assert.equal(cap.table, 'agencies')
       assert.equal(cap.values.subscription_status, 'past_due')
       assert.deepEqual(cap.filter, { stripe_customer_id: 'cus_test_abc' })
+    })
+
+    it('throws when zero rows matched for stripe_customer_id', async () => {
+      const { handleInvoicePaymentFailed } = await import('./billing')
+      const admin = makeAdminStub(null, 0)
+      const invoice = makeInvoice()
+
+      await assert.rejects(
+        () => handleInvoicePaymentFailed(invoice, { admin }),
+        (err: Error) => err instanceof Error && err.message.includes('Zero rows matched')
+      )
     })
 
     it('skips and logs when invoice has no customer', async () => {
