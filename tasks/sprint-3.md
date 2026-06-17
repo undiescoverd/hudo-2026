@@ -35,13 +35,13 @@ NOTES: M — pure config task; no application code beyond documenting env vars a
 
 ---
 
-- [ ] **S3-COMPLY-001** — Build audit log
+- [x] **S3-COMPLY-001** — Build audit log
 
 TASK_ID: S3-COMPLY-001
 TITLE: Build audit log
 BRANCH: feat/s3-comply-001-audit-log
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - audit_log TABLE ALREADY EXISTS (0001_initial_schema.sql) with all required columns and insert-only RLS (0002_rls_policies.sql — SELECT for owners/admin_agents, NO client INSERT/UPDATE/DELETE; inserts via service role only). DO NOT recreate the table or RLS. NOTE: resource_id is NOT NULL in the existing schema (not nullable) — logEvent must always pass a resource_id.
@@ -299,13 +299,13 @@ NOTES: S — audit task on top of BILLING-002. Run devsecops-security-engineer g
 
 ---
 
-- [ ] **S3-SEC-004** — Storage reconciliation job
+- [x] **S3-SEC-004** — Storage reconciliation job
 
 TASK_ID: S3-SEC-004
 TITLE: Storage reconciliation job
 BRANCH: feat/s3-sec-004-storage-reconciliation
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Nightly cron job at /api/cron/storage-reconcile recalculates actual R2 usage by agency prefix
