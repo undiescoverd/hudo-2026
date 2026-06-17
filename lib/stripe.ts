@@ -50,3 +50,22 @@ export function getStripePriceId(plan: StripePlan): string {
 }
 
 export const FOUNDING_COUPON = 'FOUNDING_50'
+
+// ---------------------------------------------------------------------------
+// Reverse lookup: Stripe price ID → plan name (used by webhook handler).
+// Covers both test and live price IDs — checked against both maps at runtime.
+// Falls back to 'freemium' for unknown price IDs (safe default).
+// ---------------------------------------------------------------------------
+
+/** @returns The plan name for a given Stripe price ID, or 'freemium' if unknown. */
+export function getPlanFromPriceId(priceId: string): StripePlan {
+  // Build a combined reverse map covering both test and live IDs
+  const reverseMap: Record<string, StripePlan> = {}
+  for (const [plan, id] of Object.entries(STRIPE_PRICES_LIVE)) {
+    reverseMap[id] = plan as StripePlan
+  }
+  for (const [plan, id] of Object.entries(STRIPE_PRICES_TEST)) {
+    reverseMap[id] = plan as StripePlan
+  }
+  return reverseMap[priceId] ?? 'freemium'
+}
