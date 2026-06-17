@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit, requireAgentRole } from '@/lib/api-helpers'
 import { isValidUUID } from '@/lib/validation'
+import { logEvent } from '@/lib/audit'
 
 /**
  * DELETE /api/guest-links/:id
@@ -84,6 +85,21 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     console.error('[guest-links:delete] Failed to revoke guest link:', updateError.message)
     return NextResponse.json({ error: 'Failed to revoke guest link' }, { status: 500 })
   }
+
+  // Audit: fire-and-forget
+  const actorName =
+    typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
+      ? user.user_metadata.full_name.trim()
+      : (user.email ?? user.id)
+  logEvent({
+    action: 'guest_link_revoked',
+    resourceType: 'guest_link',
+    resourceId: id,
+    agencyId: link.agency_id,
+    actorId: user.id,
+    actorName,
+    metadata: { video_id: link.video_id },
+  }).catch((err) => console.error('[guest-links:delete] logEvent unhandled rejection:', err))
 
   return new NextResponse(null, { status: 204 })
 }

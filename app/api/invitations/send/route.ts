@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getSiteOrigin } from '@/lib/site-url'
+import { logEvent } from '@/lib/audit'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -140,17 +141,21 @@ export async function POST(request: NextRequest) {
   // Insert invitation
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
 
-  const { error: insertError } = await admin.from('invitations').insert({
-    agency_id: agencyId,
-    invited_by: user.id,
-    email: email.trim().toLowerCase(),
-    role,
-    token_hash: tokenHash,
-    expires_at: expiresAt.toISOString(),
-  })
+  const { data: invitation, error: insertError } = await admin
+    .from('invitations')
+    .insert({
+      agency_id: agencyId,
+      invited_by: user.id,
+      email: email.trim().toLowerCase(),
+      role,
+      token_hash: tokenHash,
+      expires_at: expiresAt.toISOString(),
+    })
+    .select('id')
+    .single()
 
-  if (insertError) {
-    console.error('[invitations/send] Insert failed:', insertError.message)
+  if (insertError || !invitation) {
+    console.error('[invitations/send] Insert failed:', insertError?.message)
     return NextResponse.json({ error: 'Failed to create invitation' }, { status: 500 })
   }
 
@@ -179,6 +184,21 @@ export async function POST(request: NextRequest) {
     console.warn('[invitations/send] Email send failed, invite URL:', inviteUrl)
     console.warn('[invitations/send] Error:', err instanceof Error ? err.message : 'Unknown')
   }
+
+  // Audit: fire-and-forget
+  const actorName =
+    typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
+      ? user.user_metadata.full_name.trim()
+      : (user.email ?? user.id)
+  logEvent({
+    action: 'invitation_sent',
+    resourceType: 'membership',
+    resourceId: invitation.id,
+    agencyId: agencyId as string,
+    actorId: user.id,
+    actorName,
+    metadata: { invited_email: email.trim().toLowerCase(), role },
+  }).catch((err) => console.error('[invitations/send] logEvent unhandled rejection:', err))
 
   return NextResponse.json({ success: true })
 }

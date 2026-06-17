@@ -6,6 +6,7 @@ import { isQuotaExceededError } from '@/lib/storage-quota'
 import { UPLOAD_RATE_LIMIT, UPLOAD_RATE_WINDOW } from '@/lib/upload-validation'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit, requireAgentRole } from '@/lib/api-helpers'
+import { logEvent } from '@/lib/audit'
 
 /**
  * POST /api/videos/upload/complete
@@ -226,6 +227,21 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: 'Failed to create video version' }, { status: 500 })
   }
+
+  // Audit: fire-and-forget — a logging failure must not break the upload
+  const actorName =
+    typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
+      ? user.user_metadata.full_name.trim()
+      : (user.email ?? user.id)
+  logEvent({
+    action: 'version_uploaded',
+    resourceType: 'video',
+    resourceId: videoId,
+    agencyId: agencyId as string,
+    actorId: user.id,
+    actorName,
+    metadata: { version_id: newVersion, file_size_bytes: actualFileSize },
+  }).catch((err) => console.error('[upload/complete] logEvent unhandled rejection:', err))
 
   return NextResponse.json({
     version: newVersion,
