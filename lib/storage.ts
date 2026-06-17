@@ -5,6 +5,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -76,6 +77,12 @@ export interface StorageClient {
 
   /** Check if an object exists and return its size. Returns null if not found. */
   headObject(key: string): Promise<{ contentLength: number } | null>
+
+  /**
+   * Sum the total size (in bytes) of all objects stored under `prefix`.
+   * Paginates automatically using ListObjectsV2. Returns 0 for an empty prefix.
+   */
+  sumSizesUnderPrefix(prefix: string): Promise<number>
 }
 
 /**
@@ -254,6 +261,26 @@ export function createStorageClient(overrides?: {
         }
         throw err
       }
+    },
+
+    async sumSizesUnderPrefix(prefix: string): Promise<number> {
+      let total = 0
+      let continuationToken: string | undefined
+
+      do {
+        const command = new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        })
+        const response = await client.send(command)
+        for (const obj of response.Contents ?? []) {
+          total += obj.Size ?? 0
+        }
+        continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined
+      } while (continuationToken !== undefined)
+
+      return total
     },
   }
 }
