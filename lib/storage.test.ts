@@ -25,15 +25,23 @@ interface PresignerCall {
   expiresIn: number
 }
 
+interface ListObjectsPage {
+  Contents?: Array<{ Size?: number }>
+  IsTruncated?: boolean
+  NextContinuationToken?: string
+}
+
 function createMockS3Client(options?: {
   returnUndefinedBody?: boolean
   headNotFound?: boolean
   headContentLength?: number
+  listPages?: ListObjectsPage[]
 }): {
   client: S3Client
   calls: SendCall[]
 } {
   const calls: SendCall[] = []
+  let listPageIndex = 0
 
   const client = {
     send: async (command: { constructor: { name: string }; input: Record<string, unknown> }) => {
@@ -62,6 +70,12 @@ function createMockS3Client(options?: {
           throw err
         }
         return { ContentLength: options?.headContentLength ?? 1024 }
+      }
+      if (command.constructor.name === 'ListObjectsV2Command') {
+        const pages = options?.listPages ?? [{ Contents: [], IsTruncated: false }]
+        const page = pages[listPageIndex] ?? { Contents: [], IsTruncated: false }
+        listPageIndex++
+        return page
       }
       return {}
     },
@@ -334,6 +348,81 @@ describe('storage module', () => {
     })
   })
 
+  describe('sumSizesUnderPrefix', () => {
+    it('returns 0 for an empty prefix (no objects)', async () => {
+      const mock = createMockS3Client({
+        listPages: [{ Contents: [], IsTruncated: false }],
+      })
+      const s = createStorageClient({ client: mock.client, bucket: TEST_BUCKET })
+      const total = await s.sumSizesUnderPrefix('agency-123/')
+      assert.equal(total, 0)
+      assert.equal(mock.calls.length, 1)
+      assert.equal(mock.calls[0].commandName, 'ListObjectsV2Command')
+      assert.equal(mock.calls[0].input.Prefix, 'agency-123/')
+    })
+
+    it('returns the sum of sizes on a single page', async () => {
+      const mock = createMockS3Client({
+        listPages: [
+          {
+            Contents: [{ Size: 100 }, { Size: 200 }, { Size: 300 }],
+            IsTruncated: false,
+          },
+        ],
+      })
+      const s = createStorageClient({ client: mock.client, bucket: TEST_BUCKET })
+      const total = await s.sumSizesUnderPrefix('agency-abc/')
+      assert.equal(total, 600)
+    })
+
+    it('paginates across multiple pages using ContinuationToken', async () => {
+      const mock = createMockS3Client({
+        listPages: [
+          {
+            Contents: [{ Size: 1000 }],
+            IsTruncated: true,
+            NextContinuationToken: 'token-page-2',
+          },
+          {
+            Contents: [{ Size: 2000 }, { Size: 3000 }],
+            IsTruncated: false,
+          },
+        ],
+      })
+      const s = createStorageClient({ client: mock.client, bucket: TEST_BUCKET })
+      const total = await s.sumSizesUnderPrefix('agency-xyz/')
+
+      assert.equal(total, 6000, 'Must sum across both pages: 1000 + 2000 + 3000')
+      assert.equal(mock.calls.length, 2, 'Must make exactly two ListObjectsV2Command calls')
+      // Second call must carry the continuation token from the first response.
+      assert.equal(mock.calls[1].input.ContinuationToken, 'token-page-2')
+    })
+
+    it('treats undefined Size as 0', async () => {
+      const mock = createMockS3Client({
+        listPages: [
+          {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            Contents: [{ Size: undefined as any }, { Size: 500 }],
+            IsTruncated: false,
+          },
+        ],
+      })
+      const s = createStorageClient({ client: mock.client, bucket: TEST_BUCKET })
+      const total = await s.sumSizesUnderPrefix('prefix/')
+      assert.equal(total, 500)
+    })
+
+    it('returns 0 when Contents is undefined (empty bucket prefix)', async () => {
+      const mock = createMockS3Client({
+        listPages: [{ IsTruncated: false }], // no Contents key at all
+      })
+      const s = createStorageClient({ client: mock.client, bucket: TEST_BUCKET })
+      const total = await s.sumSizesUnderPrefix('empty/')
+      assert.equal(total, 0)
+    })
+  })
+
   describe('StorageClient interface', () => {
     it('exports all required operations', () => {
       assert.equal(typeof storage.putObject, 'function')
@@ -346,6 +435,7 @@ describe('storage module', () => {
       assert.equal(typeof storage.completeMultipartUpload, 'function')
       assert.equal(typeof storage.abortMultipartUpload, 'function')
       assert.equal(typeof storage.headObject, 'function')
+      assert.equal(typeof storage.sumSizesUnderPrefix, 'function')
     })
   })
 })
