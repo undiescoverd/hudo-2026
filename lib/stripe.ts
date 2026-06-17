@@ -57,15 +57,16 @@ export const FOUNDING_COUPON = 'FOUNDING_50'
 // Falls back to 'freemium' for unknown price IDs (safe default).
 // ---------------------------------------------------------------------------
 
+// Combined reverse map covering both test and live IDs, built once at module load.
+const PRICE_ID_TO_PLAN: Record<string, StripePlan> = {}
+for (const [plan, id] of Object.entries(STRIPE_PRICES_LIVE)) {
+  PRICE_ID_TO_PLAN[id] = plan as StripePlan
+}
+for (const [plan, id] of Object.entries(STRIPE_PRICES_TEST)) {
+  PRICE_ID_TO_PLAN[id] = plan as StripePlan
+}
+
 /** @returns The plan name for a given Stripe price ID, or 'freemium' if unknown. */
 export function getPlanFromPriceId(priceId: string): StripePlan {
-  // Build a combined reverse map covering both test and live IDs
-  const reverseMap: Record<string, StripePlan> = {}
-  for (const [plan, id] of Object.entries(STRIPE_PRICES_LIVE)) {
-    reverseMap[id] = plan as StripePlan
-  }
-  for (const [plan, id] of Object.entries(STRIPE_PRICES_TEST)) {
-    reverseMap[id] = plan as StripePlan
-  }
-  return reverseMap[priceId] ?? 'freemium'
+  return PRICE_ID_TO_PLAN[priceId] ?? 'freemium'
 }

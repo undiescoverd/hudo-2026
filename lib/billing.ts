@@ -70,6 +70,52 @@ function mapStripeStatus(stripeStatus: string): DbSubscriptionStatus {
 }
 
 // ---------------------------------------------------------------------------
+// Shared update + zero-row guard
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies an absolute UPDATE to the agencies table and verifies a row matched.
+ *
+ * Two round-trips by design (do NOT collapse into `.update().select(count)`):
+ *   1. UPDATE agencies SET <payload> WHERE <column> = <value>
+ *   2. SELECT count WHERE <column> = <value>  — verify a row actually matched
+ *
+ * Both errors are re-thrown as the raw error object (not wrapped) and a zero-row
+ * match throws `zeroRowMessage`, so the webhook route returns 500 and Stripe retries.
+ */
+async function updateAgencyOrThrow(
+  admin: SupabaseClient,
+  params: {
+    column: 'id' | 'stripe_customer_id'
+    value: string
+    payload: Record<string, unknown>
+    logPrefix: string
+    zeroRowMessage: string
+  }
+): Promise<void> {
+  const { column, value, payload, logPrefix, zeroRowMessage } = params
+
+  const { error } = await admin.from('agencies').update(payload).eq(column, value)
+  if (error) {
+    console.error(`${logPrefix} Failed to update agency`, { [column]: value, error })
+    throw error
+  }
+
+  const { count, error: countError } = await admin
+    .from('agencies')
+    .select('id', { count: 'exact', head: true })
+    .eq(column, value)
+  if (countError) {
+    console.error(`${logPrefix} Count check failed`, { [column]: value, countError })
+    throw countError
+  }
+
+  if (!count || count === 0) {
+    throw new Error(zeroRowMessage)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Event handlers
 // ---------------------------------------------------------------------------
 
@@ -125,35 +171,18 @@ export async function handleCheckoutSessionCompleted(
     plan = getPlanFromPriceId(priceId)
   }
 
-  const { error } = await admin
-    .from('agencies')
-    .update({
+  await updateAgencyOrThrow(admin, {
+    column: 'id',
+    value: agencyId,
+    payload: {
       stripe_customer_id: customerId,
       stripe_subscription_id: subscriptionId,
       plan,
       subscription_status: 'active',
-    })
-    .eq('id', agencyId)
-
-  if (error) {
-    console.error('[billing:checkout] Failed to update agency', { agencyId, error })
-    throw error
-  }
-
-  // Zero-row guard: verify the agency row was actually updated.
-  const { count, error: countError } = await admin
-    .from('agencies')
-    .select('id', { count: 'exact', head: true })
-    .eq('id', agencyId)
-
-  if (countError) {
-    console.error('[billing:checkout] Count check failed', { agencyId, countError })
-    throw countError
-  }
-
-  if (!count || count === 0) {
-    throw new Error(`[billing:checkout] Zero rows updated for agency ${agencyId} — Stripe retry`)
-  }
+    },
+    logPrefix: '[billing:checkout]',
+    zeroRowMessage: `[billing:checkout] Zero rows updated for agency ${agencyId} — Stripe retry`,
+  })
 }
 
 /**
@@ -198,36 +227,15 @@ export async function handleSubscriptionUpdated(
     updatePayload.current_period_end = currentPeriodEnd
   }
 
-  const { error } = await admin
-    .from('agencies')
-    .update(updatePayload)
-    .eq('stripe_customer_id', customerId)
-
-  if (error) {
-    console.error('[billing:subscription.updated] Failed to update agency', {
-      customerId,
-      error,
-    })
-    throw error
-  }
-
-  // Zero-row guard: subscription.updated can arrive before checkout.session.completed
-  // has written stripe_customer_id. Throwing lets Stripe retry.
-  const { count, error: countError } = await admin
-    .from('agencies')
-    .select('id', { count: 'exact', head: true })
-    .eq('stripe_customer_id', customerId)
-
-  if (countError) {
-    console.error('[billing:subscription.updated] Count check failed', { customerId, countError })
-    throw countError
-  }
-
-  if (!count || count === 0) {
-    throw new Error(
-      `[billing:subscription.updated] Zero rows matched for customer ${customerId} — Stripe retry`
-    )
-  }
+  // Zero-row guard (inside the helper): subscription.updated can arrive before
+  // checkout.session.completed has written stripe_customer_id. Throwing lets Stripe retry.
+  await updateAgencyOrThrow(admin, {
+    column: 'stripe_customer_id',
+    value: customerId,
+    payload: updatePayload,
+    logPrefix: '[billing:subscription.updated]',
+    zeroRowMessage: `[billing:subscription.updated] Zero rows matched for customer ${customerId} — Stripe retry`,
+  })
 }
 
 /**
@@ -244,38 +252,16 @@ export async function handleSubscriptionDeleted(
   const customerId =
     typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id
 
-  const { error } = await admin
-    .from('agencies')
-    .update({
+  await updateAgencyOrThrow(admin, {
+    column: 'stripe_customer_id',
+    value: customerId,
+    payload: {
       subscription_status: 'canceled',
       plan: 'freemium',
-    })
-    .eq('stripe_customer_id', customerId)
-
-  if (error) {
-    console.error('[billing:subscription.deleted] Failed to update agency', {
-      customerId,
-      error,
-    })
-    throw error
-  }
-
-  // Zero-row guard
-  const { count, error: countError } = await admin
-    .from('agencies')
-    .select('id', { count: 'exact', head: true })
-    .eq('stripe_customer_id', customerId)
-
-  if (countError) {
-    console.error('[billing:subscription.deleted] Count check failed', { customerId, countError })
-    throw countError
-  }
-
-  if (!count || count === 0) {
-    throw new Error(
-      `[billing:subscription.deleted] Zero rows matched for customer ${customerId} — Stripe retry`
-    )
-  }
+    },
+    logPrefix: '[billing:subscription.deleted]',
+    zeroRowMessage: `[billing:subscription.deleted] Zero rows matched for customer ${customerId} — Stripe retry`,
+  })
 }
 
 /**
@@ -299,33 +285,11 @@ export async function handleInvoicePaymentFailed(
     return
   }
 
-  const { error } = await admin
-    .from('agencies')
-    .update({ subscription_status: 'past_due' })
-    .eq('stripe_customer_id', customerId)
-
-  if (error) {
-    console.error('[billing:invoice.payment_failed] Failed to update agency', {
-      customerId,
-      error,
-    })
-    throw error
-  }
-
-  // Zero-row guard
-  const { count, error: countError } = await admin
-    .from('agencies')
-    .select('id', { count: 'exact', head: true })
-    .eq('stripe_customer_id', customerId)
-
-  if (countError) {
-    console.error('[billing:invoice.payment_failed] Count check failed', { customerId, countError })
-    throw countError
-  }
-
-  if (!count || count === 0) {
-    throw new Error(
-      `[billing:invoice.payment_failed] Zero rows matched for customer ${customerId} — Stripe retry`
-    )
-  }
+  await updateAgencyOrThrow(admin, {
+    column: 'stripe_customer_id',
+    value: customerId,
+    payload: { subscription_status: 'past_due' },
+    logPrefix: '[billing:invoice.payment_failed]',
+    zeroRowMessage: `[billing:invoice.payment_failed] Zero rows matched for customer ${customerId} — Stripe retry`,
+  })
 }
