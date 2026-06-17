@@ -83,9 +83,15 @@ if (!isBillingEnabled()) {
 ## Using the Stripe client
 
 ```ts
-import { getStripe, STRIPE_PRICES, FOUNDING_COUPON } from '@/lib/stripe'
+import { getStripe, getStripePriceId, FOUNDING_COUPON } from '@/lib/stripe'
 
 // Always call getStripe() inside a function — never at module scope
-const stripe = getStripe()
-const session = await stripe.checkout.sessions.create({ ... })
+export async function createCheckout(plan: StripePlan) {
+  const stripe = getStripe()
+  return stripe.checkout.sessions.create({
+    line_items: [{ price: getStripePriceId(plan), quantity: 1 }],
+    discounts: [{ coupon: FOUNDING_COUPON }],
+    // ...
+  })
+}
 ```

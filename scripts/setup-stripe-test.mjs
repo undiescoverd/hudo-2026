@@ -73,13 +73,15 @@ for (const plan of PLANS) {
   console.log()
 }
 
-// Coupon
-let coupon = null
+// Coupon — create only when it genuinely doesn't exist.
+// Stripe throws `code: 'resource_missing'` (404) for an unknown coupon; any other
+// error (network, auth, rate-limit) must propagate rather than be mistaken for "missing".
 try {
-  coupon = await stripe.coupons.retrieve('FOUNDING_50')
+  await stripe.coupons.retrieve('FOUNDING_50')
   console.log(`  [skip] Coupon FOUNDING_50 already exists`)
-} catch {
-  coupon = await stripe.coupons.create({
+} catch (err) {
+  if (err?.code !== 'resource_missing') throw err
+  await stripe.coupons.create({
     id: 'FOUNDING_50',
     name: 'Founding Member — 50% off for 12 months',
     percent_off: 50,
