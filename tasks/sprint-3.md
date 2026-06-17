@@ -89,13 +89,13 @@ NOTES: VERIFY-ONLY (confirmed 2026-06-17) — already built and wired, NOT a bui
 
 ---
 
-- [ ] **S3-BILLING-002** — Build Stripe webhook handler
+- [x] **S3-BILLING-002** — Build Stripe webhook handler
 
 TASK_ID: S3-BILLING-002
 TITLE: Build Stripe webhook handler
 BRANCH: feat/s3-billing-002-webhook-handler
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S3-BILLING-001
 ACCEPTANCE_CRITERIA:
   - Route POST /api/webhooks/stripe with raw body parsing (no JSON middleware)

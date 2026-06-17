@@ -8,6 +8,22 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-18 — Unblock S3: land #102 + #104 + #106, clean main
+
+- **Task:** Plan "Unblock Sprint 3" (PRs #102 foundation, #104 webhook, #106 founding-member)
+- **Models:** planner=opus, executor=opus (git orchestration kept in main thread), security=hudo-security-reviewer
+- **Outcome:** done — main healthy; S3 now 4/13 (S3-BILLING-002 done, Linear synced)
+- **Notes:**
+  - **#102 (foundation):** Addressed all 9 CodeRabbit findings (settings.json matcher `Write`→`Edit|Write` + portable `$CLAUDE_PROJECT_DIR` in PostToolUse/Stop hooks; pr-fix-loop.md real-error surfacing + `--json/--jq` status extraction; lib/stripe.ts `STRIPE_SECRET_KEY` guard + `Record<StripePlan,string>` test prices; setup-stripe-test.mjs `resource_missing`-only catch; docs import fix). Ran full local gate (format/type-check/lint/build) green.
+  - **#102 conflict (not in plan):** branch was CONFLICTING with main — main had already merged the _same_ automations via **#101**, so .claude/settings.json + pr-fix-loop.md + CLAUDE.md + SESSIONNOTES.md were add/add conflicts. Resolved by `git merge origin/main` into the branch (repo squash-merges, so the merge commit collapses): automation files → "ours" (verified delta vs main = exactly my 3 settings fixes), CLAUDE.md/SESSIONNOTES.md → union of both sides. Re-ran `pnpm build` on the merged tree (first time #103/#105 + stripe foundation combined) — green. Merged → main now has stripe@^22.2.1, tasks/sprint-3.md, lib/stripe.ts, lib/feature-flags.ts.
+  - **#106 (founding-member chore):** committed the two untracked files (0020 migration + create-beta-agency.mjs) on a separate branch. Migration 0020 was **already applied + tracked** on dev+staging (`agencies_founding_member`, 20260616114625/…628) — verified, NOT re-applied (would dup the tracking row). Merged.
+  - **#104 (webhook):** rebased onto new main; lib/stripe.ts add/add collision resolved as the **union** (main's typed/guarded foundation + the webhook's `getPlanFromPriceId` reverse-lookup) — confirmed single `getStripe`/`getPlanFromPriceId` on main. Redundant stripe-dep commit **auto-dropped** by rebase ("patch contents already upstream"). Migration 0018 (`current_period_end`) already applied+tracked on both DBs. Security gate (hudo-security-reviewer): **SHIP** — raw-body sig validation, event-ID idempotency, key segregation, tenancy all PASS. Build+RLS green. Merged; `orchestrate done S3-BILLING-002`.
+  - **Verified main healthy:** stripe dep + sprint-3 + lib/stripe.ts/lib/billing.ts/webhook route all on main; 0017/0018/0020 tracked on both dev+staging; `agencies.is_founding_member` + `current_period_end` present; no open PRs; status 4/13.
+- **Gotcha:** A branch can CONFLICT because its work was already merged via a _sibling_ PR (#101) — check `gh pr view --json mergeable` early; resolve with a merge (not rebase) when the repo squash-merges and you've already pushed. Also: migrations applied via MCP `apply_migration` in a prior session are already tracked — probe `information_schema` + `schema_migrations` before re-applying, or you create a duplicate tracking row.
+- **Deferred (non-blocking, from security review + CodeRabbit on #104):** add `import 'server-only'` to lib/billing.ts + lib/stripe.ts; UNIQUE constraint on `agencies.stripe_customer_id`; sanitize webhook handler error logging to `err.message`; `type`→`interface` on billing test capture types; the future checkout-session endpoint must set `metadata.agency_id` from the authenticated server session (separate security review when written, covers S3-SEC-003).
+
+---
+
 ## 2026-06-17 — S3-BILLING-001: Configure Stripe
 
 - **Task:** S3-BILLING-001
