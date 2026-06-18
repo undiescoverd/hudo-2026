@@ -22,6 +22,7 @@ import { isValidUUID } from '@/lib/validation'
 import { checkRateLimit } from '@/lib/api-helpers'
 import { isBillingEnabled } from '@/lib/feature-flags'
 import { getStripe } from '@/lib/stripe'
+import { getSiteOrigin } from '@/lib/site-url'
 
 const PORTAL_RATE_LIMIT = 10
 const PORTAL_RATE_WINDOW = 60 // seconds
@@ -114,8 +115,9 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-  const returnUrl = `${appUrl}/settings/billing`
+  // getSiteOrigin resolves NEXT_PUBLIC_SITE_URL → VERCEL_URL → localhost, so the
+  // Stripe return URL is correct on preview/prod without a hardcoded localhost fallback.
+  const returnUrl = `${getSiteOrigin(request)}/settings/billing`
 
   try {
     const stripe = getStripe()
