@@ -7,29 +7,17 @@
  *   1. Click "Upgrade to <plan>" button.
  *   2. If legal entity data is incomplete, show LegalEntityForm (PATCH /api/agencies/[id]/billing).
  *   3. Once legal data is saved, show DpaAcceptanceModal (POST /api/agencies/[id]/dpa-accept).
- *   4. Once DPA is accepted, POST /api/agencies/[id]/billing { plan } → redirect to { url }.
+ *   4. Once DPA is accepted, POST /api/agencies/[id]/billing { plan, interval } → redirect to { url }.
  *
  * The server re-validates all preconditions on POST regardless of UI state,
  * so the UI just needs to surface the steps to the user.
  */
 
 import { useState } from 'react'
-import { UsageBars } from '@/components/billing/UsageBars'
+import { UsageBars, formatBytes } from '@/components/billing/UsageBars'
 import { LegalEntityForm, type LegalEntityData } from '@/components/billing/LegalEntityForm'
 import { DpaAcceptanceModal } from '@/components/billing/DpaAcceptanceModal'
-
-// ---------------------------------------------------------------------------
-// Plan tier ordering — must match keys in PLAN_LIMITS / PAID_PLANS
-// ---------------------------------------------------------------------------
-
-const PLAN_TIERS: ReadonlyArray<string> = ['freemium', 'starter', 'studio', 'agency_pro']
-
-const PLAN_DISPLAY_NAMES: Record<string, string> = {
-  freemium: 'Freemium',
-  starter: 'Starter',
-  studio: 'Studio',
-  agency_pro: 'Agency Pro',
-}
+import { PLAN_IDS, PLANS, getPlan, type BillingInterval, type PlanId } from '@/lib/plans'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -80,6 +68,104 @@ function StatusBadge({ status }: { status: string | null }) {
 }
 
 // ---------------------------------------------------------------------------
+// Billing interval toggle
+// ---------------------------------------------------------------------------
+
+function IntervalToggle({
+  interval,
+  onChange,
+}: {
+  interval: BillingInterval
+  onChange: (v: BillingInterval) => void
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Billing interval"
+      className="inline-flex rounded-md border border-input bg-muted p-1 gap-1"
+    >
+      {(['month', 'year'] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          role="radio"
+          aria-checked={interval === v}
+          onClick={() => onChange(v)}
+          className={`rounded px-3 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+            interval === v
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {v === 'month' ? 'Monthly' : 'Annual'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Plan upgrade card
+// ---------------------------------------------------------------------------
+
+function UpgradeCard({
+  planId,
+  interval,
+  onUpgrade,
+  disabled,
+}: {
+  planId: PlanId
+  interval: BillingInterval
+  onUpgrade: (planId: PlanId) => void
+  disabled: boolean
+}) {
+  const planData = PLANS[planId]
+  const isAnnual = interval === 'year'
+  const pricePence = isAnnual ? planData.annualPricePence : planData.monthlyPricePence
+  const pricePounds = pricePence / 100
+  const priceLabel = isAnnual ? `£${pricePounds}/yr` : `£${pricePounds}/mo`
+  const storageLabel = formatBytes(planData.storageLimitBytes)
+
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-border p-5 bg-card">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-semibold text-base">{planData.displayName}</p>
+          <p className="text-2xl font-bold mt-0.5">
+            {priceLabel}
+            {isAnnual && (
+              <span className="ml-2 text-xs font-normal text-green-700 bg-green-100 rounded-full px-2 py-0.5">
+                2 months free
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+
+      <ul className="space-y-1.5 text-sm text-muted-foreground">
+        <li>
+          <span className="text-foreground font-medium">{planData.agentSeats}</span> agent seats
+        </li>
+        <li>Unlimited talent</li>
+        <li>Unlimited free reviewers</li>
+        <li>
+          <span className="text-foreground font-medium">{storageLabel}</span> storage
+        </li>
+      </ul>
+
+      <button
+        type="button"
+        onClick={() => onUpgrade(planId)}
+        disabled={disabled}
+        className="mt-auto inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+      >
+        Upgrade to {planData.displayName}
+      </button>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -101,14 +187,16 @@ export function BillingOverview({
 }: BillingOverviewProps) {
   const [upgradeStep, setUpgradeStep] = useState<UpgradeStep>('idle')
   const [targetPlan, setTargetPlan] = useState<string | null>(null)
+  const [targetInterval, setTargetInterval] = useState<BillingInterval>('month')
+  const [interval, setInterval] = useState<BillingInterval>('month')
   const [legalDataSaved, setLegalDataSaved] = useState(hasLegalData)
   const [dpaAccepted, setDpaAccepted] = useState(hasDpa)
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  const planDisplayName = PLAN_DISPLAY_NAMES[plan] ?? plan
-  const currentTierIndex = PLAN_TIERS.indexOf(plan)
-  const upgradablePlans = PLAN_TIERS.slice(currentTierIndex + 1)
+  const planData = getPlan(plan)
+  const currentTierIndex = (PLAN_IDS as readonly string[]).indexOf(plan)
+  const upgradablePlans = PLAN_IDS.slice(currentTierIndex + 1) as PlanId[]
 
   const renewalDate = currentPeriodEnd
     ? new Date(currentPeriodEnd).toLocaleDateString('en-GB', {
@@ -119,8 +207,10 @@ export function BillingOverview({
     : null
 
   // ---- Upgrade initiation ----
-  function handleUpgradeClick(planKey: string) {
+  function handleUpgradeClick(planKey: PlanId) {
+    // Capture the chosen interval at click time — user may toggle during legal/DPA steps.
     setTargetPlan(planKey)
+    setTargetInterval(interval)
     setErrorMessage(null)
 
     if (!legalDataSaved) {
@@ -129,7 +219,7 @@ export function BillingOverview({
       setUpgradeStep('dpa')
     } else {
       setUpgradeStep('checkout')
-      void initiateCheckout(planKey)
+      void initiateCheckout(planKey, interval)
     }
   }
 
@@ -140,7 +230,7 @@ export function BillingOverview({
       setUpgradeStep('dpa')
     } else if (targetPlan) {
       setUpgradeStep('checkout')
-      void initiateCheckout(targetPlan)
+      void initiateCheckout(targetPlan, targetInterval)
     }
   }
 
@@ -148,7 +238,7 @@ export function BillingOverview({
     setDpaAccepted(true)
     if (targetPlan) {
       setUpgradeStep('checkout')
-      void initiateCheckout(targetPlan)
+      void initiateCheckout(targetPlan, targetInterval)
     }
   }
 
@@ -157,14 +247,14 @@ export function BillingOverview({
     setTargetPlan(null)
   }
 
-  async function initiateCheckout(planKey: string) {
+  async function initiateCheckout(planKey: string, billingInterval: BillingInterval) {
     setIsRedirecting(true)
     setErrorMessage(null)
     try {
       const res = await fetch(`/api/agencies/${agencyId}/billing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: planKey }),
+        body: JSON.stringify({ plan: planKey, interval: billingInterval }),
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
@@ -212,7 +302,7 @@ export function BillingOverview({
       <section className="space-y-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h2 className="text-lg font-semibold">{planDisplayName}</h2>
+            <h2 className="text-lg font-semibold">{planData.displayName}</h2>
             {subscriptionStatus && (
               <div className="mt-1">
                 <StatusBadge status={subscriptionStatus} />
@@ -258,23 +348,25 @@ export function BillingOverview({
         />
       </section>
 
-      {/* ---- Upgrade buttons ---- */}
+      {/* ---- Upgrade cards ---- */}
       {upgradablePlans.length > 0 && (
-        <section className="space-y-3">
-          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            Upgrade plan
-          </h3>
-          <div className="flex flex-wrap gap-3">
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+              Upgrade plan
+            </h3>
+            <IntervalToggle interval={interval} onChange={setInterval} />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {upgradablePlans.map((planKey) => (
-              <button
+              <UpgradeCard
                 key={planKey}
-                type="button"
-                onClick={() => handleUpgradeClick(planKey)}
+                planId={planKey}
+                interval={interval}
+                onUpgrade={handleUpgradeClick}
                 disabled={isRedirecting || upgradeStep !== 'idle'}
-                className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-              >
-                Upgrade to {PLAN_DISPLAY_NAMES[planKey] ?? planKey}
-              </button>
+              />
             ))}
           </div>
         </section>

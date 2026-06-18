@@ -1,69 +1,30 @@
 /**
  * lib/plan-gates.ts
  *
- * Agent and talent seat plan gates.
+ * Agent-seat plan gate. Talent is unlimited and never metered.
  *
  * Architecture:
- * - PLAN_LIMITS is a static config map keyed by agency plan name.
- *   There is no `plans` DB table — limits are code-defined and intentionally
- *   kept here for a single place to update (or replace with remote config later).
- * - The "agents" category counts owner + admin_agent + agent roles (non-talent seats).
- * - The "talent" category counts the 'talent' role only.
+ * - All limit numbers come from `lib/plans.ts` (the single source of truth).
+ *   There is no PLAN_LIMITS map here — `getAgentSeatLimit(plan)` from plans.ts
+ *   is used at check-time.
+ * - The gate counts owner + admin_agent + agent roles (non-talent seats).
+ * - Talent seats are NOT gated; callers that previously passed category:'talent'
+ *   should simply omit the gate call.
  * - Counts are cached in Redis with a TTL ≤60s to avoid hot-path DB reads on every add.
- *   Cache key: `plan-limit:{agencyId}:agents` or `plan-limit:{agencyId}:talent`.
+ *   Cache key: `plan-limit:{agencyId}:agents`.
  * - On a successful add, invalidatePlanLimitCache() removes the stale key.
  *   Plan-change and member-remove handlers MUST also call invalidatePlanLimitCache()
  *   (those routes are out of scope for this PR — see follow-up task).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getAgentSeatLimit } from '@/lib/plans'
 
 // ---------------------------------------------------------------------------
-// Plan limits config
+// Re-exports from plans.ts (single source of truth for all tier numbers)
 // ---------------------------------------------------------------------------
 
-export type MemberCategory = 'agents' | 'talent'
-
-export interface PlanLimits {
-  /** Max seats for owner + admin_agent + agent combined. */
-  agents: number
-  /** Max seats for the talent role. */
-  talent: number
-  /** Max storage in bytes. */
-  storage: number
-}
-
-/**
- * Static seat and storage limits per plan.
- * These are intentionally configurable here — swap for DB/remote config later.
- *
- * Storage byte values:
- *   freemium:   5_368_709_120 bytes (5GB   — matches agencies.storage_limit_bytes default)
- *   starter:  107_374_182_400 bytes (100GB)
- *   studio:   536_870_912_000 bytes (500GB)
- *   agency_pro: 2_199_023_255_552 bytes (2TB)
- */
-export const PLAN_LIMITS: Record<string, PlanLimits> = {
-  freemium: { agents: 5, talent: 10, storage: 5_368_709_120 },
-  starter: { agents: 10, talent: 25, storage: 107_374_182_400 },
-  studio: { agents: 25, talent: 75, storage: 536_870_912_000 },
-  agency_pro: { agents: 100, talent: 300, storage: 2_199_023_255_552 },
-}
-
-/** Fallback for unknown plan strings. */
-const DEFAULT_LIMITS: PlanLimits = PLAN_LIMITS.freemium
-
-// ---------------------------------------------------------------------------
-// Storage limit helper
-// ---------------------------------------------------------------------------
-
-/**
- * Returns the storage limit in bytes for a given plan name.
- * Falls back to the freemium limit for unknown plan strings.
- */
-export function getPlanStorageLimitBytes(plan: string): number {
-  return PLAN_LIMITS[plan]?.storage ?? PLAN_LIMITS.freemium.storage
-}
+export { getPlan, getStorageLimitBytes, getAgentSeatLimit } from '@/lib/plans'
 
 // ---------------------------------------------------------------------------
 // Grace-period helper
@@ -120,8 +81,8 @@ export interface CacheClient {
 // Cache key helpers
 // ---------------------------------------------------------------------------
 
-export function planLimitCacheKey(agencyId: string, category: MemberCategory): string {
-  return `plan-limit:${agencyId}:${category}`
+export function planLimitCacheKey(agencyId: string): string {
+  return `plan-limit:${agencyId}:agents`
 }
 
 // ---------------------------------------------------------------------------
@@ -139,17 +100,6 @@ export interface GateResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve limits for an agency by reading its plan from the DB.
- * Uses the admin (service-role) Supabase client so RLS doesn't filter the row.
- */
-async function getAgencyLimits(admin: SupabaseClient, agencyId: string): Promise<PlanLimits> {
-  const { data } = await admin.from('agencies').select('plan').eq('id', agencyId).single()
-
-  const plan: string = (data as { plan?: string } | null)?.plan ?? 'freemium'
-  return PLAN_LIMITS[plan] ?? DEFAULT_LIMITS
-}
-
-/**
  * Thrown by checkPlanLimit when the seat count query fails and the gate
  * cannot be evaluated. Callers should return HTTP 503 (service unavailable).
  */
@@ -162,27 +112,17 @@ export class PlanLimitUnavailableError extends Error {
 }
 
 /**
- * Count current seats in a category for an agency.
+ * Count current agent seats for an agency.
  * Uses the admin client so RLS doesn't filter rows.
  * Returns null on error (caller must fail closed — do NOT cache null).
  */
-async function countSeats(
-  admin: SupabaseClient,
-  agencyId: string,
-  category: MemberCategory
-): Promise<number | null> {
-  let query = admin
+async function countSeats(admin: SupabaseClient, agencyId: string): Promise<number | null> {
+  const { count, error } = await admin
     .from('memberships')
     .select('id', { count: 'exact', head: true })
     .eq('agency_id', agencyId)
+    .in('role', [...AGENT_SEAT_ROLES])
 
-  if (category === 'agents') {
-    query = query.in('role', [...AGENT_SEAT_ROLES])
-  } else {
-    query = query.eq('role', 'talent')
-  }
-
-  const { count, error } = await query
   if (error) {
     console.error('[plan-gates] countSeats error:', error)
     return null
@@ -198,25 +138,27 @@ async function countSeats(
 export const PLAN_LIMIT_CACHE_TTL = 60
 
 /**
- * Check whether adding one more seat in `category` is within the agency's plan limit.
+ * Check whether adding one more agent seat is within the agency's plan limit.
  *
  * Uses the cache client for a hot-path read; falls back to DB on cache miss.
+ * Reads the agency's `plan` column (admin client, bypasses RLS) to resolve
+ * the seat limit via `getAgentSeatLimit` from lib/plans.ts.
  *
  * @param admin    - Service-role Supabase client (bypasses RLS for count + plan reads).
  * @param cache    - Redis-compatible cache client (injected to avoid top-level import).
  * @param agencyId - UUID of the agency being checked.
- * @param category - 'agents' or 'talent'.
  */
 export async function checkPlanLimit(
   admin: SupabaseClient,
   cache: CacheClient,
-  agencyId: string,
-  category: MemberCategory
+  agencyId: string
 ): Promise<GateResult> {
-  const limits = await getAgencyLimits(admin, agencyId)
-  const limit = limits[category]
+  // Resolve the agency's plan and derive the seat limit
+  const { data } = await admin.from('agencies').select('plan').eq('id', agencyId).single()
+  const plan: string = (data as { plan?: string } | null)?.plan ?? 'freemium'
+  const limit = getAgentSeatLimit(plan)
 
-  const cacheKey = planLimitCacheKey(agencyId, category)
+  const cacheKey = planLimitCacheKey(agencyId)
   let current: number
 
   // Cache hit
@@ -225,11 +167,11 @@ export async function checkPlanLimit(
     current = Number(cached)
   } else {
     // Cache miss — read from DB and populate cache
-    const counted = await countSeats(admin, agencyId, category)
+    const counted = await countSeats(admin, agencyId)
     if (counted === null) {
       // Count failed — fail CLOSED. Do NOT cache the error value.
       throw new PlanLimitUnavailableError(
-        new Error(`countSeats returned null for agency ${agencyId}:${category}`)
+        new Error(`countSeats returned null for agency ${agencyId}`)
       )
     }
     current = counted
@@ -240,13 +182,48 @@ export async function checkPlanLimit(
 }
 
 /**
- * Invalidate the cached seat count for a given agency + category.
+ * Invalidate the cached agent seat count for an agency.
  * Call this after a successful member add or remove, and on plan change.
  */
 export async function invalidatePlanLimitCache(
   cache: CacheClient,
-  agencyId: string,
-  category: MemberCategory
+  agencyId: string
 ): Promise<void> {
-  await cache.del(planLimitCacheKey(agencyId, category))
+  await cache.del(planLimitCacheKey(agencyId))
+}
+
+/**
+ * Convenience wrapper: check whether one more agent seat can be added.
+ * Delegates entirely to checkPlanLimit — same fail-closed semantics.
+ *
+ * @param admin    - Service-role Supabase client.
+ * @param cache    - Redis-compatible cache client.
+ * @param agencyId - UUID of the agency being checked.
+ */
+export async function canAddAgent(
+  admin: SupabaseClient,
+  cache: CacheClient,
+  agencyId: string
+): Promise<GateResult> {
+  return checkPlanLimit(admin, cache, agencyId)
+}
+
+/**
+ * Pure helper: returns true if uploading `incomingBytes` would keep the
+ * agency within its storage cap.
+ *
+ * The caller is responsible for supplying the correct `storageLimitBytes`
+ * (e.g. from `getStorageLimitBytes(plan)` or the agencies.storage_limit_bytes column).
+ * This function performs no DB or cache access.
+ *
+ * @param usedBytes          - Current bytes consumed by the agency.
+ * @param incomingBytes      - Size of the file about to be uploaded.
+ * @param storageLimitBytes  - The agency's storage cap in bytes.
+ */
+export function canUploadVideo(
+  usedBytes: number,
+  incomingBytes: number,
+  storageLimitBytes: number
+): boolean {
+  return usedBytes + incomingBytes <= storageLimitBytes
 }

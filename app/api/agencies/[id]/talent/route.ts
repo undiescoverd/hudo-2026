@@ -2,12 +2,11 @@
  * POST /api/agencies/[id]/talent
  *
  * Adds a new talent member to an agency.
- * Checks the plan seat limit before inserting.
+ * Talent seats are unlimited — no plan gate.
  *
  * Security:
  * - Authenticated users only (401)
  * - Caller must hold owner | admin_agent role in the target agency (403)
- * - Seat limit checked against plan — 402 on overflow
  * - Rate-limited: 20 requests / 60s per agency
  */
 
@@ -17,12 +16,6 @@ import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import { isValidUUID } from '@/lib/validation'
 import { checkRateLimit } from '@/lib/api-helpers'
-import {
-  checkPlanLimit,
-  invalidatePlanLimitCache,
-  PlanLimitUnavailableError,
-} from '@/lib/plan-gates'
-
 // Roles that may add talent members (owner and admin_agent only)
 const ADD_TALENT_ROLES = new Set(['owner', 'admin_agent'])
 
@@ -113,26 +106,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   const newUserId = b.user_id
 
-  // ---- Plan gate -----------------------------------------------------------
-  const { redis } = await import('@/lib/redis')
-
-  let gate: Awaited<ReturnType<typeof checkPlanLimit>>
-  try {
-    gate = await checkPlanLimit(admin, redis, agencyId, 'talent')
-  } catch (err) {
-    if (err instanceof PlanLimitUnavailableError) {
-      console.error('[agencies/[id]/talent:POST] Plan gate unavailable:', err)
-      return NextResponse.json({ error: 'seat_count_unavailable' }, { status: 503 })
-    }
-    throw err
-  }
-  if (!gate.allowed) {
-    return NextResponse.json(
-      { error: 'plan_limit_exceeded', limit: gate.limit, current: gate.current },
-      { status: 402 }
-    )
-  }
-
   // ---- Insert membership ---------------------------------------------------
   const { data: newMembership, error: insertError } = await admin
     .from('memberships')
@@ -151,9 +124,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     console.error('[agencies/[id]/talent:POST] Insert failed:', insertError)
     return NextResponse.json({ error: 'Failed to add talent member' }, { status: 500 })
   }
-
-  // ---- Invalidate cache after successful add --------------------------------
-  await invalidatePlanLimitCache(redis, agencyId, 'talent')
 
   return NextResponse.json({ membership: newMembership }, { status: 201 })
 }

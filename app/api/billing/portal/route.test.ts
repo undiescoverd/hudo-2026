@@ -106,13 +106,13 @@ describe('billing/portal route — source invariants', () => {
 
 // ---------------------------------------------------------------------------
 // Pure logic: plan tier ordering (used by BillingOverview — validated here
-// against the static PLAN_LIMITS to catch drift)
+// against PLAN_IDS from lib/plans to catch drift)
 // ---------------------------------------------------------------------------
 
 describe('plan tier ordering', () => {
   it('paid plans ordered lowest to highest: starter < studio < agency_pro', () => {
     // This ordering is used by BillingOverview to render upgrade buttons.
-    // If PLAN_LIMITS keys or the ordered list drifts, this test catches it.
+    // If PLANS/PLAN_IDS or the ordered list drifts, this test catches it.
     const TIER_ORDER = ['freemium', 'starter', 'studio', 'agency_pro']
     const paidTiers = TIER_ORDER.filter((p) => p !== 'freemium')
     assert.deepEqual(paidTiers, ['starter', 'studio', 'agency_pro'])

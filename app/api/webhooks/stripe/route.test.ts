@@ -342,22 +342,26 @@ describe('POST /api/webhooks/stripe', () => {
 // ---------------------------------------------------------------------------
 
 describe('billing status mapping (AC5 — plan/status derivation)', () => {
-  it('getPlanFromPriceId returns correct plan for test live price IDs', async () => {
-    const { getPlanFromPriceId } = await import('@/lib/stripe')
-    assert.equal(getPlanFromPriceId('price_1Tj85JPE8Ih3LOAA2sQEqx1D'), 'starter')
-    assert.equal(getPlanFromPriceId('price_1Tj85KPE8Ih3LOAA3nTZcplc'), 'studio')
-    assert.equal(getPlanFromPriceId('price_1Tj85LPE8Ih3LOAAwghsraL5'), 'agency_pro')
-    assert.equal(getPlanFromPriceId('price_1Tj85HPE8Ih3LOAAztAGBtDJ'), 'freemium')
+  it('getPlanFromPrice resolves legacy test price IDs via grandfathering (no lookup_key)', async () => {
+    const { getPlanFromPrice } = await import('@/lib/stripe')
+    // Legacy test price IDs have no lookup_key — must resolve via LEGACY_PRICE_ID_TO_PLAN
+    const makePrice = (id: string) => ({ id, lookup_key: null }) as unknown as Stripe.Price
+    assert.equal(getPlanFromPrice(makePrice('price_1Tj85JPE8Ih3LOAA2sQEqx1D')), 'starter')
+    assert.equal(getPlanFromPrice(makePrice('price_1Tj85KPE8Ih3LOAA3nTZcplc')), 'studio')
+    assert.equal(getPlanFromPrice(makePrice('price_1Tj85LPE8Ih3LOAAwghsraL5')), 'agency_pro')
+    assert.equal(getPlanFromPrice(makePrice('price_1Tj85HPE8Ih3LOAAztAGBtDJ')), 'freemium')
   })
 
-  it('getPlanFromPriceId returns freemium for unknown price ID', async () => {
-    const { getPlanFromPriceId } = await import('@/lib/stripe')
-    assert.equal(getPlanFromPriceId('price_unknown_xyz'), 'freemium')
+  it('getPlanFromPrice returns freemium for a price with unknown id and no lookup_key', async () => {
+    const { getPlanFromPrice } = await import('@/lib/stripe')
+    const price = { id: 'price_unknown_xyz', lookup_key: null } as unknown as Stripe.Price
+    assert.equal(getPlanFromPrice(price), 'freemium')
   })
 
-  it('getPlanFromPriceId covers live price IDs', async () => {
-    const { getPlanFromPriceId } = await import('@/lib/stripe')
-    assert.equal(getPlanFromPriceId('price_1Tj62rACrrYvovCO7KSCJoNG'), 'starter')
-    assert.equal(getPlanFromPriceId('price_1Tj62rACrrYvovCOJSq5bDTe'), 'studio')
+  it('getPlanFromPrice resolves a lookup_key (new-style price, overrides legacy id)', async () => {
+    const { getPlanFromPrice } = await import('@/lib/stripe')
+    // A price carrying a lookup_key should resolve via the lookup_key path
+    const price = { id: 'price_any', lookup_key: 'starter_monthly' } as unknown as Stripe.Price
+    assert.equal(getPlanFromPrice(price), 'starter')
   })
 })

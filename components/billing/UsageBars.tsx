@@ -4,11 +4,12 @@
  * UsageBars — displays agent seats, talent seats, and storage usage as
  * labeled progress bars.
  *
- * Agent/talent limits come from PLAN_LIMITS in @/lib/plan-gates.
+ * Agent/storage limits come from lib/plans (getPlan). Talent is unlimited
+ * on every tier — displayed as a count with an "Unlimited" hint, no bar fill.
  * Storage limit is passed directly (storage_limit_bytes column from agencies).
  */
 
-import { PLAN_LIMITS } from '@/lib/plan-gates'
+import { getPlan } from '@/lib/plans'
 
 export interface UsageBarsProps {
   plan: string
@@ -18,7 +19,10 @@ export interface UsageBarsProps {
   storageLimitBytes: number
 }
 
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1_099_511_627_776) {
+    return `${(bytes / 1_099_511_627_776).toFixed(1)} TB`
+  }
   if (bytes >= 1_073_741_824) {
     return `${(bytes / 1_073_741_824).toFixed(1)} GB`
   }
@@ -77,25 +81,28 @@ export function UsageBars({
   storageUsedBytes,
   storageLimitBytes,
 }: UsageBarsProps) {
-  // Fall back to freemium limits for unknown plans
-  const limits = PLAN_LIMITS[plan] ?? PLAN_LIMITS.freemium
+  const planData = getPlan(plan)
 
   return (
     <div className="space-y-5">
       <ProgressBar
         label="Agents"
         current={agentCount}
-        limit={limits.agents}
+        limit={planData.agentSeats}
         currentLabel={String(agentCount)}
-        limitLabel={`${limits.agents} agents`}
+        limitLabel={`${planData.agentSeats} agents`}
       />
-      <ProgressBar
-        label="Talent"
-        current={talentCount}
-        limit={limits.talent}
-        currentLabel={String(talentCount)}
-        limitLabel={`${limits.talent} talent`}
-      />
+
+      {/* Talent is unlimited — show count + hint, no progress bar */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-sm">
+          <span className="font-medium">Talent</span>
+          <span className="text-muted-foreground tabular-nums">
+            {talentCount} <span className="text-xs font-normal">Unlimited</span>
+          </span>
+        </div>
+      </div>
+
       <ProgressBar
         label="Storage"
         current={storageUsedBytes}

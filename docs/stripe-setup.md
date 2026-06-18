@@ -43,7 +43,9 @@ Set to `true` only when you have:
 | Studio | `prod_UiZDAGVOImSDEZ` | `price_1Tj85KPE8Ih3LOAA3nTZcplc` | £149/mo |
 | Agency Pro | `prod_UiZDU8ILLkJ22m` | `price_1Tj85LPE8Ih3LOAAwghsraL5` | £349/mo |
 
-To re-bootstrap test mode resources: `node --env-file=.env.local scripts/setup-stripe-test.mjs` (idempotent).
+> **Note:** the price IDs above are the **legacy** £49/£149/£349 prices. As of the pricing rebuild they are archived (`active:false`) and grandfathered for existing subscribers via `LEGACY_PRICE_ID_TO_PLAN` in `lib/stripe.ts`. New prices are resolved by `lookup_key` (see `lib/plans.ts`), not by hardcoded ID.
+
+To (re-)bootstrap Stripe resources (mode chosen by the `STRIPE_SECRET_KEY` prefix, idempotent): `node --import tsx --env-file=.env.local scripts/setup-stripe.ts`. Verify code↔Stripe consistency with `node --import tsx --env-file=.env.local scripts/verify-plan-consistency.ts`.
 
 Coupon: `FOUNDING_50` — 50% off for 12 months, exists in both modes (applied at checkout when `agencies.is_founding_member = true`)
 

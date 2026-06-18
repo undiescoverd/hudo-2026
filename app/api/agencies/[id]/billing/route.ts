@@ -30,7 +30,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { isValidUUID } from '@/lib/validation'
 import { checkRateLimit } from '@/lib/api-helpers'
 import { isBillingEnabled } from '@/lib/feature-flags'
-import { getStripe, getStripePriceId, FOUNDING_COUPON } from '@/lib/stripe'
+import { getStripe, resolvePriceId, getCheckoutLookupKey, FOUNDING_COUPON } from '@/lib/stripe'
 import { logEvent } from '@/lib/audit'
 import {
   validateCheckoutPreconditions,
@@ -233,6 +233,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   const plan = b.plan
 
+  if (b.interval !== undefined && b.interval !== 'month' && b.interval !== 'year') {
+    return NextResponse.json({ error: 'interval must be month or year' }, { status: 400 })
+  }
+  const interval = b.interval === 'year' ? 'year' : 'month'
+
   // ---- Fetch agency from DB (validate preconditions against DB, not request body) ----
   const { data: agency, error: agencyError } = await admin
     .from('agencies')
@@ -263,10 +268,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   try {
     const stripe = getStripe()
     const agencyData = agency as AgencyCheckoutData
+    const priceId = await resolvePriceId(getCheckoutLookupKey(plan, interval))
     const sessionParams = buildCheckoutSessionParams(agencyData, plan, {
       successUrl,
       cancelUrl,
-      priceId: getStripePriceId(plan),
+      priceId,
       coupon: agencyData.is_founding_member ? FOUNDING_COUPON : null,
     })
     const session = await stripe.checkout.sessions.create(sessionParams)
@@ -293,7 +299,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     agencyId,
     actorId: user.id,
     actorName,
-    metadata: { plan, checkout: 'initiated' },
+    metadata: { plan, interval, checkout: 'initiated' },
   }).catch((err) =>
     console.error('[agencies/[id]/billing:POST] logEvent unhandled rejection:', err)
   )
