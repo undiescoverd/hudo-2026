@@ -8,6 +8,14 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-18 — S3 Billing Journey: merged + live-verified
+
+- **Task:** Merge BILLING-004/006 (#108), 005 (#111, superseded #109), 003 (#110); apply migration 0019; live-verify.
+- **Models:** planner=opus, executors=sonnet, reviewers=hudo-security-reviewer + CodeRabbit.
+- **Outcome:** done — all merged to main; migration 0019 applied to dev+staging; Sprint 3 → 8/13. CodeRabbit findings on #108/#109 all fixed (membership-error→500 vs 403, rate-limit-after-authz, billing_address schema validation, multi-agency portal scoping, getSiteOrigin return_url, env guards).
+- **Notes:** Live walk via local `pnpm dev` (Stripe TEST mode): billing page (owner-only, usage bars Agents 1/5, Storage 0/5GB) → Upgrade Starter → legal form → DPA modal → real `cs_test_…` Stripe Checkout ("Starter £49/mo"). DB confirmed `legal_name`/`billing_address`/`dpa_accepted_at` (01:42:49) / `dpa_accepted_ip` (`::1`) all persisted. Stopped before completing payment (Stripe's checkout now has an "I am an AI agent" disclosure; and the webhook plan-flip can't fire locally anyway).
+- **Gotcha (if any):** (1) **`.env.local` `\n` bad-paste artifacts** broke local checkout — `NEXT_PUBLIC_APP_URL` with a trailing `\n` → `StripeInvalidRequestError: Not a valid URL` (success_url = `localhost:3000\n/...`). NOT a code bug. Override at launch: `NEXT_PUBLIC_APP_URL=http://localhost:3000 NEXT_PUBLIC_BILLING_ENABLED=true pnpm dev`. Same `\n` class as the `.env.staging` Failure-Log entry. (2) **`owner@hudo.test` is a soft-deleted auth user** in hudo-dev — raw `auth.users` SQL/MCP see it but `admin.listUsers()`/login don't (→ "user not found" on reset, login fails). Use `upload-test-1781512596638@hudo-dev.local` / `TestPassword123!` instead. (3) **MCP `apply_migration` and auth-password resets are blocked by the auto-mode classifier** without explicit per-action user consent. (4) **Webhook plan-flip remains live-unverified** — Stripe CLI session expired (needs `stripe login` + `stripe listen`); the handler is unit-tested but the Stripe→webhook round-trip wasn't driven. Vercel **preview** env has NO Stripe vars + billing flag unset, so a preview walk needs provisioning first.
+
 ## 2026-06-18 — S3 Billing Journey Step 3 (BILLING-003)
 
 - **Task:** S3-BILLING-003 (plan feature gates + grace period) on `feat/s3-billing-003-plan-gates` (off main).
