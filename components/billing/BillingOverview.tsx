@@ -196,7 +196,13 @@ export function BillingOverview({
 
   const planData = getPlan(plan)
   const currentTierIndex = (PLAN_IDS as readonly string[]).indexOf(plan)
-  const upgradablePlans = PLAN_IDS.slice(currentTierIndex + 1) as PlanId[]
+  // Only tiers ABOVE the current one are upgradable, and never freemium (it is
+  // not a paid upgrade). The `!== 'freemium'` filter also guards the unknown-plan
+  // case where indexOf returns -1 → slice(0) would otherwise include freemium and
+  // render a nonsensical "Upgrade to Freemium (£0)" card.
+  const upgradablePlans = PLAN_IDS.slice(currentTierIndex + 1).filter(
+    (p) => p !== 'freemium'
+  ) as PlanId[]
 
   const renewalDate = currentPeriodEnd
     ? new Date(currentPeriodEnd).toLocaleDateString('en-GB', {

@@ -9,7 +9,13 @@
  * Storage limit is passed directly (storage_limit_bytes column from agencies).
  */
 
-import { getPlan } from '@/lib/plans'
+import { getPlan, GiB } from '@/lib/plans'
+
+// Binary byte scales derived from the single GiB source in lib/plans.ts — no
+// second copy of the byte convention (the PR's single-source thesis).
+const TiB = GiB * 1024
+const MiB = 1024 ** 2
+const KiB = 1024
 
 export interface UsageBarsProps {
   plan: string
@@ -20,16 +26,16 @@ export interface UsageBarsProps {
 }
 
 export function formatBytes(bytes: number): string {
-  if (bytes >= 1_099_511_627_776) {
-    return `${(bytes / 1_099_511_627_776).toFixed(1)} TB`
+  if (bytes >= TiB) {
+    return `${(bytes / TiB).toFixed(1)} TB`
   }
-  if (bytes >= 1_073_741_824) {
-    return `${(bytes / 1_073_741_824).toFixed(1)} GB`
+  if (bytes >= GiB) {
+    return `${(bytes / GiB).toFixed(1)} GB`
   }
-  if (bytes >= 1_048_576) {
-    return `${(bytes / 1_048_576).toFixed(1)} MB`
+  if (bytes >= MiB) {
+    return `${(bytes / MiB).toFixed(1)} MB`
   }
-  return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / KiB).toFixed(0)} KB`
 }
 
 function ProgressBar({
