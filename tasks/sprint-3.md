@@ -113,13 +113,13 @@ NOTES: L — security surface (signature validation, billing state). Run devseco
 
 ---
 
-- [ ] **S3-BILLING-004** — Collect legal entity data for invoices
+- [x] **S3-BILLING-004** — Collect legal entity data for invoices
 
 TASK_ID: S3-BILLING-004
 TITLE: Collect legal entity data for invoices
 BRANCH: feat/s3-billing-004-legal-entity
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S3-BILLING-001
 ACCEPTANCE_CRITERIA:
   - Settings → Billing: form collects legal name, billing address, VAT number (optional) before plan upgrade
@@ -133,13 +133,13 @@ NOTES: M — NO new migration needed: legal_name, billing_address, vat_number, d
 
 ---
 
-- [ ] **S3-BILLING-006** — DPA acceptance gate
+- [x] **S3-BILLING-006** — DPA acceptance gate
 
 TASK_ID: S3-BILLING-006
 TITLE: DPA acceptance gate
 BRANCH: feat/s3-billing-006-dpa-gate
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S3-BILLING-001
 ACCEPTANCE_CRITERIA:
   - Data Processing Agreement presented to agency owner before any paid plan activates
@@ -158,13 +158,13 @@ NOTES: M — depends on BILLING-004 for the migration (dpa_accepted_at / dpa_acc
 
 ---
 
-- [ ] **S3-BILLING-003** — Implement full plan feature gates
+- [x] **S3-BILLING-003** — Implement full plan feature gates
 
 TASK_ID: S3-BILLING-003
 TITLE: Implement full plan feature gates
 BRANCH: feat/s3-billing-003-plan-gates
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S3-BILLING-002
 ACCEPTANCE_CRITERIA:
   - Storage hard cap enforced at plan level — upload blocked when agency storage_usage >= plan limit
@@ -182,13 +182,13 @@ NOTES: M — extends S2-GATE-001 seat gates. Run devsecops-security-engineer gat
 
 ---
 
-- [ ] **S3-BILLING-005** — Build billing UI
+- [x] **S3-BILLING-005** — Build billing UI
 
 TASK_ID: S3-BILLING-005
 TITLE: Build billing UI
 BRANCH: feat/s3-billing-005-billing-ui
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S3-BILLING-002
 ACCEPTANCE_CRITERIA:
   - Settings → Billing page: current plan name, usage bars (agents, talent, storage vs plan limits), next renewal date, payment method summary
