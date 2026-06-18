@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
+import { isBillingEnabled } from '@/lib/feature-flags'
 
 type Props = {
   displayName: string
@@ -46,6 +47,11 @@ export function AppHeader({ displayName, role }: Props) {
         <div className="ml-auto flex items-center gap-3">
           <span className="text-sm text-muted-foreground hidden sm:block">{displayName}</span>
           <NotificationBell />
+          {isBillingEnabled() && (
+            <Link href="/settings/billing" className={navClass('/settings/billing')}>
+              Billing
+            </Link>
+          )}
           <Link href="/settings/notifications" className={navClass('/settings/notifications')}>
             Settings
           </Link>
