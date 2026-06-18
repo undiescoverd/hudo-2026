@@ -29,21 +29,74 @@ export interface PlanLimits {
   agents: number
   /** Max seats for the talent role. */
   talent: number
+  /** Max storage in bytes. */
+  storage: number
 }
 
 /**
- * Static seat limits per plan.
+ * Static seat and storage limits per plan.
  * These are intentionally configurable here — swap for DB/remote config later.
+ *
+ * Storage byte values:
+ *   freemium:   5_368_709_120 bytes (5GB   — matches agencies.storage_limit_bytes default)
+ *   starter:  107_374_182_400 bytes (100GB)
+ *   studio:   536_870_912_000 bytes (500GB)
+ *   agency_pro: 2_199_023_255_552 bytes (2TB)
  */
 export const PLAN_LIMITS: Record<string, PlanLimits> = {
-  freemium: { agents: 5, talent: 10 },
-  starter: { agents: 10, talent: 25 },
-  studio: { agents: 25, talent: 75 },
-  agency_pro: { agents: 100, talent: 300 },
+  freemium: { agents: 5, talent: 10, storage: 5_368_709_120 },
+  starter: { agents: 10, talent: 25, storage: 107_374_182_400 },
+  studio: { agents: 25, talent: 75, storage: 536_870_912_000 },
+  agency_pro: { agents: 100, talent: 300, storage: 2_199_023_255_552 },
 }
 
 /** Fallback for unknown plan strings. */
 const DEFAULT_LIMITS: PlanLimits = PLAN_LIMITS.freemium
+
+// ---------------------------------------------------------------------------
+// Storage limit helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the storage limit in bytes for a given plan name.
+ * Falls back to the freemium limit for unknown plan strings.
+ */
+export function getPlanStorageLimitBytes(plan: string): number {
+  return PLAN_LIMITS[plan]?.storage ?? PLAN_LIMITS.freemium.storage
+}
+
+// ---------------------------------------------------------------------------
+// Grace-period helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when a past_due agency's grace window has expired.
+ *
+ * Semantics:
+ *   - `subscriptionStatus !== 'past_due'` → false (not past due, no block)
+ *   - `gracePeriodEndsAt === null`         → false (no grace window recorded yet)
+ *   - `now <= gracePeriodEndsAt`           → false (still inside the grace window)
+ *   - `now > gracePeriodEndsAt`            → true  (window elapsed, block the action)
+ *
+ * Pure and synchronous — no side-effects, fully unit-testable without mocks.
+ *
+ * @param args.subscriptionStatus - agencies.subscription_status value (or null).
+ * @param args.gracePeriodEndsAt  - agencies.grace_period_ends_at ISO string (or null).
+ * @param args.now                - Current time (defaults to new Date()). Inject in tests.
+ */
+export function isGracePeriodExpired({
+  subscriptionStatus,
+  gracePeriodEndsAt,
+  now = new Date(),
+}: {
+  subscriptionStatus: string | null
+  gracePeriodEndsAt: string | null
+  now?: Date
+}): boolean {
+  if (subscriptionStatus !== 'past_due') return false
+  if (!gracePeriodEndsAt) return false
+  return now > new Date(gracePeriodEndsAt)
+}
 
 /** Roles counted in the "agents" category. */
 export const AGENT_SEAT_ROLES = ['owner', 'admin_agent', 'agent'] as const

@@ -5,6 +5,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getSiteOrigin } from '@/lib/site-url'
 import { logEvent } from '@/lib/audit'
+import { isGracePeriodExpired } from '@/lib/plan-gates'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -116,6 +117,33 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // Grace-period check: past_due agencies beyond their 7-day window cannot send new invites.
+  const { data: agencyBilling, error: agencyBillingError } = await admin
+    .from('agencies')
+    .select('name, subscription_status, grace_period_ends_at')
+    .eq('id', agencyId)
+    .single()
+
+  // Fail closed — a DB error must not silently bypass the grace gate.
+  if (agencyBillingError) {
+    return NextResponse.json(
+      { error: 'Unable to verify plan status — please try again.' },
+      { status: 503 }
+    )
+  }
+
+  if (
+    isGracePeriodExpired({
+      subscriptionStatus: agencyBilling?.subscription_status ?? null,
+      gracePeriodEndsAt: agencyBilling?.grace_period_ends_at ?? null,
+    })
+  ) {
+    return NextResponse.json(
+      { error: 'Your plan is past due — please update payment to continue sending invitations.' },
+      { status: 402 }
+    )
+  }
+
   // Check for existing pending invitation (same email + agency, not expired, not accepted)
   const { data: existing } = await admin
     .from('invitations')
@@ -159,8 +187,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create invitation' }, { status: 500 })
   }
 
-  // Get agency name for the email
-  const { data: agency } = await admin.from('agencies').select('name').eq('id', agencyId).single()
+  // Agency name is already available from the agencyBilling query above.
+  const agencyName = agencyBilling?.name ?? 'an agency'
 
   const origin = getSiteOrigin(request)
   const inviteUrl = `${origin}/auth/invite/${tokenHex}`
@@ -170,14 +198,14 @@ export async function POST(request: NextRequest) {
     const { sendEmail } = await import('@/lib/email')
     await sendEmail({
       to: email.trim().toLowerCase(),
-      subject: `You've been invited to join ${agency?.name ?? 'an agency'} on Hudo`,
+      subject: `You've been invited to join ${agencyName} on Hudo`,
       html: `
-        <p>You've been invited to join <strong>${agency?.name ?? 'an agency'}</strong> on Hudo as a <strong>${role.replaceAll('_', ' ')}</strong>.</p>
+        <p>You've been invited to join <strong>${agencyName}</strong> on Hudo as a <strong>${role.replaceAll('_', ' ')}</strong>.</p>
         <p><a href="${inviteUrl}">Accept invitation</a></p>
         <p>This invitation expires in 7 days.</p>
         <p>If you didn't expect this invitation, you can safely ignore this email.</p>
       `,
-      text: `You've been invited to join ${agency?.name ?? 'an agency'} on Hudo as a ${role.replaceAll('_', ' ')}.\n\nAccept invitation: ${inviteUrl}\n\nThis invitation expires in 7 days.`,
+      text: `You've been invited to join ${agencyName} on Hudo as a ${role.replaceAll('_', ' ')}.\n\nAccept invitation: ${inviteUrl}\n\nThis invitation expires in 7 days.`,
     })
   } catch (err) {
     // Graceful fallback: log invite URL if email fails (e.g. RESEND_API_KEY not set in dev)

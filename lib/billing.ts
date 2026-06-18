@@ -26,6 +26,7 @@
 import type Stripe from 'stripe'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getPlanFromPriceId } from '@/lib/stripe'
+import { getPlanStorageLimitBytes } from '@/lib/plan-gates'
 
 // ---------------------------------------------------------------------------
 // Admin client factory (service-role — bypasses RLS for billing writes)
@@ -179,6 +180,9 @@ export async function handleCheckoutSessionCompleted(
       stripe_subscription_id: subscriptionId,
       plan,
       subscription_status: 'active',
+      storage_limit_bytes: getPlanStorageLimitBytes(plan),
+      // Clear any grace period from a prior past_due cycle on successful checkout.
+      grace_period_ends_at: null,
     },
     logPrefix: '[billing:checkout]',
     zeroRowMessage: `[billing:checkout] Zero rows updated for agency ${agencyId} — Stripe retry`,
@@ -222,9 +226,14 @@ export async function handleSubscriptionUpdated(
     stripe_subscription_id: subscription.id,
     plan,
     subscription_status: status,
+    storage_limit_bytes: getPlanStorageLimitBytes(plan),
   }
   if (currentPeriodEnd !== undefined) {
     updatePayload.current_period_end = currentPeriodEnd
+  }
+  // Clear any grace period when the subscription recovers to active or trialing.
+  if (status === 'active' || status === 'trialing') {
+    updatePayload.grace_period_ends_at = null
   }
 
   // Zero-row guard (inside the helper): subscription.updated can arrive before
@@ -258,6 +267,10 @@ export async function handleSubscriptionDeleted(
     payload: {
       subscription_status: 'canceled',
       plan: 'freemium',
+      // Reset the storage cap to freemium on cancellation — otherwise a downgraded
+      // agency keeps its paid storage limit indefinitely (and the grace gate never
+      // fires for 'canceled', only 'past_due').
+      storage_limit_bytes: getPlanStorageLimitBytes('freemium'),
     },
     logPrefix: '[billing:subscription.deleted]',
     zeroRowMessage: `[billing:subscription.deleted] Zero rows matched for customer ${customerId} — Stripe retry`,
@@ -285,10 +298,15 @@ export async function handleInvoicePaymentFailed(
     return
   }
 
+  // Derive the base timestamp from the invoice (UNIX seconds) if available;
+  // fall back to wall-clock time. Grace period = 7 days from the failed invoice.
+  const baseMs = typeof invoice.created === 'number' ? invoice.created * 1000 : Date.now()
+  const gracePeriodEndsAt = new Date(baseMs + 7 * 24 * 60 * 60 * 1000).toISOString()
+
   await updateAgencyOrThrow(admin, {
     column: 'stripe_customer_id',
     value: customerId,
-    payload: { subscription_status: 'past_due' },
+    payload: { subscription_status: 'past_due', grace_period_ends_at: gracePeriodEndsAt },
     logPrefix: '[billing:invoice.payment_failed]',
     zeroRowMessage: `[billing:invoice.payment_failed] Zero rows matched for customer ${customerId} — Stripe retry`,
   })

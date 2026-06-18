@@ -8,6 +8,14 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-18 — S3 Billing Journey Step 3 (BILLING-003)
+
+- **Task:** S3-BILLING-003 (plan feature gates + grace period) on `feat/s3-billing-003-plan-gates` (off main).
+- **Models:** planner=opus, executor=sonnet (build), reviewer=hudo-security-reviewer.
+- **Outcome:** done (pending PR + migration apply) — gate green; tests 94/94 (plan-gates 68, billing 26).
+- **Notes:** Migration `0019_agencies_grace_period.sql` adds `grace_period_ends_at`. `lib/plan-gates.ts`: added `storage` to PLAN_LIMITS + `getPlanStorageLimitBytes()` + pure `isGracePeriodExpired()`. `lib/billing.ts`: payment_failed sets `grace_period_ends_at = invoice.created + 7d`; checkout/subscription.updated set `storage_limit_bytes` from plan and clear grace on recovery; **subscription.deleted now resets storage_limit_bytes to freemium** (security-review Medium fix). presign + invitations/send routes get a grace-expired 402 block (fail-closed 503 on DB error — Low fix). Pre-existing storage cap kept. **Finding: the presign storage cap already existed (via storage_limit_bytes); the genuinely-missing work was the grace period + making storage_limit_bytes plan-derived (it was a static 5GB default, so paid plans never got more storage).**
+- **Gotcha (if any):** **MCP `apply_migration` to hudo-dev/staging is blocked by the auto-mode classifier without explicit per-change user consent** — shared-infra writes need the user to approve (or run `/apply-migration`). Migration 0019 is written + committed but NOT yet applied; the column must exist on both DBs before `NEXT_PUBLIC_BILLING_ENABLED=true` or the gate queries 500.
+
 ## 2026-06-18 — Unblock S3: land #102 + #104 + #106, clean main
 
 - **Task:** Plan "Unblock Sprint 3" (PRs #102 foundation, #104 webhook, #106 founding-member)
