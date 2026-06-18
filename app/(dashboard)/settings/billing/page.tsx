@@ -24,9 +24,15 @@ export default async function BillingSettingsPage() {
     )
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+    // Misconfiguration — fail loudly rather than letting createClient(url, undefined)
+    // produce opaque auth errors on every query.
+    throw new Error('[settings/billing] Missing Supabase environment variables')
+  }
 
   const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
@@ -41,12 +47,15 @@ export default async function BillingSettingsPage() {
   // Use service-role client to bypass RLS for membership + agency reads
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
-  // Resolve the user's owner membership (billing is owner-only)
+  // Resolve the user's owner membership (billing is owner-only).
+  // Order deterministically so a multi-agency owner always lands on the same
+  // agency (the portal route is scoped by this agencyId).
   const { data: ownerMembership } = await admin
     .from('memberships')
     .select('agency_id')
     .eq('user_id', user.id)
     .eq('role', 'owner')
+    .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle()
 
@@ -96,11 +105,17 @@ export default async function BillingSettingsPage() {
     dpa_accepted_at: string | null
   }
 
+  // Mirror LegalEntityForm's isAddressFilled + the PATCH validator: a saved
+  // address requires line1, city, postal_code (a partial/empty object is "not yet filled").
+  const addr = typedAgency.billing_address
+  const hasAddress =
+    !!addr &&
+    typeof addr === 'object' &&
+    (['line1', 'city', 'postal_code'] as const).every(
+      (f) => typeof addr[f] === 'string' && (addr[f] as string).trim() !== ''
+    )
   const hasLegalData =
-    !!typedAgency.legal_name &&
-    typedAgency.legal_name.trim() !== '' &&
-    !!typedAgency.billing_address &&
-    Object.keys(typedAgency.billing_address).length > 0
+    !!typedAgency.legal_name && typedAgency.legal_name.trim() !== '' && hasAddress
 
   const hasDpa = !!typedAgency.dpa_accepted_at
 
