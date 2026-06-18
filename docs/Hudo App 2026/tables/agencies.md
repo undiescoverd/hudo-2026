@@ -14,7 +14,7 @@ The top-level tenant entity. Every piece of data in the system belongs to an age
 | stripe_subscription_id | text | Nullable |
 | subscription_status | text | `active \| trialing \| past_due \| canceled` |
 | storage_usage_bytes | bigint | Incremented atomically via Postgres RPC |
-| storage_limit_bytes | bigint | Default 5GB (freemium). Updated on plan change. |
+| storage_limit_bytes | bigint | Default 10 GiB (freemium, per `lib/plans.ts`; migration 0021). Per-plan cap written on plan change by the Stripe webhook. |
 | legal_name | text | For invoices/DPA |
 | billing_address | jsonb | |
 | vat_number | text | UK VAT compliance |

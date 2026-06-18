@@ -50,14 +50,16 @@ Hudo provides:
 
 ## 1.5 Business Model
 
-SaaS subscription billed monthly. Four tiers:
+SaaS subscription billed monthly or annually (annual = 2 months free). Four tiers — **agent seats are the paid lever; talent (roster) is unlimited on every tier and never metered; guest reviewers are free and unlimited**:
 
-| Tier | Price | Agents | Talent | Storage |
-|---|---|---|---|---|
-| Freemium | £0 | 1 | 5 | 5GB |
-| Starter | £49/month | 5 | 50 | 50GB |
-| Studio | £149/month | 15 | 200 | 200GB |
-| Agency Pro | £349/month | Unlimited | Unlimited | 1TB |
+| Tier | Monthly | Annual | Agent seats | Talent | Storage |
+|---|---|---|---|---|---|
+| Freemium | £0 | £0 | 1 | Unlimited | 10GB |
+| Starter | £15/month | £150/year | 3 | Unlimited | 100GB |
+| Studio | £39/month | £390/year | 8 | Unlimited | 500GB |
+| Agency Pro | £89/month | £890/year | 20 | Unlimited | 1TB |
+
+The single source of truth for these numbers is **`lib/plans.ts`** (`PLANS`) — every gate, the Stripe catalogue, and the billing UI derive from it; the Stripe-side values are kept in sync by `scripts/setup-stripe.ts` and guarded by `scripts/verify-plan-consistency.ts`. Storage is a soft cap that only blocks new uploads (never playback/bandwidth).
 
 UK VAT applies. Stripe Tax handles VAT calculation and collection. Legal entity name, billing address, and VAT number are collected at plan activation for VAT-compliant invoices.
 
@@ -1104,6 +1106,8 @@ Examples: `S0-INFRA-001`, `S1-PLAYER-003`, `S3-BILLING-002`
 ---
 
 ### Billing
+
+> ⚠️ **Prices superseded by the pricing rebuild (2026-06-18):** Starter £15, Studio £39, Agency Pro £89 (monthly) + annual prices (2 months free), now managed via `scripts/setup-stripe.ts` from `lib/plans.ts`. The £49/£149/£349 below are the archived legacy prices. See the current-pricing table in §3 and [docs/stripe-setup.md](stripe-setup.md).
 
 **S3-BILLING-001** — Configure Stripe
 - Create products and prices: Freemium (free), Starter (£49/month), Studio (£149/month), Agency Pro (£349/month)

@@ -25,27 +25,29 @@ Set to `true` only when you have:
 
 ## Products & Prices
 
-### Live mode (created 2026-06-17)
+### Current catalogue (resolved by `lookup_key`)
 
-| Plan | Product ID | Price ID | Amount |
+The app **never** hardcodes price IDs — it resolves the Stripe price at runtime by `lookup_key` (`resolvePriceId` in `lib/stripe.ts`), and the canonical numbers live in `lib/plans.ts`. To find the actual price IDs in a given mode, run `verify-plan-consistency.ts` or look up the lookup_key in the Stripe dashboard.
+
+| Plan | Monthly `lookup_key` | Monthly | Annual `lookup_key` | Annual | Agent seats | Talent | Storage |
+|---|---|---|---|---|---|---|---|
+| Freemium | — (no Stripe price) | £0 | — | £0 | 1 | Unlimited | 10 GB |
+| Starter | `starter_monthly` | £15/mo | `starter_annual` | £150/yr | 3 | Unlimited | 100 GB |
+| Studio | `studio_monthly` | £39/mo | `studio_annual` | £390/yr | 8 | Unlimited | 500 GB |
+| Agency Pro | `agency_pro_monthly` | £89/mo | `agency_pro_annual` | £890/yr | 20 | Unlimited | 1 TB |
+
+To (re-)create/refresh this catalogue (mode chosen by the `STRIPE_SECRET_KEY` prefix; idempotent; archives any superseded prices; live mode requires a typed `YES` confirmation): `node --import tsx --env-file=<env> scripts/setup-stripe.ts`. Verify code↔Stripe consistency afterwards: `node --import tsx --env-file=<env> scripts/verify-plan-consistency.ts`.
+
+### Legacy prices (archived 2026-06-18 — grandfathered, do not delete)
+
+These are the original £49/£149/£349 prices created 2026-06-17. The pricing rebuild **archived** them (`active: false`) — existing subscribers stay on them and are mapped back to their plan via `LEGACY_PRICE_ID_TO_PLAN` in `lib/stripe.ts` (their old prices carry no `lookup_key`). They are never deleted and never offered at checkout.
+
+| Plan | Live Price ID | Test Price ID | Amount |
 |---|---|---|---|
-| Freemium | `prod_UiX6D3t5UhEVfH` | `price_1Tj62qACrrYvovCOdEQ8Na6A` | £0/mo |
-| Starter | `prod_UiX6DDbPQMJDtZ` | `price_1Tj62rACrrYvovCO7KSCJoNG` | £49/mo |
-| Studio | `prod_UiX6HVemJKoE18` | `price_1Tj62rACrrYvovCOJSq5bDTe` | £149/mo |
-| Agency Pro | `prod_UiX6dbqqLWAYE2` | `price_1Tj62sACrrYvovCOYFJ6Afa4` | £349/mo |
-
-### Test mode (created 2026-06-17)
-
-| Plan | Product ID | Price ID | Amount |
-|---|---|---|---|
-| Freemium | `prod_UiZD6zPtLWSZWw` | `price_1Tj85HPE8Ih3LOAAztAGBtDJ` | £0/mo |
-| Starter | `prod_UiZDph8eKoBqKt` | `price_1Tj85JPE8Ih3LOAA2sQEqx1D` | £49/mo |
-| Studio | `prod_UiZDAGVOImSDEZ` | `price_1Tj85KPE8Ih3LOAA3nTZcplc` | £149/mo |
-| Agency Pro | `prod_UiZDU8ILLkJ22m` | `price_1Tj85LPE8Ih3LOAAwghsraL5` | £349/mo |
-
-> **Note:** the price IDs above are the **legacy** £49/£149/£349 prices. As of the pricing rebuild they are archived (`active:false`) and grandfathered for existing subscribers via `LEGACY_PRICE_ID_TO_PLAN` in `lib/stripe.ts`. New prices are resolved by `lookup_key` (see `lib/plans.ts`), not by hardcoded ID.
-
-To (re-)bootstrap Stripe resources (mode chosen by the `STRIPE_SECRET_KEY` prefix, idempotent): `node --import tsx --env-file=.env.local scripts/setup-stripe.ts`. Verify code↔Stripe consistency with `node --import tsx --env-file=.env.local scripts/verify-plan-consistency.ts`.
+| Freemium | `price_1Tj62qACrrYvovCOdEQ8Na6A` | `price_1Tj85HPE8Ih3LOAAztAGBtDJ` | £0/mo |
+| Starter | `price_1Tj62rACrrYvovCO7KSCJoNG` | `price_1Tj85JPE8Ih3LOAA2sQEqx1D` | £49/mo |
+| Studio | `price_1Tj62rACrrYvovCOJSq5bDTe` | `price_1Tj85KPE8Ih3LOAA3nTZcplc` | £149/mo |
+| Agency Pro | `price_1Tj62sACrrYvovCOYFJ6Afa4` | `price_1Tj85LPE8Ih3LOAAwghsraL5` | £349/mo |
 
 Coupon: `FOUNDING_50` — 50% off for 12 months, exists in both modes (applied at checkout when `agencies.is_founding_member = true`)
 

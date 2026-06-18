@@ -477,6 +477,8 @@ The following changes were accepted after Codex review and are baked into v1.2:
 
 ### Plan Gating (Agent & Talent Count)
 
+> ⚠️ **Superseded by the pricing rebuild (2026-06-18).** Talent metering was **removed** — talent is unlimited on every tier, so there is no talent gate. Only **agent seats** are gated, and the seat counts changed (freemium 1, starter 3, studio 8, agency_pro 20). All limits now live in `lib/plans.ts` (`PLANS`). The acceptance criteria below describe the original S2 design and are kept for history. Current truth: adding a **2nd** agent to a freemium agency returns 402; talent is never blocked.
+
 **S2-GATE-001** — Implement agent and talent count plan gates
 - Middleware checks agency's current plan before allowing: adding agents beyond limit, adding talent beyond limit
 - Freemium: 1 agent, 5 talent. Starter: 5 agents, 50 talent. Studio: 15 agents, 200 talent. Agency Pro: unlimited.
@@ -589,6 +591,8 @@ The following changes were accepted after Codex review and are baked into v1.2:
 ---
 
 ### Billing
+
+> ⚠️ **Prices superseded by the pricing rebuild (2026-06-18):** now Starter £15, Studio £39, Agency Pro £89 (monthly), each with an annual price (2 months free), managed via `scripts/setup-stripe.ts` + `lib/plans.ts`. See [docs/stripe-setup.md](stripe-setup.md). The £49/£149/£349 below are the archived legacy prices.
 
 **S3-BILLING-001** — Configure Stripe
 - Create Stripe products and prices: Freemium (free), Starter (£49/month), Studio (£149/month), Agency Pro (£349/month)

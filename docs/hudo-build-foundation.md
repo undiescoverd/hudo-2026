@@ -481,14 +481,16 @@ CREATE POLICY "audit_log_select" ON audit_log
 
 ### 2.3 Storage Limit Reference
 
-Plan limits to use when setting `storage_limit_bytes` on agency creation or plan upgrade:
+> ⚠️ **Superseded by the pricing rebuild (2026-06-18):** these are now derived from `PLANS` in `lib/plans.ts` (`N * GiB`) and backfilled by migration `0021`. Current caps below.
+
+Per-plan `storage_limit_bytes` (canonical source: `lib/plans.ts`; written on plan change by the Stripe webhook):
 
 | Plan | `storage_limit_bytes` |
 |---|---|
-| freemium | 5,368,709,120 (5 GB) |
-| starter | 53,687,091,200 (50 GB) |
-| studio | 214,748,364,800 (200 GB) |
-| agency_pro | 1,099,511,627,776 (1 TB) |
+| freemium | 10,737,418,240 (10 GiB) |
+| starter | 107,374,182,400 (100 GiB) |
+| studio | 536,870,912,000 (500 GiB) |
+| agency_pro | 1,099,511,627,776 (1 TiB) |
 
 ---
 
