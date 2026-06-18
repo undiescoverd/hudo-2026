@@ -149,10 +149,6 @@ describe('billing checkout — validation rejects missing DPA acceptance', () =>
 })
 
 describe('billing checkout — session params include metadata.agency_id', () => {
-  before(() => {
-    process.env.STRIPE_SECRET_KEY = 'sk_test_stub000000000000000000'
-  })
-
   it('sets metadata.agency_id to the agency UUID', async () => {
     const { buildCheckoutSessionParams } = await import('@/lib/billing-checkout')
     const agencyId = 'aaaaaaaa-0000-0000-0000-000000000001'

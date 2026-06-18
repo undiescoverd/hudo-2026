@@ -64,6 +64,7 @@ export function validateCheckoutPreconditions(agency: AgencyCheckoutData): Valid
   if (
     !agency.billing_address ||
     typeof agency.billing_address !== 'object' ||
+    Array.isArray(agency.billing_address) ||
     Object.keys(agency.billing_address).length === 0
   ) {
     return {

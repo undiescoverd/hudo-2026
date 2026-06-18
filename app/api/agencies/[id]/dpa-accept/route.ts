@@ -68,7 +68,28 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
-  // ---- Rate limit ----------------------------------------------------------
+  // ---- Admin client (service-role, bypasses RLS) ---------------------------
+  const admin = createClient(supabaseUrl, serviceRoleKey)
+
+  // ---- Caller authz: must be owner in this agency --------------------------
+  // Distinguish a DB error (→500) from "no membership row" (PGRST116 → 403).
+  const { data: callerMembership, error: membershipError } = await admin
+    .from('memberships')
+    .select('role')
+    .eq('user_id', user.id)
+    .eq('agency_id', agencyId)
+    .single()
+
+  if (membershipError && membershipError.code !== 'PGRST116') {
+    console.error('[agencies/[id]/dpa-accept:POST] Membership lookup failed:', membershipError)
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+  }
+
+  if (!callerMembership || callerMembership.role !== 'owner') {
+    return NextResponse.json({ error: 'Access denied — owner role required' }, { status: 403 })
+  }
+
+  // ---- Rate limit (after authz — non-owners can't burn the shared key) -----
   const rateLimitResponse = await checkRateLimit(
     `dpa-accept:post:agency:${agencyId}`,
     DPA_RATE_LIMIT,
@@ -77,21 +98,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     'Too many requests'
   )
   if (rateLimitResponse) return rateLimitResponse
-
-  // ---- Admin client (service-role, bypasses RLS) ---------------------------
-  const admin = createClient(supabaseUrl, serviceRoleKey)
-
-  // ---- Caller authz: must be owner in this agency --------------------------
-  const { data: callerMembership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', agencyId)
-    .single()
-
-  if (!callerMembership || callerMembership.role !== 'owner') {
-    return NextResponse.json({ error: 'Access denied — owner role required' }, { status: 403 })
-  }
 
   // ---- Derive client IP from headers ----
   // On Vercel the original client IP is `x-real-ip` (single, unambiguous) and is

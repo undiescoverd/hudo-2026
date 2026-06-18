@@ -77,7 +77,30 @@ async function getAuthedOwner(request: NextRequest, agencyId: string) {
     return { error: NextResponse.json({ error: 'Authentication required' }, { status: 401 }) }
   }
 
-  // Rate limit by agency
+  const admin = createClient(supabaseUrl, serviceRoleKey)
+
+  // Owner-only check. Distinguish a genuine DB error (→500) from "no membership
+  // row" (PGRST116 → 403) so an outage isn't masked as an auth failure.
+  const { data: callerMembership, error: membershipError } = await admin
+    .from('memberships')
+    .select('role')
+    .eq('user_id', user.id)
+    .eq('agency_id', agencyId)
+    .single()
+
+  if (membershipError && membershipError.code !== 'PGRST116') {
+    console.error('[agencies/[id]/billing] Membership lookup failed:', membershipError)
+    return { error: NextResponse.json({ error: 'Server error' }, { status: 500 }) }
+  }
+
+  if (!callerMembership || callerMembership.role !== 'owner') {
+    return {
+      error: NextResponse.json({ error: 'Access denied — owner role required' }, { status: 403 }),
+    }
+  }
+
+  // Rate limit by agency — AFTER authorization, so a non-owner who knows an
+  // agency ID can't burn another agency's shared billing limit (429 DoS).
   const rateLimitResponse = await checkRateLimit(
     `billing:agency:${agencyId}`,
     BILLING_RATE_LIMIT,
@@ -86,22 +109,6 @@ async function getAuthedOwner(request: NextRequest, agencyId: string) {
     'Too many requests'
   )
   if (rateLimitResponse) return { error: rateLimitResponse }
-
-  const admin = createClient(supabaseUrl, serviceRoleKey)
-
-  // Owner-only check
-  const { data: callerMembership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', agencyId)
-    .single()
-
-  if (!callerMembership || callerMembership.role !== 'owner') {
-    return {
-      error: NextResponse.json({ error: 'Access denied — owner role required' }, { status: 403 }),
-    }
-  }
 
   return { user, admin }
 }
@@ -142,16 +149,22 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json({ error: 'legal_name is required' }, { status: 400 })
   }
 
+  // Validate the address schema (not just "non-empty object") so we don't persist
+  // arbitrary junk that still satisfies downstream non-empty checks. Required
+  // fields mirror LegalEntityForm's isAddressFilled: line1, city, postal_code.
   if (
     !b.billing_address ||
     typeof b.billing_address !== 'object' ||
-    Array.isArray(b.billing_address) ||
-    Object.keys(b.billing_address).length === 0
+    Array.isArray(b.billing_address)
   ) {
-    return NextResponse.json(
-      { error: 'billing_address must be a non-empty object' },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: 'billing_address must be an object' }, { status: 400 })
+  }
+  const addr = b.billing_address as Record<string, unknown>
+  const requiredAddressFields = ['line1', 'city', 'postal_code'] as const
+  for (const field of requiredAddressFields) {
+    if (typeof addr[field] !== 'string' || (addr[field] as string).trim() === '') {
+      return NextResponse.json({ error: `billing_address.${field} is required` }, { status: 400 })
+    }
   }
 
   const updatePayload: Record<string, unknown> = {
