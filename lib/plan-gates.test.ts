@@ -17,6 +17,8 @@ import {
   PLAN_LIMITS,
   PLAN_LIMIT_CACHE_TTL,
   PlanLimitUnavailableError,
+  getPlanStorageLimitBytes,
+  isGracePeriodExpired,
   type CacheClient,
 } from './plan-gates'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -501,5 +503,136 @@ describe('plan-gates.ts — source invariants', () => {
 
   it('countSeats returns null on error (fail-closed signal)', () => {
     assert.match(src, /return null/)
+  })
+
+  it('exports getPlanStorageLimitBytes function', () => {
+    assert.match(src, /export function getPlanStorageLimitBytes/)
+  })
+
+  it('exports isGracePeriodExpired function', () => {
+    assert.match(src, /export function isGracePeriodExpired/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getPlanStorageLimitBytes
+// ---------------------------------------------------------------------------
+
+describe('getPlanStorageLimitBytes', () => {
+  it('returns 5GB for freemium', () => {
+    assert.equal(getPlanStorageLimitBytes('freemium'), 5_368_709_120)
+  })
+
+  it('returns 100GB for starter', () => {
+    assert.equal(getPlanStorageLimitBytes('starter'), 107_374_182_400)
+  })
+
+  it('returns 500GB for studio', () => {
+    assert.equal(getPlanStorageLimitBytes('studio'), 536_870_912_000)
+  })
+
+  it('returns 2TB for agency_pro', () => {
+    assert.equal(getPlanStorageLimitBytes('agency_pro'), 2_199_023_255_552)
+  })
+
+  it('falls back to freemium (5GB) for unknown plan string', () => {
+    assert.equal(getPlanStorageLimitBytes('unknown_plan'), 5_368_709_120)
+  })
+
+  it('matches PLAN_LIMITS storage values exactly', () => {
+    for (const plan of ['freemium', 'starter', 'studio', 'agency_pro'] as const) {
+      assert.equal(getPlanStorageLimitBytes(plan), PLAN_LIMITS[plan].storage)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isGracePeriodExpired
+// ---------------------------------------------------------------------------
+
+describe('isGracePeriodExpired', () => {
+  const PAST_DUE_STATUS = 'past_due'
+  const ACTIVE_STATUS = 'active'
+
+  it('returns false when subscriptionStatus is not past_due (active)', () => {
+    const expired = isGracePeriodExpired({
+      subscriptionStatus: ACTIVE_STATUS,
+      gracePeriodEndsAt: '2020-01-01T00:00:00.000Z', // long past
+    })
+    assert.equal(expired, false)
+  })
+
+  it('returns false when subscriptionStatus is not past_due (trialing)', () => {
+    const expired = isGracePeriodExpired({
+      subscriptionStatus: 'trialing',
+      gracePeriodEndsAt: '2020-01-01T00:00:00.000Z',
+    })
+    assert.equal(expired, false)
+  })
+
+  it('returns false when subscriptionStatus is not past_due (null)', () => {
+    const expired = isGracePeriodExpired({
+      subscriptionStatus: null,
+      gracePeriodEndsAt: '2020-01-01T00:00:00.000Z',
+    })
+    assert.equal(expired, false)
+  })
+
+  it('returns false when gracePeriodEndsAt is null (no grace window recorded)', () => {
+    const expired = isGracePeriodExpired({
+      subscriptionStatus: PAST_DUE_STATUS,
+      gracePeriodEndsAt: null,
+    })
+    assert.equal(expired, false)
+  })
+
+  it('returns true when past_due AND grace window has elapsed', () => {
+    // Grace window ended 1 second ago
+    const past = new Date(Date.now() - 1000).toISOString()
+    const expired = isGracePeriodExpired({
+      subscriptionStatus: PAST_DUE_STATUS,
+      gracePeriodEndsAt: past,
+    })
+    assert.equal(expired, true)
+  })
+
+  it('returns false when past_due BUT still within the grace window', () => {
+    // Grace window ends in the future
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    const expired = isGracePeriodExpired({
+      subscriptionStatus: PAST_DUE_STATUS,
+      gracePeriodEndsAt: future,
+    })
+    assert.equal(expired, false)
+  })
+
+  it('accepts an injected now date for deterministic testing', () => {
+    const gracePeriodEndsAt = '2025-01-10T00:00:00.000Z'
+    // now is before the grace end → still within window
+    const withinWindow = isGracePeriodExpired({
+      subscriptionStatus: PAST_DUE_STATUS,
+      gracePeriodEndsAt,
+      now: new Date('2025-01-09T23:59:59.000Z'),
+    })
+    assert.equal(withinWindow, false)
+
+    // now is after the grace end → expired
+    const afterWindow = isGracePeriodExpired({
+      subscriptionStatus: PAST_DUE_STATUS,
+      gracePeriodEndsAt,
+      now: new Date('2025-01-10T00:00:01.000Z'),
+    })
+    assert.equal(afterWindow, true)
+  })
+
+  it('returns false when now equals grace end exactly (boundary: not strictly greater)', () => {
+    const gracePeriodEndsAt = '2025-06-01T12:00:00.000Z'
+    const expired = isGracePeriodExpired({
+      subscriptionStatus: PAST_DUE_STATUS,
+      gracePeriodEndsAt,
+      now: new Date(gracePeriodEndsAt), // exactly at boundary
+    })
+    // new Date(x) > new Date(x) is false — so boundary is not expired
+    assert.equal(expired, false)
   })
 })

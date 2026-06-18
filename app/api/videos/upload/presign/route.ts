@@ -14,6 +14,7 @@ import {
 } from '@/lib/upload-validation'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit, requireAgentRole } from '@/lib/api-helpers'
+import { isGracePeriodExpired } from '@/lib/plan-gates'
 
 /**
  * POST /api/videos/upload/presign
@@ -118,21 +119,49 @@ export async function POST(request: NextRequest) {
   )
   if (membership instanceof NextResponse) return membership
 
-  // --- Quota check (best-effort; authoritative check in complete route) ---
+  // --- Quota + grace-period check (best-effort; authoritative check in complete route) ---
 
-  const { data: agency } = await admin
+  const { data: agency, error: agencyError } = await admin
     .from('agencies')
-    .select('storage_usage_bytes, storage_limit_bytes')
+    .select('storage_usage_bytes, storage_limit_bytes, subscription_status, grace_period_ends_at')
     .eq('id', agencyId)
     .single()
 
-  if (agency && agency.storage_limit_bytes) {
-    const currentUsage = agency.storage_usage_bytes ?? 0
-    if (currentUsage + fileSizeBytes > agency.storage_limit_bytes) {
+  // Fail closed: this is the only enforcement point for the grace gate (the
+  // complete route does not re-check), so a DB error must not silently let a
+  // past-due agency through.
+  if (agencyError) {
+    return NextResponse.json(
+      { error: 'Unable to verify plan status — please try again.' },
+      { status: 503 }
+    )
+  }
+
+  if (agency) {
+    // Grace-period block: past_due beyond the 7-day window → no new uploads.
+    if (
+      isGracePeriodExpired({
+        subscriptionStatus: agency.subscription_status ?? null,
+        gracePeriodEndsAt: agency.grace_period_ends_at ?? null,
+      })
+    ) {
       return NextResponse.json(
-        { error: 'Storage quota exceeded. Please upgrade your plan or delete unused videos.' },
+        {
+          error: 'Your plan is past due — please update payment to continue uploading.',
+        },
         { status: 402 }
       )
+    }
+
+    // Storage quota check.
+    if (agency.storage_limit_bytes) {
+      const currentUsage = agency.storage_usage_bytes ?? 0
+      if (currentUsage + fileSizeBytes > agency.storage_limit_bytes) {
+        return NextResponse.json(
+          { error: 'Storage quota exceeded. Please upgrade your plan or delete unused videos.' },
+          { status: 402 }
+        )
+      }
     }
   }
 

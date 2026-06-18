@@ -343,6 +343,44 @@ describe('billing helpers', () => {
       assert.deepEqual(cap.filter, { stripe_customer_id: 'cus_test_abc' })
     })
 
+    it('sets grace_period_ends_at to 7 days from invoice.created', async () => {
+      const { handleInvoicePaymentFailed } = await import('./billing')
+      const admin = makeAdminStub()
+      // created = 2025-01-01T00:00:00Z in UNIX seconds
+      const createdSec = Math.floor(new Date('2025-01-01T00:00:00Z').getTime() / 1000)
+      const invoice = makeInvoice({ created: createdSec })
+
+      await handleInvoicePaymentFailed(invoice, { admin })
+
+      const cap = admin._captures[0]
+      const expected = new Date(createdSec * 1000 + 7 * 24 * 60 * 60 * 1000).toISOString()
+      assert.equal(
+        cap.values.grace_period_ends_at,
+        expected,
+        'grace_period_ends_at should be exactly invoice.created + 7 days as ISO string'
+      )
+    })
+
+    it('sets grace_period_ends_at to ~7 days from now when invoice.created is absent', async () => {
+      const { handleInvoicePaymentFailed } = await import('./billing')
+      const admin = makeAdminStub()
+      const before = Date.now()
+      // makeInvoice() does not include `created`
+      const invoice = makeInvoice()
+
+      await handleInvoicePaymentFailed(invoice, { admin })
+
+      const after = Date.now()
+      const cap = admin._captures[0]
+      const gracePeriod = new Date(cap.values.grace_period_ends_at as string).getTime()
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
+      // grace period should be ≈ now + 7 days (within a 5-second window for test jitter)
+      assert.ok(
+        gracePeriod >= before + sevenDaysMs - 5000 && gracePeriod <= after + sevenDaysMs + 5000,
+        `grace_period_ends_at (${cap.values.grace_period_ends_at}) should be ~7 days from now`
+      )
+    })
+
     it('throws when zero rows matched for stripe_customer_id', async () => {
       const { handleInvoicePaymentFailed } = await import('./billing')
       const admin = makeAdminStub(null, 0)
@@ -362,6 +400,102 @@ describe('billing helpers', () => {
       await handleInvoicePaymentFailed(invoice, { admin })
 
       assert.equal(admin._captures.length, 0)
+    })
+  })
+
+  describe('handleCheckoutSessionCompleted — storage + grace period', () => {
+    it('sets storage_limit_bytes matching the plan', async () => {
+      const { handleCheckoutSessionCompleted } = await import('./billing')
+      const { getPlanStorageLimitBytes } = await import('./plan-gates')
+      const admin = makeAdminStub()
+      const session = makeCheckoutSession() // starter price → plan='starter'
+
+      await handleCheckoutSessionCompleted(session, { admin })
+
+      const cap = admin._captures[0]
+      assert.equal(
+        cap.values.storage_limit_bytes,
+        getPlanStorageLimitBytes('starter'),
+        'storage_limit_bytes should match the starter plan limit'
+      )
+    })
+
+    it('clears grace_period_ends_at (sets to null) on successful checkout', async () => {
+      const { handleCheckoutSessionCompleted } = await import('./billing')
+      const admin = makeAdminStub()
+      const session = makeCheckoutSession()
+
+      await handleCheckoutSessionCompleted(session, { admin })
+
+      const cap = admin._captures[0]
+      assert.equal(
+        cap.values.grace_period_ends_at,
+        null,
+        'grace_period_ends_at should be null after a successful checkout'
+      )
+    })
+  })
+
+  describe('handleSubscriptionUpdated — storage + grace period', () => {
+    it('sets storage_limit_bytes matching the plan', async () => {
+      const { handleSubscriptionUpdated } = await import('./billing')
+      const { getPlanStorageLimitBytes } = await import('./plan-gates')
+      const admin = makeAdminStub()
+      const subscription = makeSubscription() // studio price → plan='studio'
+
+      await handleSubscriptionUpdated(subscription, { admin })
+
+      const cap = admin._captures[0]
+      assert.equal(
+        cap.values.storage_limit_bytes,
+        getPlanStorageLimitBytes('studio'),
+        'storage_limit_bytes should match the studio plan limit'
+      )
+    })
+
+    it('clears grace_period_ends_at when subscription status is active', async () => {
+      const { handleSubscriptionUpdated } = await import('./billing')
+      const admin = makeAdminStub()
+      const subscription = makeSubscription({ status: 'active' })
+
+      await handleSubscriptionUpdated(subscription, { admin })
+
+      const cap = admin._captures[0]
+      assert.equal(
+        cap.values.grace_period_ends_at,
+        null,
+        'grace_period_ends_at should be null when status is active'
+      )
+    })
+
+    it('clears grace_period_ends_at when subscription status is trialing', async () => {
+      const { handleSubscriptionUpdated } = await import('./billing')
+      const admin = makeAdminStub()
+      const subscription = makeSubscription({ status: 'trialing' })
+
+      await handleSubscriptionUpdated(subscription, { admin })
+
+      const cap = admin._captures[0]
+      assert.equal(
+        cap.values.grace_period_ends_at,
+        null,
+        'grace_period_ends_at should be null when status is trialing'
+      )
+    })
+
+    it('does NOT clear grace_period_ends_at when subscription status maps to past_due', async () => {
+      const { handleSubscriptionUpdated } = await import('./billing')
+      const admin = makeAdminStub()
+      const subscription = makeSubscription({ status: 'past_due' })
+
+      await handleSubscriptionUpdated(subscription, { admin })
+
+      const cap = admin._captures[0]
+      assert.equal(
+        'grace_period_ends_at' in cap.values,
+        false,
+        'grace_period_ends_at should not be written when status remains past_due'
+      )
     })
   })
 })
