@@ -153,8 +153,14 @@ export async function checkPlanLimit(
   cache: CacheClient,
   agencyId: string
 ): Promise<GateResult> {
-  // Resolve the agency's plan and derive the seat limit
-  const { data } = await admin.from('agencies').select('plan').eq('id', agencyId).single()
+  // Resolve the agency's plan and derive the seat limit.
+  // Fail closed: a query error (network, RLS) must NOT silently fall back to
+  // freemium limits — that would wrongly deny seats to a paying customer.
+  const { data, error } = await admin.from('agencies').select('plan').eq('id', agencyId).single()
+  if (error) {
+    // Same fail-closed contract as countSeats → 503 at the caller.
+    throw new PlanLimitUnavailableError(error)
+  }
   const plan: string = (data as { plan?: string } | null)?.plan ?? 'freemium'
   const limit = getAgentSeatLimit(plan)
 

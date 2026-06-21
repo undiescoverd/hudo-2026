@@ -127,10 +127,19 @@ export function getPlan(planId: string): Plan {
  */
 export const LOOKUP_KEY_TO_PLAN: Readonly<Record<string, PlanId>> = (() => {
   const map: Record<string, PlanId> = {}
+  const assign = (key: string | undefined, id: PlanId) => {
+    if (!key) return
+    // A duplicate key would silently remap subscribers to the wrong plan — fail
+    // loudly at module load instead so a typo in PLANS is caught immediately.
+    if (map[key] && map[key] !== id) {
+      throw new Error(`Duplicate Stripe lookup_key "${key}" maps to both "${map[key]}" and "${id}"`)
+    }
+    map[key] = id
+  }
   for (const id of PAID_PLAN_IDS) {
     const plan = PLANS[id]
-    if (plan.stripeLookupKeyMonthly) map[plan.stripeLookupKeyMonthly] = id
-    if (plan.stripeLookupKeyAnnual) map[plan.stripeLookupKeyAnnual] = id
+    assign(plan.stripeLookupKeyMonthly, id)
+    assign(plan.stripeLookupKeyAnnual, id)
   }
   return map
 })()

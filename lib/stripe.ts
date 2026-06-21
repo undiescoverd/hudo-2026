@@ -96,12 +96,20 @@ export async function resolvePriceId(lookupKey: string): Promise<string> {
   const result = await getStripe().prices.list({
     lookup_keys: [lookupKey],
     active: true,
-    limit: 1,
+    limit: 2,
   })
   if (result.data.length === 0) {
     throw new Error(
       `No active Stripe price found for lookup_key "${lookupKey}". ` +
         `Run scripts/setup-stripe.ts to create it, or check the Stripe dashboard.`
+    )
+  }
+  if (result.data.length > 1) {
+    // setup-stripe.ts archives old prices, so exactly one active price should
+    // own a lookup_key. More than one is ambiguous — refuse rather than guess.
+    throw new Error(
+      `Multiple active Stripe prices share lookup_key "${lookupKey}". ` +
+        `Archive the stale price(s) in the Stripe dashboard so exactly one is active.`
     )
   }
   return result.data[0].id

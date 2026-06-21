@@ -48,7 +48,7 @@ async function main() {
   } else {
     console.log('  TEST MODE — operating against Stripe test data')
   }
-  console.log(`  Key: ${key.slice(0, 12)}…`)
+  console.log(`  Key: ${isLive ? 'live' : 'test'} secret (value hidden)`)
   console.log('='.repeat(60))
   console.log()
 

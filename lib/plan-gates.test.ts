@@ -61,10 +61,12 @@ function makeAdminFull({
   plan = 'freemium',
   count = 0,
   countError = null as { message: string; code?: string } | null,
+  agencyError = null as { message: string; code?: string } | null,
 }: {
   plan?: string
   count?: number
   countError?: { message: string; code?: string } | null
+  agencyError?: { message: string; code?: string } | null
 }) {
   let agencyQueryCalled = 0
   let countQueryCalled = 0
@@ -100,7 +102,10 @@ function makeAdminFull({
         return {
           select: () => ({
             eq: () => ({
-              single: async () => ({ data: { plan }, error: null }),
+              single: async () => ({
+                data: agencyError ? null : { plan },
+                error: agencyError,
+              }),
             }),
           }),
         }
@@ -536,6 +541,42 @@ describe('checkPlanLimit — fail-closed on count error', () => {
 
     assert.ok(caught instanceof PlanLimitUnavailableError)
     assert.equal((caught as PlanLimitUnavailableError).name, 'PlanLimitUnavailableError')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// checkPlanLimit — fail-closed on agency plan-resolution error
+// ---------------------------------------------------------------------------
+
+describe('checkPlanLimit — fail-closed on agency query error', () => {
+  it('throws PlanLimitUnavailableError instead of silently defaulting to freemium', async () => {
+    // If the agencies query fails, the gate must NOT fall back to freemium
+    // limits — that would wrongly deny seats to a paying customer. Fail closed.
+    const cache = makeCache()
+    const admin = makeAdminFull({
+      agencyError: { message: 'connection refused', code: 'PGRST000' },
+    })
+
+    await assert.rejects(
+      () => checkPlanLimit(admin, cache, 'agency-plan-query-error'),
+      (err: unknown) => err instanceof PlanLimitUnavailableError
+    )
+  })
+
+  it('does NOT count seats or populate cache when the agency query errors', async () => {
+    const cache = makeCache()
+    const admin = makeAdminFull({
+      agencyError: { message: 'timeout' },
+    })
+
+    try {
+      await checkPlanLimit(admin, cache, 'agency-plan-query-error-no-cache')
+    } catch {
+      // expected — fail-closed
+    }
+
+    assert.equal(admin._tracker.countQueryCalled, 0)
+    assert.equal(cache.setCalls.length, 0)
   })
 })
 
