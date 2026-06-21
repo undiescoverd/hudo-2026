@@ -40,7 +40,10 @@ describe('GuestComments — source invariants', () => {
   })
 
   it('does not render any comment action buttons (resolve, reply, delete)', () => {
-    assert.doesNotMatch(source, /resolve|reply|delete/i)
+    // Strip comments first so doc-comment words like "resolve"/"reply"/"delete"
+    // don't trip the invariant check — we only care about the executable code.
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    assert.doesNotMatch(code, /resolve|reply|delete/i)
   })
 
   it('uses formatTime to display timestamp_seconds', () => {
