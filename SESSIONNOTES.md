@@ -8,6 +8,14 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-21 — PR #114 CodeRabbit Major findings addressed
+
+- **Task:** Triage + fix CodeRabbit's review on PR #114 (pricing rebuild / single source of truth).
+- **Models:** planner=opus, executor=opus (small lib edits).
+- **Outcome:** done (pushed `a6567a9`) — full local gate green (format/type-check/build); billing suite 125/125. CI + CodeRabbit re-running.
+- **Notes:** 10 inline comments triaged. 1 stale (drift test already wired to `PLAN_IDS` in `1361a9f`). Fixed 4: (1) `lib/plan-gates.ts` `checkPlanLimit` now throws `PlanLimitUnavailableError` (→503) when the `agencies` plan query errors, instead of silently defaulting to freemium and denying a paying customer's seats — same fail-closed contract as the existing `countSeats` path, +2 regression tests; (2) `lib/plans.ts` `LOOKUP_KEY_TO_PLAN` throws on a duplicate lookup_key at module load; (3) `lib/stripe.ts` `resolvePriceId` now lists `limit:2` and throws if >1 active price shares a lookup_key (was silently picking the first); (4) `scripts/setup-stripe.ts` no longer logs `key.slice(0,12)` of the secret. Skipped as non-issues: `scripts/tsconfig.json` `strict:true` (already inherited via `extends ../tsconfig.json`) + the 4 Minor style/doc nits.
+- **Gotcha (if any):** CodeRabbit's `CHANGES_REQUESTED` on #114 was bot-only — all human-relevant CI was already green; the block was these review threads, not a failing gate. When triaging, verify each finding against current source first: 1 of 10 here was already fixed by an earlier commit and CodeRabbit hadn't re-resolved it.
+
 ## 2026-06-18 — S3 Billing Journey: merged + live-verified
 
 - **Task:** Merge BILLING-004/006 (#108), 005 (#111, superseded #109), 003 (#110); apply migration 0019; live-verify.
