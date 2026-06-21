@@ -10,21 +10,17 @@
  */
 
 import type Stripe from 'stripe'
-import type { StripePlan } from '@/lib/stripe'
+import { PAID_PLAN_IDS, isPaidPlanId, type PaidPlanId } from '@/lib/plans'
 
 // ---------------------------------------------------------------------------
 // Paid plans only — freemium cannot be checked out.
 // ---------------------------------------------------------------------------
 
-export type PaidPlan = Exclude<StripePlan, 'freemium'>
-export const PAID_PLANS: ReadonlySet<string> = new Set<PaidPlan>([
-  'starter',
-  'studio',
-  'agency_pro',
-])
+export type PaidPlan = PaidPlanId
+export const PAID_PLANS: ReadonlySet<string> = new Set<string>(PAID_PLAN_IDS)
 
 export function isPaidPlan(plan: string): plan is PaidPlan {
-  return PAID_PLANS.has(plan)
+  return isPaidPlanId(plan)
 }
 
 // ---------------------------------------------------------------------------

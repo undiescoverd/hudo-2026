@@ -25,8 +25,8 @@
 
 import type Stripe from 'stripe'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { getPlanFromPriceId } from '@/lib/stripe'
-import { getPlanStorageLimitBytes } from '@/lib/plan-gates'
+import { getPlanFromPrice } from '@/lib/stripe'
+import { getStorageLimitBytes } from '@/lib/plans'
 
 // ---------------------------------------------------------------------------
 // Admin client factory (service-role — bypasses RLS for billing writes)
@@ -167,9 +167,9 @@ export async function handleCheckoutSessionCompleted(
       line_items?: { data: { price?: Stripe.Price | null }[] }
     }
   ).line_items
-  const priceId = lineItems?.data?.[0]?.price?.id
-  if (priceId) {
-    plan = getPlanFromPriceId(priceId)
+  const price = lineItems?.data?.[0]?.price
+  if (price) {
+    plan = getPlanFromPrice(price)
   }
 
   await updateAgencyOrThrow(admin, {
@@ -180,7 +180,7 @@ export async function handleCheckoutSessionCompleted(
       stripe_subscription_id: subscriptionId,
       plan,
       subscription_status: 'active',
-      storage_limit_bytes: getPlanStorageLimitBytes(plan),
+      storage_limit_bytes: getStorageLimitBytes(plan),
       // Clear any grace period from a prior past_due cycle on successful checkout.
       grace_period_ends_at: null,
     },
@@ -213,8 +213,8 @@ export async function handleSubscriptionUpdated(
   const customerId =
     typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id
 
-  const priceId = subscription.items.data[0]?.price?.id
-  const plan = priceId ? getPlanFromPriceId(priceId) : 'freemium'
+  const price = subscription.items.data[0]?.price
+  const plan = price ? getPlanFromPrice(price) : 'freemium'
   const status = mapStripeStatus(subscription.status)
 
   // current_period_end lives on the SubscriptionItem in API 2026-05-27.dahlia+
@@ -226,7 +226,7 @@ export async function handleSubscriptionUpdated(
     stripe_subscription_id: subscription.id,
     plan,
     subscription_status: status,
-    storage_limit_bytes: getPlanStorageLimitBytes(plan),
+    storage_limit_bytes: getStorageLimitBytes(plan),
   }
   if (currentPeriodEnd !== undefined) {
     updatePayload.current_period_end = currentPeriodEnd
@@ -270,7 +270,7 @@ export async function handleSubscriptionDeleted(
       // Reset the storage cap to freemium on cancellation — otherwise a downgraded
       // agency keeps its paid storage limit indefinitely (and the grace gate never
       // fires for 'canceled', only 'past_due').
-      storage_limit_bytes: getPlanStorageLimitBytes('freemium'),
+      storage_limit_bytes: getStorageLimitBytes('freemium'),
     },
     logPrefix: '[billing:subscription.deleted]',
     zeroRowMessage: `[billing:subscription.deleted] Zero rows matched for customer ${customerId} — Stripe retry`,

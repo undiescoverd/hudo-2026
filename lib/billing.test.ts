@@ -406,7 +406,7 @@ describe('billing helpers', () => {
   describe('handleCheckoutSessionCompleted — storage + grace period', () => {
     it('sets storage_limit_bytes matching the plan', async () => {
       const { handleCheckoutSessionCompleted } = await import('./billing')
-      const { getPlanStorageLimitBytes } = await import('./plan-gates')
+      const { getStorageLimitBytes } = await import('./plans')
       const admin = makeAdminStub()
       const session = makeCheckoutSession() // starter price → plan='starter'
 
@@ -415,7 +415,7 @@ describe('billing helpers', () => {
       const cap = admin._captures[0]
       assert.equal(
         cap.values.storage_limit_bytes,
-        getPlanStorageLimitBytes('starter'),
+        getStorageLimitBytes('starter'),
         'storage_limit_bytes should match the starter plan limit'
       )
     })
@@ -439,7 +439,7 @@ describe('billing helpers', () => {
   describe('handleSubscriptionUpdated — storage + grace period', () => {
     it('sets storage_limit_bytes matching the plan', async () => {
       const { handleSubscriptionUpdated } = await import('./billing')
-      const { getPlanStorageLimitBytes } = await import('./plan-gates')
+      const { getStorageLimitBytes } = await import('./plans')
       const admin = makeAdminStub()
       const subscription = makeSubscription() // studio price → plan='studio'
 
@@ -448,7 +448,7 @@ describe('billing helpers', () => {
       const cap = admin._captures[0]
       assert.equal(
         cap.values.storage_limit_bytes,
-        getPlanStorageLimitBytes('studio'),
+        getStorageLimitBytes('studio'),
         'storage_limit_bytes should match the studio plan limit'
       )
     })

@@ -7,20 +7,22 @@
 
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import {
   checkPlanLimit,
+  canAddAgent,
+  canUploadVideo,
   invalidatePlanLimitCache,
   planLimitCacheKey,
-  PLAN_LIMITS,
   PLAN_LIMIT_CACHE_TTL,
   PlanLimitUnavailableError,
-  getPlanStorageLimitBytes,
   isGracePeriodExpired,
+  AGENT_SEAT_ROLES,
+  getAgentSeatLimit,
+  getStorageLimitBytes,
+  getPlan,
   type CacheClient,
 } from './plan-gates'
+import { GiB } from './plans'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 // ---------------------------------------------------------------------------
@@ -59,10 +61,12 @@ function makeAdminFull({
   plan = 'freemium',
   count = 0,
   countError = null as { message: string; code?: string } | null,
+  agencyError = null as { message: string; code?: string } | null,
 }: {
   plan?: string
   count?: number
   countError?: { message: string; code?: string } | null
+  agencyError?: { message: string; code?: string } | null
 }) {
   let agencyQueryCalled = 0
   let countQueryCalled = 0
@@ -98,7 +102,10 @@ function makeAdminFull({
         return {
           select: () => ({
             eq: () => ({
-              single: async () => ({ data: { plan }, error: null }),
+              single: async () => ({
+                data: agencyError ? null : { plan },
+                error: agencyError,
+              }),
             }),
           }),
         }
@@ -118,48 +125,171 @@ function makeAdminFull({
 }
 
 // ---------------------------------------------------------------------------
-// PLAN_LIMITS config
-// ---------------------------------------------------------------------------
-
-describe('PLAN_LIMITS config', () => {
-  it('freemium has 5 agent seats and 10 talent seats', () => {
-    assert.equal(PLAN_LIMITS.freemium.agents, 5)
-    assert.equal(PLAN_LIMITS.freemium.talent, 10)
-  })
-
-  it('starter has more seats than freemium', () => {
-    assert.ok(PLAN_LIMITS.starter.agents > PLAN_LIMITS.freemium.agents)
-    assert.ok(PLAN_LIMITS.starter.talent > PLAN_LIMITS.freemium.talent)
-  })
-
-  it('studio has more seats than starter', () => {
-    assert.ok(PLAN_LIMITS.studio.agents > PLAN_LIMITS.starter.agents)
-    assert.ok(PLAN_LIMITS.studio.talent > PLAN_LIMITS.starter.talent)
-  })
-
-  it('agency_pro has the largest limits', () => {
-    assert.ok(PLAN_LIMITS.agency_pro.agents >= PLAN_LIMITS.studio.agents)
-    assert.ok(PLAN_LIMITS.agency_pro.talent >= PLAN_LIMITS.studio.talent)
-  })
-
-  it('cache TTL is ≤ 60 seconds', () => {
-    assert.ok(PLAN_LIMIT_CACHE_TTL <= 60)
-  })
-})
-
-// ---------------------------------------------------------------------------
 // planLimitCacheKey
 // ---------------------------------------------------------------------------
 
 describe('planLimitCacheKey', () => {
-  it('generates the correct key for agents', () => {
-    const key = planLimitCacheKey('abc-123', 'agents')
+  it('generates the correct agents key for an agency', () => {
+    const key = planLimitCacheKey('abc-123')
     assert.equal(key, 'plan-limit:abc-123:agents')
   })
 
-  it('generates the correct key for talent', () => {
-    const key = planLimitCacheKey('abc-123', 'talent')
-    assert.equal(key, 'plan-limit:abc-123:talent')
+  it('includes the agencyId in the key', () => {
+    const key = planLimitCacheKey('my-agency-id')
+    assert.ok(key.includes('my-agency-id'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PLAN_LIMIT_CACHE_TTL
+// ---------------------------------------------------------------------------
+
+describe('PLAN_LIMIT_CACHE_TTL', () => {
+  it('cache TTL is ≤ 60 seconds', () => {
+    assert.ok(PLAN_LIMIT_CACHE_TTL <= 60)
+  })
+
+  it('cache TTL is a positive number', () => {
+    assert.ok(PLAN_LIMIT_CACHE_TTL > 0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AGENT_SEAT_ROLES
+// ---------------------------------------------------------------------------
+
+describe('AGENT_SEAT_ROLES', () => {
+  it('contains owner, admin_agent, agent', () => {
+    assert.ok(AGENT_SEAT_ROLES.includes('owner'))
+    assert.ok(AGENT_SEAT_ROLES.includes('admin_agent'))
+    assert.ok(AGENT_SEAT_ROLES.includes('agent'))
+  })
+
+  it('does not contain talent', () => {
+    assert.ok(!(AGENT_SEAT_ROLES as readonly string[]).includes('talent'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getAgentSeatLimit
+// ---------------------------------------------------------------------------
+
+describe('getAgentSeatLimit', () => {
+  it('returns 1 for freemium', () => {
+    assert.equal(getAgentSeatLimit('freemium'), 1)
+  })
+
+  it('returns 3 for starter', () => {
+    assert.equal(getAgentSeatLimit('starter'), 3)
+  })
+
+  it('returns 8 for studio', () => {
+    assert.equal(getAgentSeatLimit('studio'), 8)
+  })
+
+  it('returns 20 for agency_pro', () => {
+    assert.equal(getAgentSeatLimit('agency_pro'), 20)
+  })
+
+  it('falls back to freemium (1) for unknown plan string', () => {
+    assert.equal(getAgentSeatLimit('unknown_plan'), 1)
+  })
+
+  it('tiers strictly increase: freemium < starter < studio < agency_pro', () => {
+    assert.ok(getAgentSeatLimit('freemium') < getAgentSeatLimit('starter'))
+    assert.ok(getAgentSeatLimit('starter') < getAgentSeatLimit('studio'))
+    assert.ok(getAgentSeatLimit('studio') < getAgentSeatLimit('agency_pro'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getStorageLimitBytes
+// ---------------------------------------------------------------------------
+
+describe('getStorageLimitBytes', () => {
+  it('returns 10 GiB (10737418240) for freemium', () => {
+    assert.equal(getStorageLimitBytes('freemium'), 10 * GiB)
+    assert.equal(getStorageLimitBytes('freemium'), 10_737_418_240)
+  })
+
+  it('returns 100 GiB (107374182400) for starter', () => {
+    assert.equal(getStorageLimitBytes('starter'), 100 * GiB)
+    assert.equal(getStorageLimitBytes('starter'), 107_374_182_400)
+  })
+
+  it('returns 500 GiB (536870912000) for studio', () => {
+    assert.equal(getStorageLimitBytes('studio'), 500 * GiB)
+    assert.equal(getStorageLimitBytes('studio'), 536_870_912_000)
+  })
+
+  it('returns 1024 GiB (1099511627776) for agency_pro', () => {
+    assert.equal(getStorageLimitBytes('agency_pro'), 1024 * GiB)
+    assert.equal(getStorageLimitBytes('agency_pro'), 1_099_511_627_776)
+  })
+
+  it('falls back to freemium (10 GiB) for unknown plan string', () => {
+    assert.equal(getStorageLimitBytes('unknown_plan'), 10 * GiB)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getPlan
+// ---------------------------------------------------------------------------
+
+describe('getPlan', () => {
+  it('returns the freemium plan for "freemium"', () => {
+    const plan = getPlan('freemium')
+    assert.equal(plan.id, 'freemium')
+    assert.equal(plan.agentSeats, 1)
+    assert.equal(plan.talentLimit, null)
+  })
+
+  it('returns the starter plan for "starter"', () => {
+    const plan = getPlan('starter')
+    assert.equal(plan.id, 'starter')
+    assert.equal(plan.agentSeats, 3)
+  })
+
+  it('falls back to freemium for unknown string', () => {
+    const plan = getPlan('totally_unknown')
+    assert.equal(plan.id, 'freemium')
+  })
+
+  it('talentLimit is null on every tier (talent is unlimited)', () => {
+    for (const planId of ['freemium', 'starter', 'studio', 'agency_pro']) {
+      assert.equal(getPlan(planId).talentLimit, null)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// canUploadVideo
+// ---------------------------------------------------------------------------
+
+describe('canUploadVideo', () => {
+  const STARTER_LIMIT = 100 * GiB // 107374182400
+
+  it('allows upload when used + incoming is well under limit', () => {
+    assert.equal(canUploadVideo(10 * GiB, 5 * GiB, STARTER_LIMIT), true)
+  })
+
+  it('allows upload when used + incoming equals limit exactly (boundary — true)', () => {
+    // exactly at the cap: allowed (<=, not <)
+    assert.equal(canUploadVideo(50 * GiB, 50 * GiB, STARTER_LIMIT), true)
+    assert.equal(canUploadVideo(0, STARTER_LIMIT, STARTER_LIMIT), true)
+  })
+
+  it('blocks upload when used + incoming exceeds limit by 1 byte', () => {
+    assert.equal(canUploadVideo(STARTER_LIMIT, 1, STARTER_LIMIT), false)
+    assert.equal(canUploadVideo(50 * GiB, 50 * GiB + 1, STARTER_LIMIT), false)
+  })
+
+  it('blocks upload when already over limit', () => {
+    assert.equal(canUploadVideo(STARTER_LIMIT + 1, 0, STARTER_LIMIT), false)
+  })
+
+  it('allows zero-byte upload at any used level', () => {
+    assert.equal(canUploadVideo(STARTER_LIMIT, 0, STARTER_LIMIT), true)
   })
 })
 
@@ -168,19 +298,19 @@ describe('planLimitCacheKey', () => {
 // ---------------------------------------------------------------------------
 
 describe('invalidatePlanLimitCache', () => {
-  it('deletes the cache key for the given agency + category', async () => {
+  it('deletes the agents cache key for the given agency', async () => {
     const cache = makeCache({ 'plan-limit:agency-1:agents': 3 })
-    await invalidatePlanLimitCache(cache, 'agency-1', 'agents')
+    await invalidatePlanLimitCache(cache, 'agency-1')
     assert.equal(await cache.get('plan-limit:agency-1:agents'), null)
   })
 
-  it('does not delete unrelated keys', async () => {
+  it('does not delete other agencies keys', async () => {
     const cache = makeCache({
       'plan-limit:agency-1:agents': 3,
-      'plan-limit:agency-1:talent': 5,
+      'plan-limit:agency-2:agents': 5,
     })
-    await invalidatePlanLimitCache(cache, 'agency-1', 'agents')
-    assert.equal(await cache.get('plan-limit:agency-1:talent'), 5)
+    await invalidatePlanLimitCache(cache, 'agency-1')
+    assert.equal(await cache.get('plan-limit:agency-2:agents'), 5)
   })
 })
 
@@ -191,41 +321,74 @@ describe('invalidatePlanLimitCache', () => {
 describe('checkPlanLimit — cache hit', () => {
   it('returns allowed=true when cached count is below limit', async () => {
     const agencyId = 'agency-cache-hit'
-    const cache = makeCache({ [planLimitCacheKey(agencyId, 'agents')]: 4 }) // under freemium limit 5
-    const admin = makeAdminFull({ plan: 'freemium', count: 99 }) // count in DB is irrelevant
+    // freemium limit=1; cache shows count=0 (below limit)
+    const cache = makeCache({ [planLimitCacheKey(agencyId)]: 0 })
+    const admin = makeAdminFull({ plan: 'freemium', count: 99 }) // DB count irrelevant
 
-    const result = await checkPlanLimit(admin, cache, agencyId, 'agents')
+    const result = await checkPlanLimit(admin, cache, agencyId)
 
     assert.equal(result.allowed, true)
-    assert.equal(result.limit, 5)
-    assert.equal(result.current, 4)
-    // DB count was NOT called — cache hit served the value
+    assert.equal(result.limit, 1)
+    assert.equal(result.current, 0)
+    // Seat count DB query was NOT called — cache hit served the value
     assert.equal(admin._tracker.countQueryCalled, 0)
   })
 
   it('returns allowed=false when cached count equals limit (at-limit blocks)', async () => {
     const agencyId = 'agency-at-limit'
-    const cache = makeCache({ [planLimitCacheKey(agencyId, 'agents')]: 5 }) // at freemium limit
-    const admin = makeAdminFull({ plan: 'freemium', count: 99 })
+    // starter limit=3; cache shows count=3
+    const cache = makeCache({ [planLimitCacheKey(agencyId)]: 3 })
+    const admin = makeAdminFull({ plan: 'starter', count: 99 })
 
-    const result = await checkPlanLimit(admin, cache, agencyId, 'agents')
+    const result = await checkPlanLimit(admin, cache, agencyId)
 
     assert.equal(result.allowed, false)
-    assert.equal(result.limit, 5)
-    assert.equal(result.current, 5)
+    assert.equal(result.limit, 3)
+    assert.equal(result.current, 3)
     assert.equal(admin._tracker.countQueryCalled, 0)
   })
 
   it('returns allowed=false when cached count exceeds limit', async () => {
     const agencyId = 'agency-over-limit'
-    const cache = makeCache({ [planLimitCacheKey(agencyId, 'talent')]: 11 })
-    const admin = makeAdminFull({ plan: 'freemium', count: 99 })
+    // studio limit=8; cache shows count=10 (over)
+    const cache = makeCache({ [planLimitCacheKey(agencyId)]: 10 })
+    const admin = makeAdminFull({ plan: 'studio', count: 99 })
 
-    const result = await checkPlanLimit(admin, cache, agencyId, 'talent')
+    const result = await checkPlanLimit(admin, cache, agencyId)
 
     assert.equal(result.allowed, false)
-    assert.equal(result.limit, 10)
-    assert.equal(result.current, 11)
+    assert.equal(result.limit, 8)
+    assert.equal(result.current, 10)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// checkPlanLimit — starter: blocks 4th agent
+// ---------------------------------------------------------------------------
+
+describe('checkPlanLimit — starter plan gate', () => {
+  it('blocks the 4th agent seat (current=3, limit=3)', async () => {
+    const agencyId = 'agency-starter-full'
+    const cache = makeCache() // empty, forces DB read
+    const admin = makeAdminFull({ plan: 'starter', count: 3 })
+
+    const result = await checkPlanLimit(admin, cache, agencyId)
+
+    assert.equal(result.allowed, false)
+    assert.equal(result.limit, 3)
+    assert.equal(result.current, 3)
+  })
+
+  it('allows the 3rd agent seat (current=2, limit=3)', async () => {
+    const agencyId = 'agency-starter-room'
+    const cache = makeCache()
+    const admin = makeAdminFull({ plan: 'starter', count: 2 })
+
+    const result = await checkPlanLimit(admin, cache, agencyId)
+
+    assert.equal(result.allowed, true)
+    assert.equal(result.limit, 3)
+    assert.equal(result.current, 2)
   })
 })
 
@@ -237,52 +400,92 @@ describe('checkPlanLimit — cache miss', () => {
   it('reads DB and populates cache on cache miss', async () => {
     const agencyId = 'agency-cache-miss'
     const cache = makeCache() // empty cache
-    const admin = makeAdminFull({ plan: 'freemium', count: 3 })
+    const admin = makeAdminFull({ plan: 'starter', count: 1 })
 
-    const result = await checkPlanLimit(admin, cache, agencyId, 'agents')
+    const result = await checkPlanLimit(admin, cache, agencyId)
 
     assert.equal(result.allowed, true)
-    assert.equal(result.current, 3)
-    assert.equal(result.limit, 5)
+    assert.equal(result.current, 1)
+    assert.equal(result.limit, 3)
     // DB count was called once
     assert.equal(admin._tracker.countQueryCalled, 1)
-    // Cache was populated
-    const cached = await cache.get<number>(planLimitCacheKey(agencyId, 'agents'))
-    assert.equal(cached, 3)
+    // Cache was populated with the count
+    const cached = await cache.get<number>(planLimitCacheKey(agencyId))
+    assert.equal(cached, 1)
   })
 
-  it('blocks when DB count is at limit', async () => {
+  it('blocks when DB count equals limit', async () => {
     const agencyId = 'agency-miss-blocked'
     const cache = makeCache()
-    const admin = makeAdminFull({ plan: 'freemium', count: 5 })
+    const admin = makeAdminFull({ plan: 'freemium', count: 1 })
 
-    const result = await checkPlanLimit(admin, cache, agencyId, 'agents')
+    const result = await checkPlanLimit(admin, cache, agencyId)
 
     assert.equal(result.allowed, false)
-    assert.equal(result.limit, 5)
-    assert.equal(result.current, 5)
+    assert.equal(result.limit, 1)
+    assert.equal(result.current, 1)
   })
 
-  it('respects plan limits for higher tiers', async () => {
-    const agencyId = 'agency-studio'
+  it('respects higher plan limits', async () => {
+    const agencyId = 'agency-pro'
     const cache = makeCache()
-    const admin = makeAdminFull({ plan: 'studio', count: 20 })
+    const admin = makeAdminFull({ plan: 'agency_pro', count: 15 })
 
-    const result = await checkPlanLimit(admin, cache, agencyId, 'agents')
+    const result = await checkPlanLimit(admin, cache, agencyId)
 
     assert.equal(result.allowed, true)
-    assert.equal(result.limit, PLAN_LIMITS.studio.agents)
+    assert.equal(result.limit, 20)
+    assert.equal(result.current, 15)
   })
 
   it('calls cache.set with options.ex === PLAN_LIMIT_CACHE_TTL on cache miss + successful count', async () => {
     const agencyId = 'agency-ttl-check'
     const cache = makeCache() // empty — forces DB read
-    const admin = makeAdminFull({ plan: 'freemium', count: 2 })
+    const admin = makeAdminFull({ plan: 'starter', count: 2 })
 
-    await checkPlanLimit(admin, cache, agencyId, 'agents')
+    await checkPlanLimit(admin, cache, agencyId)
 
     assert.equal(cache.setCalls.length, 1)
     assert.equal(cache.setCalls[0].options.ex, PLAN_LIMIT_CACHE_TTL)
+  })
+
+  it('falls back to freemium limit when agency has no plan set', async () => {
+    // admin returns null plan → falls back to freemium (1 seat)
+    const agencyId = 'agency-no-plan'
+    const cache = makeCache()
+    // Simulate agencies query returning data: null (no plan column)
+    const clientNoData = {
+      _tracker: { agencyQueryCalled: 0, countQueryCalled: 0 },
+      from(table: string) {
+        if (table === 'agencies') {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: async () => ({ data: null, error: null }),
+              }),
+            }),
+          }
+        }
+        if (table === 'memberships') {
+          return {
+            select: () => {
+              const self: Record<string, unknown> = {}
+              self['eq'] = () => self
+              self['in'] = () => Promise.resolve({ count: 0, error: null })
+              return self
+            },
+          }
+        }
+        return {}
+      },
+    } as unknown as SupabaseClient & {
+      _tracker: { agencyQueryCalled: number; countQueryCalled: number }
+    }
+
+    const result = await checkPlanLimit(clientNoData, cache, agencyId)
+    // freemium fallback: limit=1, current=0
+    assert.equal(result.limit, 1)
+    assert.equal(result.allowed, true)
   })
 })
 
@@ -300,7 +503,7 @@ describe('checkPlanLimit — fail-closed on count error', () => {
     })
 
     await assert.rejects(
-      () => checkPlanLimit(admin, cache, agencyId, 'agents'),
+      () => checkPlanLimit(admin, cache, agencyId),
       (err: unknown) => err instanceof PlanLimitUnavailableError
     )
   })
@@ -314,235 +517,126 @@ describe('checkPlanLimit — fail-closed on count error', () => {
     })
 
     try {
-      await checkPlanLimit(admin, cache, agencyId, 'agents')
+      await checkPlanLimit(admin, cache, agencyId)
     } catch {
-      // expected
+      // expected — fail-closed
     }
 
+    assert.equal(cache.setCalls.length, 0)
+  })
+
+  it('PlanLimitUnavailableError has the correct name', async () => {
+    const cache = makeCache()
+    const admin = makeAdminFull({
+      plan: 'freemium',
+      countError: { message: 'error' },
+    })
+
+    let caught: unknown
+    try {
+      await checkPlanLimit(admin, cache, 'agency-err-name')
+    } catch (err) {
+      caught = err
+    }
+
+    assert.ok(caught instanceof PlanLimitUnavailableError)
+    assert.equal((caught as PlanLimitUnavailableError).name, 'PlanLimitUnavailableError')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// checkPlanLimit — fail-closed on agency plan-resolution error
+// ---------------------------------------------------------------------------
+
+describe('checkPlanLimit — fail-closed on agency query error', () => {
+  it('throws PlanLimitUnavailableError instead of silently defaulting to freemium', async () => {
+    // If the agencies query fails, the gate must NOT fall back to freemium
+    // limits — that would wrongly deny seats to a paying customer. Fail closed.
+    const cache = makeCache()
+    const admin = makeAdminFull({
+      agencyError: { message: 'connection refused', code: 'PGRST000' },
+    })
+
+    await assert.rejects(
+      () => checkPlanLimit(admin, cache, 'agency-plan-query-error'),
+      (err: unknown) => err instanceof PlanLimitUnavailableError
+    )
+  })
+
+  it('does NOT count seats or populate cache when the agency query errors', async () => {
+    const cache = makeCache()
+    const admin = makeAdminFull({
+      agencyError: { message: 'timeout' },
+    })
+
+    try {
+      await checkPlanLimit(admin, cache, 'agency-plan-query-error-no-cache')
+    } catch {
+      // expected — fail-closed
+    }
+
+    assert.equal(admin._tracker.countQueryCalled, 0)
     assert.equal(cache.setCalls.length, 0)
   })
 })
 
 // ---------------------------------------------------------------------------
-// checkPlanLimit — gate result shape (for 402 response body)
+// checkPlanLimit — result shape
 // ---------------------------------------------------------------------------
 
-describe('checkPlanLimit — result shape for 402 body', () => {
+describe('checkPlanLimit — result shape', () => {
   it('returns numeric limit and current when blocked', async () => {
-    const agencyId = 'agency-exact-error'
-    const cache = makeCache({ [planLimitCacheKey(agencyId, 'talent')]: 10 })
-    const admin = makeAdminFull({ plan: 'freemium', count: 99 })
+    const agencyId = 'agency-exact-shape'
+    // studio limit=8; cache shows count=8
+    const cache = makeCache({ [planLimitCacheKey(agencyId)]: 8 })
+    const admin = makeAdminFull({ plan: 'studio', count: 99 })
 
-    const result = await checkPlanLimit(admin, cache, agencyId, 'talent')
+    const result = await checkPlanLimit(admin, cache, agencyId)
 
     assert.equal(result.allowed, false)
     assert.equal(typeof result.limit, 'number')
     assert.equal(typeof result.current, 'number')
-    assert.equal(result.limit, 10)
-    assert.equal(result.current, 10)
+    assert.equal(result.limit, 8)
+    assert.equal(result.current, 8)
   })
 })
 
 // ---------------------------------------------------------------------------
-// Source invariants for route files
+// canAddAgent (thin wrapper over checkPlanLimit)
 // ---------------------------------------------------------------------------
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+describe('canAddAgent', () => {
+  it('returns same result as checkPlanLimit (allowed=true)', async () => {
+    const agencyId = 'agency-can-add'
+    const cache = makeCache()
+    const admin = makeAdminFull({ plan: 'studio', count: 5 })
 
-function readRoute(relPath: string): string {
-  return fs.readFileSync(path.resolve(__dirname, relPath), 'utf8')
-}
+    const result = await canAddAgent(admin, cache, agencyId)
 
-describe('members route — source invariants', () => {
-  const src = readRoute('../app/api/agencies/[id]/members/route.ts')
-
-  it('exports a POST handler', () => {
-    assert.match(src, /export async function POST/)
+    assert.equal(result.allowed, true)
+    assert.equal(result.limit, 8)
+    assert.equal(result.current, 5)
   })
 
-  it('checks auth (Authentication required)', () => {
-    assert.match(src, /Authentication required/)
+  it('returns same result as checkPlanLimit (allowed=false at limit)', async () => {
+    const agencyId = 'agency-cant-add'
+    const cache = makeCache()
+    const admin = makeAdminFull({ plan: 'starter', count: 3 })
+
+    const result = await canAddAgent(admin, cache, agencyId)
+
+    assert.equal(result.allowed, false)
+    assert.equal(result.limit, 3)
   })
 
-  it('validates agency ID as UUID', () => {
-    assert.match(src, /isValidUUID/)
-  })
+  it('throws PlanLimitUnavailableError on count failure', async () => {
+    const cache = makeCache()
+    const admin = makeAdminFull({ plan: 'starter', countError: { message: 'err' } })
 
-  it('uses service-role client for DB ops', () => {
-    assert.match(src, /createClient\(supabaseUrl,\s*serviceRoleKey\)/)
-  })
-
-  it('calls checkPlanLimit for the "agents" category', () => {
-    assert.match(src, /checkPlanLimit/)
-    assert.match(src, /'agents'/)
-  })
-
-  it('returns 402 on plan_limit_exceeded', () => {
-    assert.match(src, /plan_limit_exceeded/)
-    assert.match(src, /status:\s*402/)
-  })
-
-  it('response body includes limit and current fields', () => {
-    assert.match(src, /gate\.limit/)
-    assert.match(src, /gate\.current/)
-  })
-
-  it('invalidates cache after successful insert', () => {
-    assert.match(src, /invalidatePlanLimitCache/)
-  })
-
-  it('restricts to owner/admin_agent only (ADD_MEMBER_ROLES)', () => {
-    assert.match(src, /ADD_MEMBER_ROLES/)
-  })
-
-  it('uses rate limiting', () => {
-    assert.match(src, /checkRateLimit/)
-  })
-
-  it('error body uses exact string plan_limit_exceeded', () => {
-    assert.match(src, /error:\s*'plan_limit_exceeded'/)
-  })
-
-  it('returns 503 on PlanLimitUnavailableError (fail-closed)', () => {
-    assert.match(src, /PlanLimitUnavailableError/)
-    assert.match(src, /status:\s*503/)
-  })
-})
-
-describe('talent route — source invariants', () => {
-  const src = readRoute('../app/api/agencies/[id]/talent/route.ts')
-
-  it('exports a POST handler', () => {
-    assert.match(src, /export async function POST/)
-  })
-
-  it('checks auth (Authentication required)', () => {
-    assert.match(src, /Authentication required/)
-  })
-
-  it('validates agency ID as UUID', () => {
-    assert.match(src, /isValidUUID/)
-  })
-
-  it('uses service-role client for DB ops', () => {
-    assert.match(src, /createClient\(supabaseUrl,\s*serviceRoleKey\)/)
-  })
-
-  it('calls checkPlanLimit for the "talent" category', () => {
-    assert.match(src, /checkPlanLimit/)
-    assert.match(src, /'talent'/)
-  })
-
-  it('returns 402 on plan_limit_exceeded', () => {
-    assert.match(src, /plan_limit_exceeded/)
-    assert.match(src, /status:\s*402/)
-  })
-
-  it('response body includes limit and current fields', () => {
-    assert.match(src, /gate\.limit/)
-    assert.match(src, /gate\.current/)
-  })
-
-  it('invalidates cache after successful insert', () => {
-    assert.match(src, /invalidatePlanLimitCache/)
-  })
-
-  it('restricts to owner/admin_agent only (ADD_TALENT_ROLES)', () => {
-    assert.match(src, /ADD_TALENT_ROLES/)
-  })
-
-  it('inserts membership with role "talent"', () => {
-    assert.match(src, /role:\s*'talent'/)
-  })
-
-  it('uses rate limiting', () => {
-    assert.match(src, /checkRateLimit/)
-  })
-
-  it('error body uses exact string plan_limit_exceeded', () => {
-    assert.match(src, /error:\s*'plan_limit_exceeded'/)
-  })
-
-  it('returns 503 on PlanLimitUnavailableError (fail-closed)', () => {
-    assert.match(src, /PlanLimitUnavailableError/)
-    assert.match(src, /status:\s*503/)
-  })
-})
-
-describe('plan-gates.ts — source invariants', () => {
-  const src = readRoute('./plan-gates.ts')
-
-  it('defines PLAN_LIMITS freemium with 5 agents', () => {
-    assert.match(src, /freemium.*agents.*5/)
-  })
-
-  it('defines PLAN_LIMITS freemium with 10 talent', () => {
-    assert.match(src, /freemium.*talent.*10/)
-  })
-
-  it('exports checkPlanLimit function', () => {
-    assert.match(src, /export async function checkPlanLimit/)
-  })
-
-  it('exports invalidatePlanLimitCache function', () => {
-    assert.match(src, /export async function invalidatePlanLimitCache/)
-  })
-
-  it('cache TTL constant is defined', () => {
-    assert.match(src, /PLAN_LIMIT_CACHE_TTL\s*=\s*\d+/)
-  })
-
-  it('uses CacheClient interface (not a direct redis import)', () => {
-    assert.match(src, /CacheClient/)
-    assert.doesNotMatch(src, /from '@\/lib\/redis'/)
-  })
-
-  it('exports PlanLimitUnavailableError class', () => {
-    assert.match(src, /export class PlanLimitUnavailableError/)
-  })
-
-  it('countSeats returns null on error (fail-closed signal)', () => {
-    assert.match(src, /return null/)
-  })
-
-  it('exports getPlanStorageLimitBytes function', () => {
-    assert.match(src, /export function getPlanStorageLimitBytes/)
-  })
-
-  it('exports isGracePeriodExpired function', () => {
-    assert.match(src, /export function isGracePeriodExpired/)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// getPlanStorageLimitBytes
-// ---------------------------------------------------------------------------
-
-describe('getPlanStorageLimitBytes', () => {
-  it('returns 5GB for freemium', () => {
-    assert.equal(getPlanStorageLimitBytes('freemium'), 5_368_709_120)
-  })
-
-  it('returns 100GB for starter', () => {
-    assert.equal(getPlanStorageLimitBytes('starter'), 107_374_182_400)
-  })
-
-  it('returns 500GB for studio', () => {
-    assert.equal(getPlanStorageLimitBytes('studio'), 536_870_912_000)
-  })
-
-  it('returns 2TB for agency_pro', () => {
-    assert.equal(getPlanStorageLimitBytes('agency_pro'), 2_199_023_255_552)
-  })
-
-  it('falls back to freemium (5GB) for unknown plan string', () => {
-    assert.equal(getPlanStorageLimitBytes('unknown_plan'), 5_368_709_120)
-  })
-
-  it('matches PLAN_LIMITS storage values exactly', () => {
-    for (const plan of ['freemium', 'starter', 'studio', 'agency_pro'] as const) {
-      assert.equal(getPlanStorageLimitBytes(plan), PLAN_LIMITS[plan].storage)
-    }
+    await assert.rejects(
+      () => canAddAgent(admin, cache, 'agency-wrapper-err'),
+      (err: unknown) => err instanceof PlanLimitUnavailableError
+    )
   })
 })
 

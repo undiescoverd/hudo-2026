@@ -130,7 +130,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   let gate: Awaited<ReturnType<typeof checkPlanLimit>>
   try {
-    gate = await checkPlanLimit(admin, redis, agencyId, 'agents')
+    gate = await checkPlanLimit(admin, redis, agencyId)
   } catch (err) {
     if (err instanceof PlanLimitUnavailableError) {
       console.error('[agencies/[id]/members:POST] Plan gate unavailable:', err)
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   }
 
   // ---- Invalidate cache after successful add --------------------------------
-  await invalidatePlanLimitCache(redis, agencyId, 'agents')
+  await invalidatePlanLimitCache(redis, agencyId)
 
   // Audit: fire-and-forget
   const actorName =

@@ -9,6 +9,7 @@
 
 import assert from 'node:assert/strict'
 import { before, describe, it } from 'node:test'
+import { PLAN_IDS, PAID_PLAN_IDS } from '@/lib/plans'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -106,15 +107,17 @@ describe('billing/portal route — source invariants', () => {
 
 // ---------------------------------------------------------------------------
 // Pure logic: plan tier ordering (used by BillingOverview — validated here
-// against the static PLAN_LIMITS to catch drift)
+// against PLAN_IDS from lib/plans to catch drift)
 // ---------------------------------------------------------------------------
 
 describe('plan tier ordering', () => {
   it('paid plans ordered lowest to highest: starter < studio < agency_pro', () => {
     // This ordering is used by BillingOverview to render upgrade buttons.
-    // If PLAN_LIMITS keys or the ordered list drifts, this test catches it.
-    const TIER_ORDER = ['freemium', 'starter', 'studio', 'agency_pro']
-    const paidTiers = TIER_ORDER.filter((p) => p !== 'freemium')
+    // Wired to the real lib/plans constants so it actually catches drift if the
+    // canonical ordering changes (not a local copy that drifts independently).
+    const paidTiers = PLAN_IDS.filter((p) => p !== 'freemium')
     assert.deepEqual(paidTiers, ['starter', 'studio', 'agency_pro'])
+    // PAID_PLAN_IDS must agree with PLAN_IDS-minus-freemium.
+    assert.deepEqual([...PAID_PLAN_IDS], paidTiers)
   })
 })
