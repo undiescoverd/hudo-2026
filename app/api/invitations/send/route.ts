@@ -6,6 +6,7 @@ import crypto from 'crypto'
 import { getSiteOrigin } from '@/lib/site-url'
 import { logEvent } from '@/lib/audit'
 import { isGracePeriodExpired } from '@/lib/plan-gates'
+import { checkRateLimit } from '@/lib/api-helpers'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -81,19 +82,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
-  // Rate limit: 5 invitations per user per hour
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(`invitation:send:user:${user.id}`, 5, 3600)
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many invitations. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': '3600' } }
-      )
-    }
-  } catch (err) {
-    console.error('[invitations/send] Rate limit check failed, allowing request:', err)
-  }
+  // Rate limit: 5 invitations per user per hour.
+  // Fail-closed on Redis error: invitations mint account-creation tokens, so a Redis
+  // outage must not hand out unlimited sends (see lib/api-helpers.ts).
+  const rl = await checkRateLimit(
+    `invitation:send:user:${user.id}`,
+    5,
+    3600,
+    'invitations/send',
+    'Too many invitations. Please try again later.',
+    'fail-closed'
+  )
+  if (rl) return rl
 
   // Check caller's role in the agency
   const admin = createClient(supabaseUrl, serviceRoleKey)
