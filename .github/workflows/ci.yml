@@ -41,6 +41,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Unit tests
+        run: pnpm test
+
   rls-tests:
     name: RLS Policy Tests
     runs-on: ubuntu-latest
