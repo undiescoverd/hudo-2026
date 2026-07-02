@@ -37,18 +37,3 @@ export async function rateLimit(key: string, limit: number, window: number): Pro
 
   return limit - current // Remaining quota
 }
-
-/**
- * Reset a rate limit key (admin only).
- */
-export async function resetRateLimit(key: string): Promise<void> {
-  await redis.del(key)
-}
-
-/**
- * Get current count for a rate limit key.
- */
-export async function getRateLimitCount(key: string): Promise<number> {
-  const count = await redis.get<number>(key)
-  return count ?? 0
-}
