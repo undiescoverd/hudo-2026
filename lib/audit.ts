@@ -15,11 +15,18 @@ export type AuditAction =
   | 'guest_link_revoked'
   | 'billing_plan_changed'
   | 'billing_payment_failed'
+  | 'user_erased'
 
 /**
  * Valid resource_type values as defined in 0001_initial_schema.sql.
  */
-export type AuditResourceType = 'video' | 'comment' | 'membership' | 'guest_link' | 'billing'
+export type AuditResourceType =
+  | 'video'
+  | 'comment'
+  | 'membership'
+  | 'guest_link'
+  | 'billing'
+  | 'user'
 
 export type LogEventParams = {
   action: AuditAction
