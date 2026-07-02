@@ -30,7 +30,7 @@ supabase test db tests/rls    # RLS pgTAP suite (CI: "RLS Policy Tests")
 node orchestrate.js status    # live sprint/task state
 ```
 
-> **Unit tests now in CI:** `pnpm test` (`tsx --test`, 51 files / 824 cases across `app/`, `lib/`, `components/`, root) is **fully green** and wired into CI as a step in the main job — runs after build. CI covers Lint/Type-check/Build/Unit-tests + RLS. The two previously-stale source-pattern tests (`components/guest/GuestComments.test.tsx`, `app/api/cron/notifications/route.test.ts`) were fixed in PR #115 (comment-strip + multiline regex).
+> **Unit tests now in CI:** `pnpm test` (`tsx --test`, 63 files / 943 cases across `app/`, `lib/`, `components/`, `hooks/`, root) is **fully green** and wired into CI as a step in the main job — runs after build (needs Node 21+ for the test-script globs; CI runs Node 22). CI covers Lint/Type-check/Build/Unit-tests + RLS pgTAP (12/12 tables).
 
 ## Critical Architecture Rules
 
@@ -169,7 +169,7 @@ Guest: read-only via signed link, no Supabase access.
 - **S0** — Infrastructure & Auth ✅ done
 - **S1** — Upload, Player, Comments, Versioning ✅ done
 - **S2** — Dashboards, Notifications, Guest Links ✅ done (15/15)
-- **S3** — Billing, Compliance, Security Hardening ← next (not yet in `tasks/`)
+- **S3** — Billing, Compliance, Security Hardening ← in progress, 12/15 done (`tasks/sprint-3.md`; remaining: COMPLY-002 right-to-erasure, COMPLY-003 cookie-consent verify-only, SEC-002 R2 private audit)
 - **S4** — Accessibility, PWA, Launch Prep
 
 > Sprint markers above are a static summary; `node orchestrate.js status` is the live source of truth.
