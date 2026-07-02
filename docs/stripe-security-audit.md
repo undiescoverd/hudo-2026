@@ -37,8 +37,11 @@ or missing signatures always return 400 before any handler executes.
 
 ## 2. Idempotency (duplicate-event safety)
 
-Mechanism: Redis key `stripe:processed:<event.id>`, 24h TTL (comfortably longer than Stripe's
-~72h retry window is NOT covered — see note below).
+Mechanism: Redis key `stripe:processed:<event.id>`, 24h TTL. Note: this is *shorter* than
+Stripe's ~72h retry window, so an unusually late retry (>24h after the original attempt) could
+re-process an event whose claim has already expired. This is harmless — every handler performs
+an absolute (not incremental) `UPDATE`, so re-running one is idempotent at the data layer (see
+the concurrent-duplicate note below for the same argument applied to the sub-24h race).
 
 - **Pre-check** (`isAlreadyProcessed`): a non-mutating `GET`. If the key exists, the route
   returns `200 { skipped: true }` immediately without re-running the handler — replayed events
