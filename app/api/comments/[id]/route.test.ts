@@ -99,12 +99,15 @@ describe('comments item route — source invariants', () => {
     assert.match(source, /comments:delete:user:/)
   })
 
-  it('fails-closed on Redis error (returns 429)', () => {
-    const matches = source.match(/status:\s*429/g) ?? []
+  it('fails-closed on Redis error via the shared checkRateLimit helper', () => {
+    // The 503 status itself lives in lib/api-helpers.ts (rateLimitFailClosedResponse);
+    // route.ts just needs to opt in via the 'fail-closed' mode for both PATCH and DELETE.
+    const matches = source.match(/'fail-closed'/g) ?? []
     assert.ok(
       matches.length >= 2,
-      'Expected at least 2 occurrences of status 429 (PATCH + DELETE fail-closed)'
+      'Expected at least 2 occurrences of the fail-closed mode (PATCH + DELETE)'
     )
+    assert.match(source, /from '@\/lib\/api-helpers'/)
   })
 
   it('PATCH uses roleAtLeast to guard resolve operations', () => {

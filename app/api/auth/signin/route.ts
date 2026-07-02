@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkAuthRateLimit, getClientIp, AUTH_RATE_WINDOW } from '@/lib/rate-limit'
+import { rateLimitFailClosedResponse } from '@/lib/api-helpers'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -36,7 +37,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Password is required' }, { status: 400 })
   }
 
-  // Rate limit — fail-open on Redis error
+  // Rate limit — fail-closed on Redis error: credential-guessing surface, so a Redis
+  // outage must not hand out unlimited sign-in attempts (see lib/api-helpers.ts).
   try {
     const { limited } = await checkAuthRateLimit(ip, email.trim(), 'signin')
     if (limited) {
@@ -46,7 +48,7 @@ export async function POST(request: NextRequest) {
       )
     }
   } catch (err) {
-    console.error('[signin] Rate limit check failed, allowing request:', err)
+    return rateLimitFailClosedResponse('signin', err)
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL

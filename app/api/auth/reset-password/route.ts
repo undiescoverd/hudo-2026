@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getClientIp } from '@/lib/rate-limit'
 import { getSiteOrigin } from '@/lib/site-url'
+import { checkRateLimit } from '@/lib/api-helpers'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -14,25 +15,18 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  */
 export async function POST(request: NextRequest) {
   // Rate limit by IP: 5 requests per hour.
-  // Dynamic import + try/catch = fail-open: if Redis is unavailable, the request proceeds.
+  // Fail-closed on Redis error: unauthenticated email-enumeration/abuse surface
+  // (see lib/api-helpers.ts) — returns 503, not a silent allow.
   const ip = getClientIp(request)
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(`auth:reset-password:ip:${ip}`, 5, 3600)
-
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again in an hour.' },
-        {
-          status: 429,
-          headers: { 'Retry-After': '3600' },
-        }
-      )
-    }
-  } catch (err) {
-    // Fail-open: log error (captured by Sentry in production) and allow request
-    console.error('[reset-password] Rate limit check failed, allowing request:', err)
-  }
+  const rl = await checkRateLimit(
+    `auth:reset-password:ip:${ip}`,
+    5,
+    3600,
+    'reset-password',
+    'Too many requests. Please try again in an hour.',
+    'fail-closed'
+  )
+  if (rl) return rl
 
   let body: unknown
   try {

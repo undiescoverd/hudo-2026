@@ -9,9 +9,11 @@
  *   q       — search string for title (optional, max 200 chars)
  *   limit   — page size (default 50, max 100)
  *   offset  — pagination offset (default 0)
+ *
+ * Rate limit: 120 requests/user/min. Fail-open on Redis error — this is an
+ * authenticated data read (dashboard polling/pagination), so availability during
+ * a brief Redis outage matters more than the marginal abuse risk (see lib/api-helpers.ts).
  */
-
-// TODO(post-MVP): rate-limit if query cost becomes a concern
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
@@ -20,6 +22,10 @@ import { getCurrentUserRole, AGENT_ROLES } from '@/lib/auth-helpers'
 import { getAgencyVideos } from '@/lib/dashboard'
 import { isVideoStatus, VIDEO_STATUSES } from '@/lib/video-status'
 import type { VideoStatus } from '@/lib/video-status'
+import { checkRateLimit } from '@/lib/api-helpers'
+
+const DASHBOARD_VIDEOS_RATE_LIMIT = 120
+const DASHBOARD_VIDEOS_RATE_WINDOW = 60 // seconds
 
 export async function GET(req: NextRequest) {
   // ---- Auth ---------------------------------------------------------------
@@ -37,6 +43,15 @@ export async function GET(req: NextRequest) {
   if (!AGENT_ROLES.has(role)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+
+  const rl = await checkRateLimit(
+    `dashboard:videos:user:${user.id}`,
+    DASHBOARD_VIDEOS_RATE_LIMIT,
+    DASHBOARD_VIDEOS_RATE_WINDOW,
+    'dashboard/videos',
+    'Too many requests. Please try again later.'
+  )
+  if (rl) return rl
 
   if (agent_agency_ids.length === 0) {
     return NextResponse.json({ data: [] })
