@@ -16,6 +16,7 @@ import { NotificationPanel } from './NotificationPanel'
 export function NotificationBell() {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
   const { notifications, unreadCount, isLoading, markRead, markAllRead } = useNotifications()
 
   // Close panel when clicking outside
@@ -46,9 +47,17 @@ export function NotificationBell() {
     }
   }, [open])
 
+  // Restore focus to button when panel closes
+  useEffect(() => {
+    if (!open && buttonRef.current) {
+      buttonRef.current.focus()
+    }
+  }, [open])
+
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={buttonRef}
         onClick={() => setOpen((prev) => !prev)}
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
         aria-expanded={open}
