@@ -47,6 +47,20 @@ describe('lib/sentry-scrub — redactSecretUrl', () => {
     )
   })
 
+  it('redacts the Supabase PKCE code param (/auth/callback?code=...)', () => {
+    assert.equal(
+      redactSecretUrl('https://hudo.app/auth/callback?code=pkce-single-use-auth-code'),
+      'https://hudo.app/auth/callback?code=[redacted]'
+    )
+  })
+
+  it('redacts code params in non-first position (recovery flow)', () => {
+    assert.equal(
+      redactSecretUrl('https://hudo.app/auth/callback?next=%2Freset&code=abc123'),
+      'https://hudo.app/auth/callback?next=%2Freset&code=[redacted]'
+    )
+  })
+
   it('leaves non-secret URLs untouched', () => {
     const url = 'https://hudo.app/api/videos/123/playback-url?version=2'
     assert.equal(redactSecretUrl(url), url)
@@ -167,7 +181,7 @@ describe('lib/sentry-scrub — scrubSentryEvent', () => {
 })
 
 describe('lib/sentry-scrub — instrumentation wiring', () => {
-  it('instrumentation.ts wires scrubSentryEvent as beforeSend for both runtimes', async () => {
+  it('instrumentation.ts wires scrubSentryEvent as beforeSend AND beforeSendTransaction for both runtimes', async () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
     const { fileURLToPath } = await import('node:url')
@@ -176,11 +190,23 @@ describe('lib/sentry-scrub — instrumentation wiring', () => {
     const source = fs.readFileSync(path.resolve(__dirname, '../instrumentation.ts'), 'utf8')
 
     assert.match(source, /import \{ scrubSentryEvent \} from '@\/lib\/sentry-scrub'/)
-    const wirings = source.match(/beforeSend:\s*scrubSentryEvent/g) ?? []
+
+    // beforeSend covers error events (captureException + future onRequestError).
+    const errorWirings = source.match(/beforeSend:\s*scrubSentryEvent/g) ?? []
     assert.equal(
-      wirings.length,
+      errorWirings.length,
       2,
       'both the nodejs and edge Sentry.init calls must wire beforeSend: scrubSentryEvent'
+    )
+
+    // beforeSendTransaction covers transaction events — tracesSampleRate is
+    // non-zero, so sampled requests to token-bearing routes emit transactions
+    // carrying the same request payload that beforeSend does NOT see.
+    const transactionWirings = source.match(/beforeSendTransaction:\s*scrubSentryEvent/g) ?? []
+    assert.equal(
+      transactionWirings.length,
+      2,
+      'both the nodejs and edge Sentry.init calls must wire beforeSendTransaction: scrubSentryEvent'
     )
   })
 })

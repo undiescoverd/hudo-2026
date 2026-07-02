@@ -14,10 +14,14 @@ export async function register() {
       // captureException's arguments. Without this scrub, any server-side
       // capture would leak plaintext guest tokens (request.url), Supabase
       // session cookies (request.cookies) and POST bodies incl. passwords
-      // (request.data). beforeSend is the SINGLE scrub point for both explicit
-      // captureException calls and the (future, Next 15+) onRequestError path
-      // below. See lib/sentry-scrub.ts.
+      // (request.data). scrubSentryEvent is the SINGLE scrub point for
+      // explicit captureException calls, the (future, Next 15+) onRequestError
+      // path below, AND transaction events — tracesSampleRate is non-zero, so
+      // ~10% of requests to token-bearing routes emit a transaction carrying
+      // the same request payload; beforeSend alone does NOT cover those, hence
+      // beforeSendTransaction as well. See lib/sentry-scrub.ts.
       beforeSend: scrubSentryEvent,
+      beforeSendTransaction: scrubSentryEvent,
     })
   }
 
@@ -29,6 +33,7 @@ export async function register() {
       debug: false,
       // Same scrub as the nodejs runtime above — see lib/sentry-scrub.ts.
       beforeSend: scrubSentryEvent,
+      beforeSendTransaction: scrubSentryEvent,
     })
   }
 }

@@ -10,11 +10,16 @@
  * Supabase session cookie (request.cookies) and POST bodies incl. passwords
  * and invitation tokens (request.data) to Sentry.
  *
- * scrubSentryEvent is wired as `beforeSend` in instrumentation.ts (nodejs +
- * edge inits) and is the SINGLE scrub point for BOTH server error paths:
- * explicit captureException calls today, and the Next 15+ onRequestError →
- * captureRequestError path when the framework upgrade activates it. Every
- * server event passes through here before leaving the process.
+ * scrubSentryEvent is wired as BOTH `beforeSend` AND `beforeSendTransaction`
+ * in instrumentation.ts (nodejs + edge inits) and is the SINGLE scrub point
+ * for every server event class that carries request context:
+ * - error events from explicit captureException calls today
+ * - error events from the Next 15+ onRequestError → captureRequestError path
+ *   when the framework upgrade activates it
+ * - transaction events (tracesSampleRate is non-zero, so ~10% of requests to
+ *   token-bearing routes emit a transaction carrying the same
+ *   requestDataIntegration payload — beforeSend alone does NOT cover these)
+ * Every server event passes through here before leaving the process.
  *
  * Secret-in-URL surfaces covered (grep app/ for token-in-path routes before
  * adding new ones):
@@ -22,6 +27,8 @@
  * - /guest/<token> page (path segment)
  * - /auth/invite/<token> page (path segment)
  * - /api/invitations/validate?token=... (query param)
+ * - /auth/callback?code=... (query param — Supabase PKCE single-use auth
+ *   code; recovery flows reuse this route)
  */
 
 type ScrubbableRequest = {
@@ -50,8 +57,12 @@ const SENSITIVE_HEADERS = new Set(['cookie', 'authorization', 'referer'])
  */
 const TOKEN_PATH_RE = /(\/guest\/|\/auth\/invite\/)[^/?#]+/g
 
-/** `token` query params, e.g. /api/invitations/validate?token=... */
-const TOKEN_QUERY_RE = /([?&]token=)[^&#]*/gi
+/**
+ * Secret-bearing query params:
+ * - `token=` (e.g. /api/invitations/validate?token=...)
+ * - `code=` (e.g. /auth/callback?code=... — Supabase PKCE single-use auth code)
+ */
+const TOKEN_QUERY_RE = /([?&](?:token|code)=)[^&#]*/gi
 
 /** Redacts secret path segments and token query params from a URL string. */
 export function redactSecretUrl(url: string): string {
