@@ -15,11 +15,10 @@
  */
 
 import { createAdminClient } from '@/lib/supabase-admin'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { type NextRequest, NextResponse } from 'next/server'
 import { isValidUUID } from '@/lib/validation'
-import { checkRateLimit } from '@/lib/api-helpers'
+import { checkRateLimit, requireMembership } from '@/lib/api-helpers'
 import {
   checkPlanLimit,
   invalidatePlanLimitCache,
@@ -59,19 +58,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   }
 
   // ---- User auth (cookie-scoped client) ------------------------------------
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options)
-        }
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const {
     data: { user },
@@ -95,14 +82,15 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const admin = createAdminClient()
 
   // ---- Caller authz: must be owner or admin_agent in this agency -----------
-  const { data: callerMembership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', agencyId)
-    .single()
+  // Lookup via requireMembership (DB error -> 500, missing membership -> 403);
+  // the ADD_MEMBER_ROLES admission check stays a separate explicit step since
+  // it is narrower than requireAgentRole's AGENT_PLUS_ROLES (which also allows
+  // 'agent' — not permitted to add members here).
+  const callerMembershipResult = await requireMembership(admin, user.id, agencyId)
+  if (callerMembershipResult instanceof NextResponse) return callerMembershipResult
+  const callerMembership = callerMembershipResult
 
-  if (!callerMembership || !ADD_MEMBER_ROLES.has(callerMembership.role)) {
+  if (!ADD_MEMBER_ROLES.has(callerMembership.role)) {
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 

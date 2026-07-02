@@ -14,7 +14,8 @@ import path from 'node:path'
 import fs from 'node:fs'
 
 // ---------------------------------------------------------------------------
-// UUID validation (mirrors UUID_RE in route.ts)
+// UUID validation (mirrors the shared isValidUUID/UUID_RE in lib/validation.ts,
+// which route.ts now uses instead of a local copy)
 // ---------------------------------------------------------------------------
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -231,8 +232,8 @@ describe('comments collection route — source invariants', () => {
     assert.match(source, /createAdminClient\(\)/)
   })
 
-  it('uses createServerClient for auth', () => {
-    assert.match(source, /createServerClient/)
+  it('uses createSupabaseServerClient for auth', () => {
+    assert.match(source, /createSupabaseServerClient/)
   })
 
   it('serializes responses to camelCase via rowToComment (GET + POST)', () => {

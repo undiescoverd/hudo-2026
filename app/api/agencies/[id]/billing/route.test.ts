@@ -78,8 +78,8 @@ describe('billing route — source invariants', () => {
     assert.match(source, /createAdminClient\(\)/)
   })
 
-  it('uses createServerClient for auth', () => {
-    assert.match(source, /createServerClient/)
+  it('uses createSupabaseServerClient for auth', () => {
+    assert.match(source, /createSupabaseServerClient/)
   })
 
   it('validates agency UUID', () => {

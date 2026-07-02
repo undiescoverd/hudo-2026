@@ -14,7 +14,8 @@ import path from 'node:path'
 import fs from 'node:fs'
 
 // ---------------------------------------------------------------------------
-// UUID validation (mirrors UUID_RE in route.ts)
+// UUID validation (mirrors the shared isValidUUID/UUID_RE in lib/validation.ts,
+// which route.ts now uses instead of a local copy)
 // ---------------------------------------------------------------------------
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -139,12 +140,12 @@ describe('comments item route — source invariants', () => {
     assert.match(source, /createAdminClient\(\)/)
   })
 
-  it('uses createServerClient for auth', () => {
-    assert.match(source, /createServerClient/)
+  it('uses createSupabaseServerClient for auth', () => {
+    assert.match(source, /createSupabaseServerClient/)
   })
 
-  it('validates comment ID with UUID regex', () => {
-    assert.match(source, /UUID_RE\.test\(commentId\)/)
+  it('validates comment ID with isValidUUID', () => {
+    assert.match(source, /isValidUUID\(commentId\)/)
   })
 
   it('talent can only delete own comments (user_id check)', () => {

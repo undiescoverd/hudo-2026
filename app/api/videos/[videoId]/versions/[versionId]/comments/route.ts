@@ -1,6 +1,5 @@
 import { createAdminClient } from '@/lib/supabase-admin'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { type NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import {
@@ -13,8 +12,7 @@ import {
 } from '@/lib/comments'
 import { enqueueCommentNotification } from '@/lib/notifications'
 import { checkRateLimit } from '@/lib/api-helpers'
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+import { isValidUUID } from '@/lib/validation'
 
 /**
  * GET /api/videos/:videoId/versions/:versionId/comments
@@ -33,10 +31,10 @@ export async function GET(
 ) {
   const { videoId, versionId } = params
 
-  if (!UUID_RE.test(videoId)) {
+  if (!isValidUUID(videoId)) {
     return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
   }
-  if (!UUID_RE.test(versionId)) {
+  if (!isValidUUID(versionId)) {
     return NextResponse.json({ error: 'Invalid version ID format' }, { status: 400 })
   }
 
@@ -48,19 +46,7 @@ export async function GET(
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options)
-        }
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const {
     data: { user },
@@ -125,10 +111,10 @@ export async function POST(
 ) {
   const { videoId, versionId } = params
 
-  if (!UUID_RE.test(videoId)) {
+  if (!isValidUUID(videoId)) {
     return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
   }
-  if (!UUID_RE.test(versionId)) {
+  if (!isValidUUID(versionId)) {
     return NextResponse.json({ error: 'Invalid version ID format' }, { status: 400 })
   }
 
@@ -140,19 +126,7 @@ export async function POST(
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options)
-        }
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const {
     data: { user },
