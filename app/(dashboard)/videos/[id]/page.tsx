@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { VideoPlayer } from '@/components/player/VideoPlayer'
 import { VideoPlayerProvider } from '@/components/player/VideoPlayerProvider'
-import { VersionSelector } from '@/components/versions/VersionSelector'
+import { VersionSelector, type Version } from '@/components/versions/VersionSelector'
 import { MobilePlayerLayout } from '@/components/player/MobilePlayerLayout'
 import { GuestShareButton } from '@/components/guest/GuestShareButton'
 import { CommentPanel } from '@/components/comments/CommentPanel'
@@ -21,38 +21,61 @@ export default function VideoPage({ params }: Props) {
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [agencyId, setAgencyId] = useState<string | null>(null)
+  // null = still loading (or not yet retried); passed straight through to
+  // VersionSelector so it doesn't issue its own duplicate GET request.
+  const [versions, setVersions] = useState<Version[] | null>(null)
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null)
 
   // Validate up front, but declare all hooks before the conditional notFound()
   // below so hook order stays stable (React rules-of-hooks).
   const isValidId = UUID_RE.test(params.id)
 
   // Fetch the current user id once on mount
-  useEffect(() => {
-    if (!isValidId) return
+  const fetchUser = useCallback(() => {
     const supabase = createClient()
-    supabase.auth
+    return supabase.auth
       .getUser()
       .then(({ data: { user } }) => {
-        if (user) setUserId(user.id)
+        if (!user) throw new Error('Not signed in')
+        setUserId(user.id)
       })
       .catch((err: unknown) => {
         console.error('[video-page] getUser failed:', err)
+        setBootstrapError('Unable to load comments right now.')
       })
-  }, [isValidId])
+  }, [])
 
-  // Fetch agencyId from the versions endpoint once the videoId is known
-  useEffect(() => {
-    if (!isValidId) return
-    fetch(`/api/videos/${params.id}/versions`)
+  // Fetch agencyId + versions from the single versions endpoint. VersionSelector
+  // receives the same `versions` array as a prop so it never has to re-fetch it.
+  const fetchVersions = useCallback(() => {
+    return fetch(`/api/videos/${params.id}/versions`)
       .then(async (res) => {
         if (!res.ok) throw new Error(`versions fetch failed (${res.status})`)
-        const data = (await res.json()) as { agencyId: string }
+        const data = (await res.json()) as { agencyId: string; versions: Version[] }
         if (data.agencyId) setAgencyId(data.agencyId)
+        setVersions(data.versions ?? [])
       })
       .catch((err: unknown) => {
         console.error('[video-page] agencyId fetch failed:', err)
+        setBootstrapError('Unable to load comments right now.')
       })
-  }, [params.id, isValidId])
+  }, [params.id])
+
+  const retryBootstrap = useCallback(() => {
+    setBootstrapError(null)
+    void fetchUser()
+    void fetchVersions()
+  }, [fetchUser, fetchVersions])
+
+  useEffect(() => {
+    if (!isValidId) return
+    void fetchUser()
+  }, [isValidId, fetchUser])
+
+  useEffect(() => {
+    if (!isValidId) return
+    void fetchVersions()
+  }, [isValidId, fetchVersions])
 
   if (!isValidId) {
     notFound()
@@ -74,6 +97,7 @@ export default function VideoPage({ params }: Props) {
           videoId={params.id}
           activeVersionId={activeVersionId}
           onVersionChange={setActiveVersionId}
+          versions={versions}
         />
       </div>
       <VideoPlayerProvider>
@@ -93,6 +117,23 @@ export default function VideoPage({ params }: Props) {
                 agencyId={agencyId}
                 userId={userId}
               />
+            ) : bootstrapError ? (
+              <div className="p-4">
+                <div className="rounded-lg bg-red-50 p-3 dark:bg-red-950/40">
+                  <div className="flex items-center justify-between gap-3">
+                    <p role="alert" className="text-sm text-red-700 dark:text-red-400">
+                      {bootstrapError}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={retryBootstrap}
+                      className="shrink-0 rounded-md bg-red-100 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : undefined
           }
         />
