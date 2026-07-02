@@ -84,4 +84,22 @@ describe('VideoPage — source invariants', () => {
   it('only renders CommentPanel when activeVersionId, userId, and agencyId are all present', () => {
     assert.match(source, /activeVersionId && userId && agencyId \? \(/)
   })
+
+  it('passes comments to VideoPlayer so CommentTimeline markers render', () => {
+    assert.match(source, /<VideoPlayer[\s\S]*?comments=\{comments\}/)
+  })
+
+  it('sources comments from the shared useVideoComments hook (single fetch)', () => {
+    assert.match(source, /import \{ useVideoComments \} from '@\/hooks\/useVideoComments'/)
+    assert.match(source, /useVideoComments\(params\.id, activeVersionId\)/)
+    // The page itself must not fetch the comments endpoint directly — only
+    // the shared hook does, so there is exactly one fetch per version.
+    assert.doesNotMatch(source, /fetch\(`\/api\/videos\/.*\/comments`\)/)
+  })
+
+  it('passes the same comments + mutation handlers to CommentPanel (no second fetch)', () => {
+    assert.match(source, /<CommentPanel[\s\S]*?comments=\{comments\}/)
+    assert.match(source, /<CommentPanel[\s\S]*?onOptimisticInsert=\{handleCommentInsert\}/)
+    assert.match(source, /<CommentPanel[\s\S]*?onOptimisticRollback=\{handleCommentRollback\}/)
+  })
 })

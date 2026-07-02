@@ -1,10 +1,9 @@
 // components/comments/CommentPanel.tsx
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback } from 'react'
 import type { Comment } from '@/lib/comments'
 import { useVideoPlayerContext } from '@/components/player/VideoPlayer'
-import { useRealtimeComments } from '@/hooks/useRealtimeComments'
 import { CommentThread } from './CommentThread'
 import { CommentInput } from './CommentInput'
 
@@ -13,75 +12,28 @@ interface CommentPanelProps {
   versionId: string
   agencyId: string
   userId: string
+  // Comments, loading/error state, and mutation handlers are owned by the
+  // page-level useVideoComments hook so there is exactly ONE fetch of the
+  // comments endpoint — VideoPlayer's CommentTimeline shares the same state.
+  comments: Comment[]
+  loading: boolean
+  error: string | null
+  onOptimisticInsert: (comment: Comment) => void
+  onOptimisticRollback: (tempId: string) => void
 }
 
-export function CommentPanel({ videoId, versionId, agencyId, userId }: CommentPanelProps) {
+export function CommentPanel({
+  videoId,
+  versionId,
+  agencyId,
+  userId,
+  comments,
+  loading,
+  error,
+  onOptimisticInsert,
+  onOptimisticRollback,
+}: CommentPanelProps) {
   const player = useVideoPlayerContext()
-  const [comments, setComments] = useState<Comment[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-
-    fetch(
-      `/api/videos/${encodeURIComponent(videoId)}/versions/${encodeURIComponent(versionId)}/comments`
-    )
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { error?: string }
-          throw new Error(body.error ?? `Failed to load comments (${res.status})`)
-        }
-        return res.json() as Promise<{ comments: Comment[] }>
-      })
-      .then(({ comments: data }) => {
-        if (!cancelled) {
-          setComments(data)
-          setLoading(false)
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load comments')
-          setLoading(false)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [videoId, versionId])
-
-  const handleInsert = useCallback((comment: Comment) => {
-    setComments((prev) => {
-      // Avoid duplicates
-      if (prev.some((c) => c.id === comment.id)) return prev
-      return [...prev, comment]
-    })
-  }, [])
-
-  const handleUpdate = useCallback((updated: Comment) => {
-    setComments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
-  }, [])
-
-  const handleDelete = useCallback((commentId: string) => {
-    setComments((prev) =>
-      prev.map((c) => (c.id === commentId ? { ...c, deletedAt: new Date().toISOString() } : c))
-    )
-  }, [])
-
-  const handleOptimisticRollback = useCallback((tempId: string) => {
-    setComments((prev) => prev.filter((c) => c.id !== tempId))
-  }, [])
-
-  useRealtimeComments({
-    videoVersionId: versionId,
-    onInsert: handleInsert,
-    onUpdate: handleUpdate,
-    onDelete: handleDelete,
-  })
 
   const handleSeek = useCallback(
     (t: number) => {
@@ -142,8 +94,8 @@ export function CommentPanel({ videoId, versionId, agencyId, userId }: CommentPa
         versionId={versionId}
         agencyId={agencyId}
         userId={userId}
-        onOptimisticInsert={handleInsert}
-        onOptimisticRollback={handleOptimisticRollback}
+        onOptimisticInsert={onOptimisticInsert}
+        onOptimisticRollback={onOptimisticRollback}
       />
     </div>
   )
