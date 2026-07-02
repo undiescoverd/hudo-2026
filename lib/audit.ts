@@ -1,5 +1,6 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/nextjs'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 /**
  * Valid action values as defined in 0001_initial_schema.sql.
@@ -33,13 +34,6 @@ export type LogEventParams = {
   metadata?: Record<string, unknown>
   /** Injectable admin client for testing. Defaults to service-role client. */
   adminClient?: SupabaseClient
-}
-
-function createAdminClient(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('[audit] Missing Supabase env vars')
-  return createClient(url, key)
 }
 
 /**

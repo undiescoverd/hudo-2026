@@ -14,7 +14,7 @@
  * - Rate-limited: 20 requests / 60s per agency
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -52,9 +52,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[agencies/[id]/members:POST] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -93,7 +92,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (rateLimitResponse) return rateLimitResponse
 
   // ---- Admin client (service-role, bypasses RLS) ---------------------------
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   // ---- Caller authz: must be owner or admin_agent in this agency -----------
   const { data: callerMembership } = await admin

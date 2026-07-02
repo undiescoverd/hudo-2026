@@ -1,17 +1,11 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendEmail as defaultSendEmail } from '@/lib/email'
 import {
   renderCommentsBatchEmail,
   type CommentEntry,
   type VideoGroup,
 } from '@/lib/email-templates/comments-batch'
-
-function createAdminClient(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('[notifications] Missing Supabase env vars')
-  return createClient(url, key)
-}
+import { createAdminClient } from '@/lib/supabase-admin'
 
 /**
  * Inserts one notification row per eligible agency member (excluding the comment author).

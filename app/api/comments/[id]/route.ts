@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -36,9 +36,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[comments/[id]:PATCH] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -77,7 +76,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   )
   if (patchRl) return patchRl
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   // Fetch the comment — 404 if missing or soft-deleted
   const { data: comment, error: commentError } = await admin
@@ -194,9 +193,8 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[comments/[id]:DELETE] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -234,7 +232,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
   )
   if (deleteRl) return deleteRl
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   // Fetch the comment — 404 if missing or already soft-deleted
   const { data: comment, error: commentError } = await admin

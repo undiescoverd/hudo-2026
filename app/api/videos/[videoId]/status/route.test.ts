@@ -133,8 +133,8 @@ describe('status PATCH route — source invariants', () => {
     assert.match(source, /STATUS_RATE_LIMIT/)
   })
 
-  it('uses service-role client (createClient with serviceRoleKey)', () => {
-    assert.match(source, /createClient\(supabaseUrl,\s*serviceRoleKey\)/)
+  it('uses service-role client (createAdminClient)', () => {
+    assert.match(source, /createAdminClient\(\)/)
   })
 
   it('inserts into audit_log with status_changed action', () => {

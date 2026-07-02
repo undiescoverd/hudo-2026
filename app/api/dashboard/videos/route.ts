@@ -29,10 +29,15 @@ const DASHBOARD_VIDEOS_RATE_WINDOW = 60 // seconds
 
 export async function GET(req: NextRequest) {
   // ---- Auth ---------------------------------------------------------------
-  const supabase = await createSupabaseServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('[dashboard/videos] Missing Supabase environment variables')
+    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+  }
+
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const { user, role, agent_agency_ids } = await getCurrentUserRole(supabase)
 

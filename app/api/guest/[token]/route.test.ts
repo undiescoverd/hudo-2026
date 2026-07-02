@@ -179,12 +179,12 @@ describe('guest metadata — response shape (no sensitive data)', () => {
     )
     const source = fs.readFileSync(helperPath, 'utf8')
 
-    assert.match(source, /SUPABASE_SERVICE_ROLE_KEY/, 'Helper must use service role key')
     assert.match(
       source,
-      /createClient\(supabaseUrl,\s*serviceRoleKey\)/,
-      'Helper must create admin client with service role'
+      /import\s*\{\s*createAdminClient\s*\}\s*from\s*'@\/lib\/supabase-admin'/,
+      'Helper must import the shared service-role client factory'
     )
+    assert.match(source, /createAdminClient\(\)/, 'Helper must create admin client')
   })
 
   it('comments select does not expose deleted comments', async () => {

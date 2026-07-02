@@ -11,7 +11,7 @@
  * - Rate-limited per user
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit, requireMembership } from '@/lib/api-helpers'
@@ -42,9 +42,8 @@ export async function GET(
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[comments/export:GET] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -69,7 +68,7 @@ export async function GET(
   )
   if (rl) return rl
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   // Fetch video
   const { data: video, error: videoError } = await admin

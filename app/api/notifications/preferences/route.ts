@@ -6,7 +6,7 @@
  *
  * Body: { email_enabled?: boolean; batch_window_minutes?: 5 | 15 | 30 | 60 }
  */
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit } from '@/lib/api-helpers'
@@ -20,9 +20,8 @@ const RATE_WINDOW = 60 // seconds
 export async function PATCH(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[notifications:preferences] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -72,7 +71,7 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   // Fetch current row to merge defaults correctly
   const { data: existing } = await admin

@@ -8,10 +8,10 @@
  * - Rate-limited via Upstash Redis
  */
 
-import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 const NOTIFICATIONS_RATE_LIMIT = 60
 const NOTIFICATIONS_RATE_WINDOW = 60 // seconds
@@ -19,8 +19,7 @@ const NOTIFICATIONS_RATE_WINDOW = 60 // seconds
 function getEnvVars() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  return { supabaseUrl, supabaseAnonKey, serviceRoleKey }
+  return { supabaseUrl, supabaseAnonKey }
 }
 
 async function getAuthenticatedUser(supabaseUrl: string, supabaseAnonKey: string) {
@@ -49,9 +48,9 @@ async function getAuthenticatedUser(supabaseUrl: string, supabaseAnonKey: string
  * plus total unread_count (may be > 50).
  */
 export async function GET() {
-  const { supabaseUrl, supabaseAnonKey, serviceRoleKey } = getEnvVars()
+  const { supabaseUrl, supabaseAnonKey } = getEnvVars()
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[notifications:GET] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -78,7 +77,7 @@ export async function GET() {
     console.error('[notifications:GET] Rate limit check failed, allowing request:', err)
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   // Fetch up to 50 most recent notifications for this user
   const { data: notifications, error: fetchErr } = await admin
@@ -118,9 +117,9 @@ export async function GET() {
  * Marks all unread notifications as read for the current user.
  */
 export async function PATCH() {
-  const { supabaseUrl, supabaseAnonKey, serviceRoleKey } = getEnvVars()
+  const { supabaseUrl, supabaseAnonKey } = getEnvVars()
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[notifications:PATCH] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -147,7 +146,7 @@ export async function PATCH() {
     console.error('[notifications:PATCH] Rate limit check failed, allowing request:', err)
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   const { error: updateErr } = await admin
     .from('notifications')

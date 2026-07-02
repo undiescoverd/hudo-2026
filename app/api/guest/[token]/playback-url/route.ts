@@ -1,9 +1,9 @@
-import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { getStorage } from '@/lib/storage'
 import { hashGuestToken, verifyGuestToken } from '@/lib/guest-tokens'
 import { checkRateLimit } from '@/lib/api-helpers'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 /**
  * GET /api/guest/:token/playback-url
@@ -41,15 +41,12 @@ export async function GET(request: NextRequest, { params }: { params: { token: s
   )
   if (rl) return rl
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!supabaseUrl || !serviceRoleKey) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[guest:playback-url] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   const { data: link, error: linkError } = await admin
     .from('guest_links')

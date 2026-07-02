@@ -1,5 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
 import { verifyGuestToken } from '@/lib/guest-tokens'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 /**
  * GuestMetadata — shape returned to callers (page + API route).
@@ -44,15 +44,13 @@ export type GuestMetadata = {
  * enumeration information.
  */
 export async function getGuestMetadata(token: string): Promise<GuestMetadata | null> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    console.error('[guest:metadata] Missing Supabase environment variables')
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch (err) {
+    console.error('[guest:metadata] Missing Supabase environment variables', err)
     return null
   }
-
-  const admin = createClient(supabaseUrl, serviceRoleKey)
 
   // Import here so this module works in both API-route and RSC contexts
   const { hashGuestToken } = await import('@/lib/guest-tokens')

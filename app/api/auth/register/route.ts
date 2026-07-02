@@ -4,6 +4,7 @@ import { validatePassword } from '@/lib/auth-validation'
 import { checkAuthRateLimit, getClientIp, AUTH_RATE_WINDOW } from '@/lib/rate-limit'
 import { getSiteOrigin } from '@/lib/site-url'
 import { rateLimitFailClosedResponse } from '@/lib/api-helpers'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 /**
  * POST /api/auth/register
@@ -60,9 +61,8 @@ export async function POST(request: NextRequest) {
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !anonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !anonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[register] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
 
   // Insert into public.users via service role (bypasses RLS — this route is server-side only).
   if (data.user) {
-    const admin = createClient(supabaseUrl, serviceRoleKey)
+    const admin = createAdminClient()
     const { error: insertError } = await admin.from('users').insert({
       id: data.user.id,
       email: email.trim().toLowerCase(),

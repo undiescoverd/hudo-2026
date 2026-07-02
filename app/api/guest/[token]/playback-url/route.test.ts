@@ -86,9 +86,10 @@ describe('guest playback-url — security invariants', () => {
     assert.match(source, /SUPABASE_SERVICE_ROLE_KEY/, 'Route must use service role key')
     assert.match(
       source,
-      /createClient\(supabaseUrl,\s*serviceRoleKey\)/,
-      'Route must create admin client'
+      /import\s*\{\s*createAdminClient\s*\}\s*from\s*'@\/lib\/supabase-admin'/,
+      'Route must import the shared service-role client factory'
     )
+    assert.match(source, /createAdminClient\(\)/, 'Route must create admin client')
   })
 
   it('all invalid token states return 404 (not 401 or 403)', async () => {

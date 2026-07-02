@@ -6,11 +6,11 @@
  */
 
 import { redirect } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { isBillingEnabled } from '@/lib/feature-flags'
 import { AGENT_SEAT_ROLES } from '@/lib/plan-gates'
 import { BillingOverview } from '@/components/billing/BillingOverview'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 export default async function BillingSettingsPage() {
   if (!isBillingEnabled()) {
@@ -26,9 +26,8 @@ export default async function BillingSettingsPage() {
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     // Misconfiguration — fail loudly rather than letting createClient(url, undefined)
     // produce opaque auth errors on every query.
     throw new Error('[settings/billing] Missing Supabase environment variables')
@@ -45,7 +44,7 @@ export default async function BillingSettingsPage() {
   }
 
   // Use service-role client to bypass RLS for membership + agency reads
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   // Resolve the user's owner membership (billing is owner-only).
   // Order deterministically so a multi-agency owner always lands on the same
