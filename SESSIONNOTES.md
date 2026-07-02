@@ -8,6 +8,14 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-06-21 — Fixed 2 stale source-pattern unit tests (PR #115)
+
+- **Task:** Fix the two known-stale source-scanning unit tests that blocked wiring `pnpm test` into CI. Tester run for GLM-5.2 driving a self-terminating agent loop (Reason→Act→Observe→Check, solo loop, 6-pass hard cap).
+- **Models:** planner=opus, executor=glm-5.2 (solo loop, no second-brain/docs layer).
+- **Outcome:** done (pending merge) — `pnpm test` 824/824 (0 failing); full gate green; PR #115 open, not merged.
+- **Notes:** Test-file-only edits, source untouched (verified via `git diff main --stat` = 2 `.test.*` files only). Test 1 (`GuestComments.test.tsx:42`): strip `/* */` + `//` comments before `doesNotMatch(/resolve|reply|delete/i)` — the regex was matching the component's own doc comment. Test 2 (`route.test.ts:25`): `.*` → `[\s\S]*` so `/authorization…Bearer…cronSecret/` crosses the newline between route.ts:17 and :18; added `assert.match(source, /timingSafeEqual/)` hardening. Loop used **2 passes** (one per file), well under the 6 cap; no tripwires hit. The GLM loop behaved exactly as hoped: short plan first, minimal edits, read real test output, stopped at open PR.
+- **Gotcha (if any):** Two cosmetic shell artifacts from `git commit -m "…"` and `gh pr create --body '…'` — backtick-quoted `Bearer ${cronSecret}` in the commit body got stripped by shell command substitution, and the PR body's `$(git diff --stat main)` left a stray leading `'` from quote-escaping. Neither affects the diff/tests; use a HEREDOC or `git commit -F` for messages containing backticks/`$`. Also: CLAUDE.md's stale-tests note (line 33) and the "42 unit tests" count (line 121) were updated in the same commit — the on-disk file had drifted from the system-prompt snapshot.
+
 ## 2026-06-21 — PR #114 CodeRabbit Major findings addressed
 
 - **Task:** Triage + fix CodeRabbit's review on PR #114 (pricing rebuild / single source of truth).

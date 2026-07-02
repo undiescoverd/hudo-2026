@@ -30,7 +30,7 @@ supabase test db tests/rls    # RLS pgTAP suite (CI: "RLS Policy Tests")
 node orchestrate.js status    # live sprint/task state
 ```
 
-> **Unit tests run locally only — still no CI step:** `pnpm test` now exists (`tsx --test`, 42 files / ~649 cases across `app/`, `lib/`, `components/`, root). It is **not** wired into CI by decision — CI still covers Lint/Type-check/Build + RLS only, so don't assume a green CI ran the unit suite. Two **stale source-pattern tests fail** on a clean run (their regexes don't match the correct current source, not real bugs): `components/guest/GuestComments.test.tsx:43` (regex matches the file's own doc comment) and `app/api/cron/notifications/route.test.ts:26` (single-line regex can't match the multi-line `timingSafeEqual` auth check). Fix those two before wiring `pnpm test` into CI.
+> **Unit tests run locally only — still no CI step:** `pnpm test` now exists (`tsx --test`, 51 files / 824 cases across `app/`, `lib/`, `components/`, root) and is **fully green** (0 failing). It is **not** wired into CI by decision — CI still covers Lint/Type-check/Build + RLS only, so don't assume a green CI ran the unit suite. The two previously-stale source-pattern tests (`components/guest/GuestComments.test.tsx`, `app/api/cron/notifications/route.test.ts`) were fixed in PR #115 (comment-strip + multiline regex) — the last blocker before `pnpm test` can be wired into CI.
 
 ## Critical Architecture Rules
 
@@ -118,7 +118,7 @@ Entry format:
 - **Pre-commit hooks** via Husky + lint-staged. Staged files are auto-formatted (Prettier) and linted (ESLint) on every commit. Config in `package.json` under `lint-staged`.
 - **Claude hooks** in `.claude/settings.json`:
   - **PreToolUse** — blocks any Edit/Write to `.env*` files (exit 2); **and** on a `Write` to `supabase/migrations/*.sql` emits an advisory `systemMessage` (non-blocking) reminding you to apply via Supabase MCP `apply_migration` to **both** hudo-dev and hudo-staging, not the SQL editor.
-  - **PostToolUse** — after any `.ts`/`.tsx` edit runs `pnpm type-check` (last 20 lines); **then** runs the colocated unit test: if the edited file is `*.test.ts(x)` it runs that file, else if a sibling `<base>.test.ts(x)` exists it runs `pnpm exec tsx --test <sibling>` and surfaces `tail -20`. Non-blocking/informational — closes the "42 unit tests, no CI step" gap at edit time (a failing/stale test only prints, never blocks the edit).
+  - **PostToolUse** — after any `.ts`/`.tsx` edit runs `pnpm type-check` (last 20 lines); **then** runs the colocated unit test: if the edited file is `*.test.ts(x)` it runs that file, else if a sibling `<base>.test.ts(x)` exists it runs `pnpm exec tsx --test <sibling>` and surfaces `tail -20`. Non-blocking/informational — closes the "unit tests, no CI step" gap at edit time (a failing/stale test only prints, never blocks the edit).
   - **Stop** — reminds you to update `SESSIONNOTES.md` when code changed but the file wasn't touched.
 - **Project subagents** in `.claude/agents/` — name these in the mandatory review/security steps above:
   - `hudo-security-reviewer` — audits a diff against the Critical Architecture Rules + Security surfaces (R2 signed-URL playback, guest isolation, audit-log immutability, soft-delete, Stripe key segregation, consent-gated PostHog, rate limiting, version RPC).

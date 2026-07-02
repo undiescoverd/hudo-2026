@@ -23,7 +23,10 @@ describe('cron/notifications route — source invariants', () => {
   })
 
   it('checks Authorization header against CRON_SECRET', () => {
-    assert.match(source, /authorization.*Bearer.*cronSecret|cronSecret.*Bearer.*authorization/)
+    // The auth check spans multiple lines (header read → expected `Bearer ${cronSecret}`),
+    // so use [\s\S]* to cross newlines. Also assert the constant-time comparison.
+    assert.match(source, /authorization[\s\S]*Bearer[\s\S]*cronSecret/)
+    assert.match(source, /timingSafeEqual/)
   })
 
   it('returns 401 when auth fails', () => {
