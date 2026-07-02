@@ -14,7 +14,8 @@ import path from 'node:path'
 import fs from 'node:fs'
 
 // ---------------------------------------------------------------------------
-// UUID validation (mirrors UUID_RE in route.ts)
+// UUID validation (mirrors the shared isValidUUID/UUID_RE in lib/validation.ts,
+// which route.ts now uses instead of a local copy)
 // ---------------------------------------------------------------------------
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -73,7 +74,7 @@ describe('notifications item route — source invariants', () => {
   })
 
   it('validates UUID format (400 guard present)', () => {
-    assert.ok(source.includes('UUID_RE.test'), 'Route must validate UUID format')
+    assert.ok(source.includes('isValidUUID('), 'Route must validate UUID format')
   })
 
   it('rate limits are applied', () => {

@@ -2,8 +2,8 @@
  * Unit tests for POST /api/agencies/[id]/members.
  *
  * Uses Node.js built-in test runner — no Next.js runtime needed. The route
- * builds its own Supabase clients from `cookies()` / env vars (no dependency
- * injection), so — matching this repo's convention for such routes (see
+ * builds its Supabase clients via createSupabaseServerClient() / env vars (no
+ * dependency injection), so — matching this repo's convention for such routes (see
  * app/api/notifications/route.test.ts, app/api/agencies/[id]/billing/route.test.ts)
  * — these are source-pattern tests that read route.ts and regex-verify the
  * security-critical invariants, including the exact caller-role → grantable-role
@@ -49,10 +49,12 @@ describe('members route — source invariants', () => {
 
   it('caller must hold owner or admin_agent to add members at all', () => {
     assert.match(source, /ADD_MEMBER_ROLES\s*=\s*new Set\(\['owner',\s*'admin_agent'\]\)/)
-    assert.match(
-      source,
-      /!callerMembership\s*\|\|\s*!ADD_MEMBER_ROLES\.has\(callerMembership\.role\)/
-    )
+    // Caller membership lookup goes through the shared requireMembership() helper
+    // (DB error -> 500, missing membership -> 403); the ADD_MEMBER_ROLES admission
+    // check stays a separate explicit step since it's narrower than
+    // requireAgentRole's AGENT_PLUS_ROLES (which also allows 'agent').
+    assert.match(source, /requireMembership\(admin,\s*user\.id,\s*agencyId\)/)
+    assert.match(source, /!ADD_MEMBER_ROLES\.has\(callerMembership\.role\)/)
   })
 
   it('defines the grantable-role matrix keyed by caller role (not one shared allowlist)', () => {
@@ -123,8 +125,8 @@ describe('members route — source invariants', () => {
     assert.match(source, /createAdminClient\(\)/)
   })
 
-  it('uses createServerClient for auth', () => {
-    assert.match(source, /createServerClient/)
+  it('uses createSupabaseServerClient for auth', () => {
+    assert.match(source, /createSupabaseServerClient/)
   })
 
   it('checks the plan seat limit before inserting the membership', () => {

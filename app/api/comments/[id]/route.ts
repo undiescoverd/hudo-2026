@@ -1,6 +1,5 @@
 import { createAdminClient } from '@/lib/supabase-admin'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { type NextRequest, NextResponse } from 'next/server'
 import { roleAtLeast, type UserRole } from '@/lib/auth'
 import {
@@ -9,9 +8,8 @@ import {
   COMMENTS_DELETE_RATE_LIMIT,
   COMMENTS_RATE_WINDOW,
 } from '@/lib/comments'
-import { checkRateLimit } from '@/lib/api-helpers'
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+import { checkRateLimit, requireMembership } from '@/lib/api-helpers'
+import { isValidUUID } from '@/lib/validation'
 
 /**
  * PATCH /api/comments/:id
@@ -30,7 +28,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   const { id: commentId } = params
 
-  if (!UUID_RE.test(commentId)) {
+  if (!isValidUUID(commentId)) {
     return NextResponse.json({ error: 'Invalid comment ID format' }, { status: 400 })
   }
 
@@ -42,19 +40,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options)
-        }
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const {
     data: { user },
@@ -90,18 +76,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 
   // Check user membership in the comment's agency
-  const { data: membership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', comment.agency_id)
-    .single()
+  const membershipResult = await requireMembership(admin, user.id, comment.agency_id)
+  if (membershipResult instanceof NextResponse) return membershipResult
 
-  if (!membership) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
-
-  const role = membership.role as UserRole
+  const role = membershipResult.role as UserRole
 
   let body: unknown
   try {
@@ -187,7 +165,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 export async function DELETE(_request: NextRequest, { params }: { params: { id: string } }) {
   const { id: commentId } = params
 
-  if (!UUID_RE.test(commentId)) {
+  if (!isValidUUID(commentId)) {
     return NextResponse.json({ error: 'Invalid comment ID format' }, { status: 400 })
   }
 
@@ -199,19 +177,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options)
-        }
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
 
   const {
     data: { user },
@@ -246,18 +212,10 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
   }
 
   // Check user membership in the comment's agency
-  const { data: membership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', comment.agency_id)
-    .single()
+  const membershipResult = await requireMembership(admin, user.id, comment.agency_id)
+  if (membershipResult instanceof NextResponse) return membershipResult
 
-  if (!membership) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
-
-  const role = membership.role as UserRole
+  const role = membershipResult.role as UserRole
 
   // Talent can only delete their own comments; agents+ can delete any
   if (role === 'talent' && comment.user_id !== user.id) {

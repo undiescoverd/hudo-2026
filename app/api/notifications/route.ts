@@ -8,10 +8,9 @@
  * - Rate-limited via Upstash Redis
  */
 
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
 
 const NOTIFICATIONS_RATE_LIMIT = 60
 const NOTIFICATIONS_RATE_WINDOW = 60 // seconds
@@ -23,19 +22,7 @@ function getEnvVars() {
 }
 
 async function getAuthenticatedUser(supabaseUrl: string, supabaseAnonKey: string) {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options)
-        }
-      },
-    },
-  })
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
   const {
     data: { user },
   } = await supabase.auth.getUser()
