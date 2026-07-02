@@ -200,6 +200,23 @@ describe('guest playback-url — view_count increment', () => {
       'Update error must be logged, not thrown'
     )
   })
+
+  it('reports view-stats update failures to Sentry (S3-SEC-006)', async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+
+    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
+    const source = fs.readFileSync(routePath, 'utf8')
+
+    assert.match(source, /import \* as Sentry from '@sentry\/nextjs'/)
+
+    const rpcBlock = source.slice(source.indexOf("rpc('increment_guest_link_view'"))
+    assert.match(
+      rpcBlock,
+      /Sentry\.captureException\(rpcError/,
+      'Swallowed view-stats RPC failure must be reported to Sentry'
+    )
+  })
 })
 
 // ---------------------------------------------------------------------------

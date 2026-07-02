@@ -114,6 +114,26 @@ describe('lib/audit — logEvent', () => {
     assert.ok(msg.includes('[audit:logEvent]'), 'log message must include the module tag')
   })
 
+  it('reports insert failures to Sentry (S3-SEC-006 — compliance-relevant swallowed path)', () => {
+    // Behavioural assertion isn't practical here: @sentry/nextjs has no client
+    // configured in the test env, and this repo's test runner (`tsx --test`,
+    // no --experimental-test-module-mocks) has no established pattern for
+    // mocking ESM module imports. Instead, assert the wiring exists in source,
+    // matching the source-pattern style already used elsewhere in this suite
+    // (see the migration-content test below).
+    const __dirname = path.dirname(fileURLToPath(import.meta.url))
+    const source = fs.readFileSync(path.resolve(__dirname, './audit.ts'), 'utf8')
+
+    assert.match(source, /import \* as Sentry from '@sentry\/nextjs'/)
+
+    const insertFailureBlock = source.slice(source.indexOf('if (error) {'))
+    assert.match(
+      insertFailureBlock,
+      /Sentry\.captureException\(error/,
+      'audit insert failure must be reported to Sentry — this is a compliance-relevant swallowed error'
+    )
+  })
+
   it('console.error is called on config error', async () => {
     const errors: unknown[] = []
     const original = console.error

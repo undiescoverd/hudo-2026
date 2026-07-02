@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { getStorage } from '@/lib/storage'
 import { hashGuestToken, verifyGuestToken } from '@/lib/guest-tokens'
 import { checkRateLimit } from '@/lib/api-helpers'
@@ -116,6 +117,7 @@ export async function GET(request: NextRequest, { params }: { params: { token: s
   const { error: rpcError } = await admin.rpc('increment_guest_link_view', { p_id: link.id })
   if (rpcError) {
     console.error('[guest:playback-url] Failed to update view stats:', rpcError.message)
+    Sentry.captureException(rpcError)
   }
 
   return NextResponse.json({

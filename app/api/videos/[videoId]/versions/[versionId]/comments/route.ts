@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import {
   validateCreateInput,
   getVideoVersionWithAccess,
@@ -276,6 +277,7 @@ export async function POST(
       commentId: comment.id,
       err,
     })
+    Sentry.captureException(err)
   })
 
   return NextResponse.json({ comment: rowToComment(comment) }, { status: 201 })

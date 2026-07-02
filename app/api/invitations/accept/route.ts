@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { validatePassword } from '@/lib/auth-validation'
 import crypto from 'crypto'
 import { getClientIp } from '@/lib/rate-limit'
@@ -127,6 +128,7 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       console.error('[invitations/accept] users insert failed:', insertError.message)
       // Auth user exists, proceed with membership — reconciliation can fix missing users record
+      Sentry.captureException(insertError)
     }
   } else {
     userId = existingUsers![0].id

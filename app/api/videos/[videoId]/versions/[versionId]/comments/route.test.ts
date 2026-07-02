@@ -239,6 +239,17 @@ describe('comments collection route — source invariants', () => {
     assert.match(source, /\.map\(rowToComment\)/) // GET list
     assert.match(source, /comment:\s*rowToComment\(comment\)/) // POST echo
   })
+
+  it('reports notification enqueue failures to Sentry (S3-SEC-006)', () => {
+    assert.match(source, /import \* as Sentry from '@sentry\/nextjs'/)
+
+    const catchBlock = source.slice(source.indexOf('.catch((err) => {'))
+    assert.match(
+      catchBlock,
+      /Sentry\.captureException\(err/,
+      'Swallowed notification-enqueue failure must be reported to Sentry'
+    )
+  })
 })
 
 // ---------------------------------------------------------------------------

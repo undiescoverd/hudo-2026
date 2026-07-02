@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/nextjs'
 
 /**
  * Valid action values as defined in 0001_initial_schema.sql.
@@ -90,5 +91,8 @@ export async function logEvent({
       resourceId,
       error: error.message,
     })
+    // Compliance-relevant: a lost audit_log write should be visible even
+    // though we deliberately do not fail the request (see IMPORTANT above).
+    Sentry.captureException(error)
   }
 }
