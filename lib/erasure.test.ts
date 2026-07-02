@@ -12,9 +12,16 @@
 
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
-import { eraseUser, DELETED_USER_NAME, tombstoneEmail } from './erasure.js'
+import {
+  eraseUser,
+  canEraseUser,
+  DELETED_USER_NAME,
+  tombstoneEmail,
+  type MembershipRecord,
+} from './erasure.js'
 
 const TARGET_ID = '00000000-0000-0000-0000-0000000000aa'
+const CALLER_ID = '00000000-0000-0000-0000-0000000000bb'
 const AGENCY_A = '00000000-0000-0000-0000-0000000000a1'
 const AGENCY_B = '00000000-0000-0000-0000-0000000000a2'
 
@@ -133,6 +140,112 @@ describe('lib/erasure — tombstoneEmail / DELETED_USER_NAME', () => {
   })
 })
 
+describe('lib/erasure — canEraseUser authorization matrix', () => {
+  const m = (agency_id: string, role: string): MembershipRecord => ({ agency_id, role })
+
+  it('self-erasure is always allowed (even with zero memberships on both sides)', () => {
+    assert.strictEqual(canEraseUser(TARGET_ID, TARGET_ID, [], []), true)
+  })
+
+  it('owner in a shared agency may erase the target', () => {
+    assert.strictEqual(
+      canEraseUser(CALLER_ID, TARGET_ID, [m(AGENCY_A, 'owner')], [m(AGENCY_A, 'agent')]),
+      true
+    )
+  })
+
+  it('owner in a shared agency may erase a target who is elevated ELSEWHERE (accepted risk, documented)', () => {
+    assert.strictEqual(
+      canEraseUser(
+        CALLER_ID,
+        TARGET_ID,
+        [m(AGENCY_A, 'owner')],
+        [m(AGENCY_A, 'agent'), m(AGENCY_B, 'owner')]
+      ),
+      true
+    )
+  })
+
+  it('admin_agent may erase an agent target who is not elevated anywhere', () => {
+    assert.strictEqual(
+      canEraseUser(CALLER_ID, TARGET_ID, [m(AGENCY_A, 'admin_agent')], [m(AGENCY_A, 'agent')]),
+      true
+    )
+  })
+
+  it('admin_agent may erase a talent target who is not elevated anywhere', () => {
+    assert.strictEqual(
+      canEraseUser(CALLER_ID, TARGET_ID, [m(AGENCY_A, 'admin_agent')], [m(AGENCY_A, 'talent')]),
+      true
+    )
+  })
+
+  it('EXPLOIT CASE: admin_agent is DENIED when target is agent in the shared agency but owner of an UNSHARED agency', () => {
+    assert.strictEqual(
+      canEraseUser(
+        CALLER_ID,
+        TARGET_ID,
+        [m(AGENCY_A, 'admin_agent')],
+        [m(AGENCY_A, 'agent'), m(AGENCY_B, 'owner')]
+      ),
+      false
+    )
+  })
+
+  it('admin_agent is DENIED when target is admin_agent of an UNSHARED agency', () => {
+    assert.strictEqual(
+      canEraseUser(
+        CALLER_ID,
+        TARGET_ID,
+        [m(AGENCY_A, 'admin_agent')],
+        [m(AGENCY_A, 'talent'), m(AGENCY_B, 'admin_agent')]
+      ),
+      false
+    )
+  })
+
+  it('admin_agent is DENIED when target is admin_agent in the shared agency', () => {
+    assert.strictEqual(
+      canEraseUser(
+        CALLER_ID,
+        TARGET_ID,
+        [m(AGENCY_A, 'admin_agent')],
+        [m(AGENCY_A, 'admin_agent')]
+      ),
+      false
+    )
+  })
+
+  it('admin_agent is DENIED when target is owner in the shared agency', () => {
+    assert.strictEqual(
+      canEraseUser(CALLER_ID, TARGET_ID, [m(AGENCY_A, 'admin_agent')], [m(AGENCY_A, 'owner')]),
+      false
+    )
+  })
+
+  it('caller with no shared agency is denied regardless of roles', () => {
+    assert.strictEqual(
+      canEraseUser(CALLER_ID, TARGET_ID, [m(AGENCY_A, 'owner')], [m(AGENCY_B, 'agent')]),
+      false
+    )
+  })
+
+  it('empty target membership set is denied for any non-self caller', () => {
+    assert.strictEqual(canEraseUser(CALLER_ID, TARGET_ID, [m(AGENCY_A, 'owner')], []), false)
+  })
+
+  it('non-elevated caller roles (agent/talent) in a shared agency are denied', () => {
+    assert.strictEqual(
+      canEraseUser(CALLER_ID, TARGET_ID, [m(AGENCY_A, 'agent')], [m(AGENCY_A, 'talent')]),
+      false
+    )
+    assert.strictEqual(
+      canEraseUser(CALLER_ID, TARGET_ID, [m(AGENCY_A, 'talent')], [m(AGENCY_A, 'talent')]),
+      false
+    )
+  })
+})
+
 describe('lib/erasure — eraseUser happy path', () => {
   it('tombstones users: email, full_name, avatar_url — never DELETEs the row', async () => {
     const { admin, chainsByTable } = makeAdmin()
@@ -210,7 +323,8 @@ describe('lib/erasure — eraseUser happy path', () => {
     await eraseUser(admin as never, TARGET_ID)
 
     assert.strictEqual(deleteUserMock.mock.calls.length, 1)
-    assert.strictEqual(deleteUserMock.mock.calls[0].arguments[0], TARGET_ID)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    assert.strictEqual((deleteUserMock.mock.calls[0] as any).arguments[0], TARGET_ID)
   })
 
   it('returns agencyIds captured from the memberships snapshot taken at step 1', async () => {

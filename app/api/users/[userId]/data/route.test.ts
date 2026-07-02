@@ -9,8 +9,13 @@
  * app/api/notifications/route.test.ts) — these are source-pattern tests that
  * read route.ts and regex-verify the security-critical invariants: ordering
  * of the authz -> sole-owner -> existence -> erase sequence, the
- * fail-closed rate-limit posture, the anti-escalation matrix, and that no
+ * fail-closed rate-limit posture, delegation to canEraseUser, and that no
  * PII leaks into the response body.
+ *
+ * The authorization matrix itself (owner/admin_agent/anti-escalation/
+ * cross-agency) is a pure function — canEraseUser in lib/erasure.ts — with
+ * real executed unit tests in lib/erasure.test.ts; these source-pattern
+ * tests only pin that the route actually calls it, in the right position.
  *
  * Run: npx tsx --test "app/api/users/[userId]/data/route.test.ts"
  */
@@ -55,19 +60,21 @@ describe('users/[userId]/data route — source invariants', () => {
   it('denies with a generic 403 before any existence check (no user enumeration)', () => {
     assert.match(
       source,
-      /if \(!authorized\)\s*\{[\s\S]{0,120}error:\s*'Access denied'[\s\S]{0,40}status:\s*403/
+      /!canEraseUser\([\s\S]{0,120}\)\s*\)?\s*\{[\s\S]{0,120}error:\s*'Access denied'[\s\S]{0,40}status:\s*403/
     )
   })
 
-  it('anti-escalation: owner may erase anyone in a shared agency', () => {
-    assert.match(source, /callerRole === 'owner'\) return true/)
-  })
-
-  it("anti-escalation: admin_agent may only erase 'agent' or 'talent' targets", () => {
+  it('delegates the authz decision to canEraseUser (executed matrix coverage lives in lib/erasure.test.ts)', () => {
+    assert.match(source, /import \{[^}]*canEraseUser[^}]*\} from '@\/lib\/erasure'/)
     assert.match(
       source,
-      /callerRole === 'admin_agent' && \(tm\.role === 'agent' \|\| tm\.role === 'talent'\)/
+      /canEraseUser\(user\.id,\s*targetUserId,\s*callerMemberships \?\? \[\],\s*targetMemberships \?\? \[\]\)/
     )
+  })
+
+  it('does NOT re-implement the role matrix inline (no per-pair role comparisons in the route)', () => {
+    assert.doesNotMatch(source, /tm\.role === 'agent'/)
+    assert.doesNotMatch(source, /callerRole === 'admin_agent'/)
   })
 
   it('enforces the sole-owner guard with a 409 (applies to self-erasure too)', () => {
@@ -90,8 +97,8 @@ describe('users/[userId]/data route — source invariants', () => {
     assert.match(source, /eraseUser\(admin, targetUserId\)/)
   })
 
-  it('ordering: authz check runs before eraseUser is called', () => {
-    const authzIdx = source.indexOf('if (!authorized)')
+  it('ordering: canEraseUser authz check runs before eraseUser is called', () => {
+    const authzIdx = source.indexOf('canEraseUser(user.id')
     const eraseIdx = source.indexOf('eraseUser(admin, targetUserId)')
     assert.ok(authzIdx > -1 && eraseIdx > -1)
     assert.ok(authzIdx < eraseIdx, 'authz must run before erasure')
@@ -135,6 +142,15 @@ describe('users/[userId]/data route — source invariants', () => {
 
   it('audit logging is fire-and-forget (does not block or fail the response)', () => {
     assert.match(source, /logEvent\(\{[\s\S]{0,300}\}\)\.catch\(/)
+  })
+
+  it('reuses the existing admin client for audit inserts (no per-agency client re-creation)', () => {
+    assert.match(source, /adminClient:\s*admin/)
+  })
+
+  it('zero-agency erasure is still recorded via a server-side log (audit_log.agency_id is NOT NULL)', () => {
+    assert.match(source, /result\.agencyIds\.length === 0/)
+    assert.match(source, /no agency memberships — not written to audit_log/)
   })
 
   it('erasure failure returns a generic error + step, no raw error message in the body', () => {

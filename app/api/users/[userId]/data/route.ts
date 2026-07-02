@@ -3,7 +3,7 @@ import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { type NextRequest, NextResponse } from 'next/server'
 import { isValidUUID } from '@/lib/validation'
 import { checkRateLimit } from '@/lib/api-helpers'
-import { DELETED_USER_NAME, eraseUser } from '@/lib/erasure'
+import { DELETED_USER_NAME, canEraseUser, eraseUser } from '@/lib/erasure'
 import { logEvent } from '@/lib/audit'
 
 /**
@@ -15,13 +15,17 @@ import { logEvent } from '@/lib/audit'
  * for the exact steps and why the users row is UPDATEd rather than DELETEd.
  *
  * Authorization (no user enumeration — a generic 403 is returned before any
- * existence check):
+ * existence check). The decision lives in lib/erasure.ts canEraseUser() so
+ * the full matrix has real executed unit-test coverage:
  * - Self-erasure is always allowed.
- * - Otherwise the caller must hold owner | admin_agent in at least one
- *   agency the target belongs to, AND that role must outrank the target's
- *   role in that same agency: owner may erase anyone; admin_agent may only
- *   erase agent | talent targets (anti-escalation — an admin_agent must
- *   never be able to erase an owner or another admin_agent).
+ * - An owner may erase any target belonging to an agency they own.
+ *   Accepted risk (documented): erasure is account-wide, so this also
+ *   removes elevated roles the target holds in other agencies.
+ * - An admin_agent may only erase a target who holds NO elevated role
+ *   (owner/admin_agent) in ANY agency — checked across the target's entire
+ *   membership set, not per shared agency, to close the cross-agency
+ *   escalation where an admin_agent could account-wide-erase a target who
+ *   is owner/admin_agent of an unrelated agency.
  * - Sole-owner guard: if the target is the sole 'owner' of ANY agency,
  *   erasure is refused with 409 — the agency would be left ownerless. This
  *   applies to self-erasure too (an owner must transfer/add another owner
@@ -33,6 +37,20 @@ import { logEvent } from '@/lib/audit'
  * in practice: memberships are deleted before the auth revocation runs, so
  * requireMembership()/requireAgentRole() already 403 every membership-scoped
  * route for that JWT regardless of whether it has expired yet.
+ *
+ * Partial-failure recovery: if auth.admin.deleteUser fails AFTER the
+ * memberships were deleted (eraseUser step 5, deliberately last — see D1
+ * above for why the ordering must not change), an admin retry of this
+ * endpoint will 403 (the target now has zero memberships, so canEraseUser
+ * denies every non-self caller) and only the target themself could re-call
+ * it. In that state auth.users may still hold the real email with no API
+ * recovery path — complete the erasure manually with the service role:
+ * `supabase.auth.admin.deleteUser(<userId>)` via the Supabase dashboard or
+ * a one-off script.
+ *
+ * Audit limitation: audit_log.agency_id is NOT NULL, so a target who
+ * belongs to zero agencies at erasure time produces no audit_log row; the
+ * erasure is instead recorded via a structured server-side log line below.
  */
 const ERASURE_RATE_LIMIT = 5
 const ERASURE_RATE_WINDOW = 3600 // seconds (1 hour)
@@ -98,7 +116,9 @@ export async function DELETE(request: NextRequest, { params }: { params: { userI
 
   // ---- Authz (403) — must run before any existence disclosure, so a
   // nonexistent target and an unauthorized target both fall through to the
-  // same generic 403 below (targetMemberships is [] either way).
+  // same generic 403 below (targetMemberships is [] either way). The
+  // decision matrix itself lives in canEraseUser (lib/erasure.ts) where it
+  // has real executed unit-test coverage.
   if (!isSelf) {
     const { data: callerMemberships, error: callerMembershipsError } = await admin
       .from('memberships')
@@ -113,26 +133,16 @@ export async function DELETE(request: NextRequest, { params }: { params: { userI
       return NextResponse.json({ error: 'Server error' }, { status: 500 })
     }
 
-    const callerRoleByAgency = new Map(
-      (callerMemberships ?? []).map((m) => [m.agency_id as string, m.role as string])
-    )
-
-    const authorized = (targetMemberships ?? []).some((tm) => {
-      const callerRole = callerRoleByAgency.get(tm.agency_id as string)
-      if (callerRole === 'owner') return true
-      if (callerRole === 'admin_agent' && (tm.role === 'agent' || tm.role === 'talent')) {
-        return true
-      }
-      return false
-    })
-
-    if (!authorized) {
+    if (!canEraseUser(user.id, targetUserId, callerMemberships ?? [], targetMemberships ?? [])) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
   }
 
   // ---- Sole-owner guard (409) — applies to self-erasure too. An agency must
   // never be left without an owner.
+  // Known narrow TOCTOU: two co-owners erased concurrently could both pass
+  // the count>1 check — accepted because the endpoint is rate-limited (5/hr,
+  // fail-closed) and PostgREST offers no cross-statement transaction here.
   const ownerAgencyIds = (targetMemberships ?? [])
     .filter((m) => m.role === 'owner')
     .map((m) => m.agency_id as string)
@@ -207,7 +217,18 @@ export async function DELETE(request: NextRequest, { params }: { params: { userI
       agencyId,
       actorId,
       actorName,
+      adminClient: admin,
     }).catch((err) => console.error('[users/[userId]/data] logEvent unhandled rejection:', err))
+  }
+
+  if (result.agencyIds.length === 0) {
+    // audit_log.agency_id is NOT NULL, so a zero-agency target can't get an
+    // audit_log row — record the erasure in server logs instead (see the
+    // "Audit limitation" note in the route header).
+    console.error(
+      '[users/[userId]/data:DELETE] user_erased (no agency memberships — not written to audit_log):',
+      { targetUserId, actorId }
+    )
   }
 
   return NextResponse.json({ success: true }, { status: 200 })

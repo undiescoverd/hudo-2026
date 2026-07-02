@@ -16,6 +16,49 @@ export type ErasureResult =
   | { ok: true; agencyIds: string[] }
   | { ok: false; step: string; message: string }
 
+/** A (agency_id, role) membership pair as read from the memberships table. */
+export type MembershipRecord = { agency_id: string; role: string }
+
+const ELEVATED_ROLES = new Set(['owner', 'admin_agent'])
+
+/**
+ * canEraseUser — pure authorization decision for the right-to-erasure
+ * endpoint (S3-COMPLY-002). Extracted from the route so the full matrix is
+ * unit-testable with real executed tests, not just source-pattern checks.
+ *
+ * Rules:
+ * - Self-erasure is always allowed.
+ * - An `owner` may erase any target who belongs to an agency they own.
+ *   Accepted risk (documented): erasure is account-wide, so an owner in one
+ *   shared agency erases the target's memberships in ALL agencies, including
+ *   elevated roles held elsewhere.
+ * - An `admin_agent` may only erase a target who holds NO elevated role
+ *   (owner/admin_agent) in ANY agency — checked across the target's entire
+ *   membership set, not per shared agency. A per-pair check would allow a
+ *   cross-agency escalation: an admin_agent sharing agency B with a target
+ *   who is `agent` there could account-wide-erase that target's `owner`
+ *   membership in unrelated agency A.
+ * - No shared agency (including an empty target membership set) → denied.
+ */
+export function canEraseUser(
+  callerId: string,
+  targetUserId: string,
+  callerMemberships: MembershipRecord[],
+  targetMemberships: MembershipRecord[]
+): boolean {
+  if (callerId === targetUserId) return true
+
+  const targetIsElevated = targetMemberships.some((m) => ELEVATED_ROLES.has(m.role))
+  const callerRoleByAgency = new Map(callerMemberships.map((m) => [m.agency_id, m.role]))
+
+  return targetMemberships.some((tm) => {
+    const callerRole = callerRoleByAgency.get(tm.agency_id)
+    if (callerRole === 'owner') return true
+    if (callerRole === 'admin_agent' && !targetIsElevated) return true
+    return false
+  })
+}
+
 /**
  * eraseUser — GDPR right-to-erasure for a single user (S3-COMPLY-002).
  *
