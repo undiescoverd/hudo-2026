@@ -7,6 +7,9 @@
  * Security:
  * - Authenticated users only (401)
  * - Caller must hold owner | admin_agent role in the target agency (403)
+ * - Grantable roles are bounded by the caller's own role (403 otherwise):
+ *   owner may grant owner | admin_agent | agent; admin_agent may grant
+ *   agent only — prevents an admin_agent from escalating to owner/admin_agent.
  * - Seat limit checked against plan — 402 on overflow
  * - Rate-limited: 20 requests / 60s per agency
  */
@@ -29,6 +32,13 @@ type AllowedMemberRole = (typeof ALLOWED_MEMBER_ROLES)[number]
 
 // Roles that may add agent-role members (owner and admin_agent only)
 const ADD_MEMBER_ROLES = new Set(['owner', 'admin_agent'])
+
+// Roles each caller role is permitted to *grant* — an admin_agent must never
+// be able to mint an owner or another admin_agent (privilege escalation).
+const GRANTABLE_ROLES_BY_CALLER: Record<string, ReadonlySet<AllowedMemberRole>> = {
+  owner: new Set(['owner', 'admin_agent', 'agent']),
+  admin_agent: new Set(['agent']),
+}
 
 const MEMBERS_RATE_LIMIT = 20
 const MEMBERS_RATE_WINDOW = 60 // seconds
@@ -125,6 +135,15 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const newUserId = b.user_id
   const newRole = b.role as AllowedMemberRole
 
+  // ---- Grantable-role check: caller's role bounds which roles they can grant
+  const grantableRoles = GRANTABLE_ROLES_BY_CALLER[callerMembership.role]
+  if (!grantableRoles || !grantableRoles.has(newRole)) {
+    return NextResponse.json(
+      { error: `Your role (${callerMembership.role}) cannot grant the '${newRole}' role` },
+      { status: 403 }
+    )
+  }
+
   // ---- Plan gate -----------------------------------------------------------
   const { redis } = await import('@/lib/redis')
 
@@ -173,13 +192,16 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       ? user.user_metadata.full_name.trim()
       : (user.email ?? user.id)
   logEvent({
+    // NOTE: the audit_log action enum (0001_initial_schema.sql) has no
+    // 'member_added' value — reuse 'role_changed' and disambiguate via
+    // metadata.event so audit consumers can distinguish add vs. change.
     action: 'role_changed',
     resourceType: 'membership',
     resourceId: newMembership.id,
     agencyId,
     actorId: user.id,
     actorName,
-    metadata: { user_id: newUserId, role: newRole },
+    metadata: { event: 'member_added', user_id: newUserId, role: newRole },
   }).catch((err) => console.error('[agencies/[id]/members] logEvent unhandled rejection:', err))
 
   return NextResponse.json({ membership: newMembership }, { status: 201 })

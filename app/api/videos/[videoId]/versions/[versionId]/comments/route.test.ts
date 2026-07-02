@@ -196,12 +196,15 @@ describe('comments collection route — source invariants', () => {
     assert.match(source, /comments:post:user:/)
   })
 
-  it('fails-closed on Redis error (returns 429)', () => {
-    const matches = source.match(/status:\s*429/g) ?? []
+  it('fails-closed on Redis error via the shared checkRateLimit helper', () => {
+    // The 503 status itself lives in lib/api-helpers.ts (rateLimitFailClosedResponse);
+    // route.ts just needs to opt in via the 'fail-closed' mode for both GET and POST.
+    const matches = source.match(/'fail-closed'/g) ?? []
     assert.ok(
       matches.length >= 2,
-      'Expected at least 2 occurrences of status 429 (GET + POST fail-closed)'
+      'Expected at least 2 occurrences of the fail-closed mode (GET + POST)'
     )
+    assert.match(source, /from '@\/lib\/api-helpers'/)
   })
 
   it('filters soft-deleted comments (.is deleted_at null)', () => {

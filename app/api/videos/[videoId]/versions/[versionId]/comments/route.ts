@@ -12,6 +12,7 @@ import {
   COMMENTS_RATE_WINDOW,
 } from '@/lib/comments'
 import { enqueueCommentNotification } from '@/lib/notifications'
+import { checkRateLimit } from '@/lib/api-helpers'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -70,26 +71,16 @@ export async function GET(
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(
-      `comments:get:user:${user.id}`,
-      COMMENTS_GET_RATE_LIMIT,
-      COMMENTS_RATE_WINDOW
-    )
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': String(COMMENTS_RATE_WINDOW) } }
-      )
-    }
-  } catch (err) {
-    console.error('[comments:GET] Rate limit check failed, failing-closed:', err)
-    return NextResponse.json(
-      { error: 'Too many requests. Please try again later.' },
-      { status: 429, headers: { 'Retry-After': String(COMMENTS_RATE_WINDOW) } }
-    )
-  }
+  // Fail-closed on Redis error — see lib/api-helpers.ts for the posture rationale.
+  const getRl = await checkRateLimit(
+    `comments:get:user:${user.id}`,
+    COMMENTS_GET_RATE_LIMIT,
+    COMMENTS_RATE_WINDOW,
+    'comments:GET',
+    'Too many requests. Please try again later.',
+    'fail-closed'
+  )
+  if (getRl) return getRl
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
@@ -173,26 +164,16 @@ export async function POST(
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(
-      `comments:post:user:${user.id}`,
-      COMMENTS_POST_RATE_LIMIT,
-      COMMENTS_RATE_WINDOW
-    )
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': String(COMMENTS_RATE_WINDOW) } }
-      )
-    }
-  } catch (err) {
-    console.error('[comments:POST] Rate limit check failed, failing-closed:', err)
-    return NextResponse.json(
-      { error: 'Too many requests. Please try again later.' },
-      { status: 429, headers: { 'Retry-After': String(COMMENTS_RATE_WINDOW) } }
-    )
-  }
+  // Fail-closed on Redis error — see lib/api-helpers.ts for the posture rationale.
+  const postRl = await checkRateLimit(
+    `comments:post:user:${user.id}`,
+    COMMENTS_POST_RATE_LIMIT,
+    COMMENTS_RATE_WINDOW,
+    'comments:POST',
+    'Too many requests. Please try again later.',
+    'fail-closed'
+  )
+  if (postRl) return postRl
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
