@@ -9,6 +9,7 @@ import { VersionSelector, type Version } from '@/components/versions/VersionSele
 import { MobilePlayerLayout } from '@/components/player/MobilePlayerLayout'
 import { GuestShareButton } from '@/components/guest/GuestShareButton'
 import { CommentPanel } from '@/components/comments/CommentPanel'
+import { useVideoComments } from '@/hooks/useVideoComments'
 import { createClient } from '@/lib/auth'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -29,6 +30,19 @@ export default function VideoPage({ params }: Props) {
   // Validate up front, but declare all hooks before the conditional notFound()
   // below so hook order stays stable (React rules-of-hooks).
   const isValidId = UUID_RE.test(params.id)
+
+  // Single source of truth for this version's comments — fetched once here and
+  // shared by CommentPanel (thread/input) and VideoPlayer (CommentTimeline
+  // markers) so there is exactly ONE fetch of the comments endpoint. Realtime
+  // inserts/updates flow into the same state, so timeline markers stay in
+  // sync with the panel automatically.
+  const {
+    comments,
+    loading: commentsLoading,
+    error: commentsError,
+    handleInsert: handleCommentInsert,
+    handleOptimisticRollback: handleCommentRollback,
+  } = useVideoComments(params.id, activeVersionId)
 
   // Fetch the current user id once on mount
   const fetchUser = useCallback(() => {
@@ -106,6 +120,7 @@ export default function VideoPage({ params }: Props) {
             <VideoPlayer
               videoId={params.id}
               versionId={activeVersionId ?? undefined}
+              comments={comments}
               className="h-full w-full"
             />
           }
@@ -116,6 +131,11 @@ export default function VideoPage({ params }: Props) {
                 versionId={activeVersionId}
                 agencyId={agencyId}
                 userId={userId}
+                comments={comments}
+                loading={commentsLoading}
+                error={commentsError}
+                onOptimisticInsert={handleCommentInsert}
+                onOptimisticRollback={handleCommentRollback}
               />
             ) : bootstrapError ? (
               <div className="p-4">
