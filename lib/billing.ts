@@ -19,12 +19,21 @@
  * Out-of-order delivery (e.g. subscription.updated before checkout wrote stripe_customer_id)
  * is therefore handled by Stripe retry rather than silently swallowed.
  *
+ * Retry contract (S3-SEC-003): EVERY handler in this file throws on any condition that
+ * prevents the write from happening — a missing required field on the Stripe object is
+ * data loss, not a no-op. Never `return` early on a missing field; throw so the webhook
+ * route (app/api/webhooks/stripe/route.ts) returns 500 and Stripe retries, AND so the
+ * idempotency claim is never written for a failed attempt (see that file's header comment).
+ * Every throw path also calls Sentry.captureException first so the failure is observable
+ * without waiting for a support ticket.
+ *
  * current_period_end: read from subscription.items.data[0].current_period_end (UNIX seconds;
  * moved off Subscription top-level in Stripe SDK v17+ / API 2026-05-27 "dahlia").
  */
 
 import type Stripe from 'stripe'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/nextjs'
 import { getPlanFromPrice } from '@/lib/stripe'
 import { getStorageLimitBytes } from '@/lib/plans'
 
@@ -39,9 +48,16 @@ function createAdminClient(): SupabaseClient {
   return createClient(url, key)
 }
 
-// Injected admin client for testing; production default via factory above.
+/** Minimal shape of the Sentry client used here — matches `Sentry.captureException`. */
+type SentryLike = {
+  captureException: (error: unknown, context?: Record<string, unknown>) => void
+}
+
+// Injected admin/sentry clients for testing; production defaults via the factory
+// above and the static @sentry/nextjs import respectively.
 export type BillingDeps = {
   admin?: SupabaseClient
+  sentry?: SentryLike
 }
 
 // ---------------------------------------------------------------------------
@@ -134,14 +150,17 @@ export async function handleCheckoutSessionCompleted(
   deps?: BillingDeps
 ): Promise<void> {
   const admin = deps?.admin ?? createAdminClient()
+  const sentry = deps?.sentry ?? Sentry
 
   const agencyId = session.metadata?.agency_id
   if (!agencyId) {
     // Throw so route returns 500 and Stripe retries — a missing agency_id on a
     // paid checkout is a critical data-loss scenario, not a graceful skip.
-    throw new Error(
+    const err = new Error(
       `[billing:checkout] Missing metadata.agency_id — cannot resolve agency (session ${session.id})`
     )
+    sentry.captureException(err, { extra: { sessionId: session.id } })
+    throw err
   }
 
   const customerId =
@@ -152,10 +171,15 @@ export async function handleCheckoutSessionCompleted(
       : (session.subscription?.id ?? null)
 
   if (!customerId || !subscriptionId) {
-    console.error('[billing:checkout] Missing customer or subscription on completed session', {
-      sessionId: session.id,
-    })
-    return
+    // Retry contract: throw (not return) — a checkout completing without a customer
+    // or subscription is a critical data-loss scenario (the agency never gets
+    // stripe_customer_id), not a graceful skip. Stripe retries on 500.
+    const missingField = !customerId ? 'customer' : 'subscription'
+    const err = new Error(
+      `[billing:checkout] Missing ${missingField} on completed session ${session.id} — cannot sync agency ${agencyId}`
+    )
+    sentry.captureException(err, { extra: { sessionId: session.id, agencyId, missingField } })
+    throw err
   }
 
   // Determine plan from line_items if already expanded on the session object.
@@ -287,15 +311,20 @@ export async function handleInvoicePaymentFailed(
   deps?: BillingDeps
 ): Promise<void> {
   const admin = deps?.admin ?? createAdminClient()
+  const sentry = deps?.sentry ?? Sentry
 
   const customerId =
     typeof invoice.customer === 'string' ? invoice.customer : (invoice.customer?.id ?? null)
 
   if (!customerId) {
-    console.error('[billing:invoice.payment_failed] No customer on invoice', {
-      invoiceId: invoice.id,
-    })
-    return
+    // Retry contract: throw (not return) — a failed-payment invoice with no customer
+    // means past_due is never recorded, silently masking a billing failure. Stripe
+    // retries on 500.
+    const err = new Error(
+      `[billing:invoice.payment_failed] Missing customer on invoice ${invoice.id} — cannot mark agency past_due`
+    )
+    sentry.captureException(err, { extra: { invoiceId: invoice.id } })
+    throw err
   }
 
   // Derive the base timestamp from the invoice (UNIX seconds) if available;

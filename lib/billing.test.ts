@@ -81,6 +81,24 @@ function makeAdminStub(
 }
 
 // ---------------------------------------------------------------------------
+// Sentry stub (S3-SEC-003) — captures captureException calls, no real network.
+// ---------------------------------------------------------------------------
+
+type SentryCall = { error: unknown; context?: Record<string, unknown> }
+
+function makeSentryStub() {
+  const calls: SentryCall[] = []
+  return {
+    sentry: {
+      captureException(error: unknown, context?: Record<string, unknown>) {
+        calls.push({ error, context })
+      },
+    },
+    calls,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Stripe object factories (minimal)
 // ---------------------------------------------------------------------------
 
@@ -178,6 +196,40 @@ describe('billing helpers', () => {
         () => handleCheckoutSessionCompleted(session, { admin }),
         (err) => err === dbError
       )
+    })
+
+    it('throws (not silently returns) when customer is missing on the completed session, and reports to Sentry (S3-SEC-003)', async () => {
+      const { handleCheckoutSessionCompleted } = await import('./billing')
+      const admin = makeAdminStub()
+      const { sentry, calls } = makeSentryStub()
+      const session = makeCheckoutSession({ customer: null })
+
+      await assert.rejects(
+        () => handleCheckoutSessionCompleted(session, { admin, sentry }),
+        (err: Error) => err instanceof Error && err.message.includes('Missing customer')
+      )
+
+      // No update should have been attempted — the write never happens.
+      assert.equal(admin._captures.length, 0)
+      // Sentry must be notified so the failure is observable, not just retried silently.
+      assert.equal(calls.length, 1)
+      assert.ok(calls[0].error instanceof Error)
+    })
+
+    it('throws (not silently returns) when subscription is missing on the completed session, and reports to Sentry (S3-SEC-003)', async () => {
+      const { handleCheckoutSessionCompleted } = await import('./billing')
+      const admin = makeAdminStub()
+      const { sentry, calls } = makeSentryStub()
+      const session = makeCheckoutSession({ subscription: null })
+
+      await assert.rejects(
+        () => handleCheckoutSessionCompleted(session, { admin, sentry }),
+        (err: Error) => err instanceof Error && err.message.includes('Missing subscription')
+      )
+
+      assert.equal(admin._captures.length, 0)
+      assert.equal(calls.length, 1)
+      assert.ok(calls[0].error instanceof Error)
     })
   })
 
@@ -392,14 +444,22 @@ describe('billing helpers', () => {
       )
     })
 
-    it('skips and logs when invoice has no customer', async () => {
+    it('throws (not silently returns) when invoice has no customer, and reports to Sentry (S3-SEC-003)', async () => {
       const { handleInvoicePaymentFailed } = await import('./billing')
       const admin = makeAdminStub()
+      const { sentry, calls } = makeSentryStub()
       const invoice = makeInvoice({ customer: null })
 
-      await handleInvoicePaymentFailed(invoice, { admin })
+      await assert.rejects(
+        () => handleInvoicePaymentFailed(invoice, { admin, sentry }),
+        (err: Error) => err instanceof Error && err.message.includes('Missing customer')
+      )
 
+      // No update should have been attempted — past_due is never silently skipped.
       assert.equal(admin._captures.length, 0)
+      // Sentry must be notified so the failure is observable, not just retried silently.
+      assert.equal(calls.length, 1)
+      assert.ok(calls[0].error instanceof Error)
     })
   })
 
