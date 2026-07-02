@@ -9,6 +9,7 @@ import {
   COMMENTS_DELETE_RATE_LIMIT,
   COMMENTS_RATE_WINDOW,
 } from '@/lib/comments'
+import { checkRateLimit } from '@/lib/api-helpers'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -64,26 +65,17 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(
-      `comments:patch:user:${user.id}`,
-      COMMENTS_PATCH_RATE_LIMIT,
-      COMMENTS_RATE_WINDOW
-    )
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': String(COMMENTS_RATE_WINDOW) } }
-      )
-    }
-  } catch (err) {
-    console.error('[comments/[id]:PATCH] Rate limit check failed, failing-closed:', err)
-    return NextResponse.json(
-      { error: 'Too many requests. Please try again later.' },
-      { status: 429, headers: { 'Retry-After': String(COMMENTS_RATE_WINDOW) } }
-    )
-  }
+  // Fail-closed on Redis error: comment mutations are authenticated but still
+  // abuse-sensitive (spam/flood); see lib/api-helpers.ts for the posture rationale.
+  const patchRl = await checkRateLimit(
+    `comments:patch:user:${user.id}`,
+    COMMENTS_PATCH_RATE_LIMIT,
+    COMMENTS_RATE_WINDOW,
+    'comments/[id]:PATCH',
+    'Too many requests. Please try again later.',
+    'fail-closed'
+  )
+  if (patchRl) return patchRl
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
@@ -231,26 +223,16 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(
-      `comments:delete:user:${user.id}`,
-      COMMENTS_DELETE_RATE_LIMIT,
-      COMMENTS_RATE_WINDOW
-    )
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': String(COMMENTS_RATE_WINDOW) } }
-      )
-    }
-  } catch (err) {
-    console.error('[comments/[id]:DELETE] Rate limit check failed, failing-closed:', err)
-    return NextResponse.json(
-      { error: 'Too many requests. Please try again later.' },
-      { status: 429, headers: { 'Retry-After': String(COMMENTS_RATE_WINDOW) } }
-    )
-  }
+  // Fail-closed on Redis error — see lib/api-helpers.ts for the posture rationale.
+  const deleteRl = await checkRateLimit(
+    `comments:delete:user:${user.id}`,
+    COMMENTS_DELETE_RATE_LIMIT,
+    COMMENTS_RATE_WINDOW,
+    'comments/[id]:DELETE',
+    'Too many requests. Please try again later.',
+    'fail-closed'
+  )
+  if (deleteRl) return deleteRl
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
