@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { validatePassword } from '@/lib/auth-validation'
 import { checkAuthRateLimit, getClientIp, AUTH_RATE_WINDOW } from '@/lib/rate-limit'
 import { getSiteOrigin } from '@/lib/site-url'
+import { rateLimitFailClosedResponse } from '@/lib/api-helpers'
 
 /**
  * POST /api/auth/register
@@ -43,7 +44,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: passwordError }, { status: 400 })
   }
 
-  // Rate limit after all input validation — don't burn quota on malformed requests
+  // Rate limit after all input validation — don't burn quota on malformed requests.
+  // Fail-closed on Redis error: account-creation surface (see lib/api-helpers.ts).
   try {
     const { limited } = await checkAuthRateLimit(ip, email.trim(), 'register')
     if (limited) {
@@ -53,7 +55,7 @@ export async function POST(request: NextRequest) {
       )
     }
   } catch (err) {
-    console.error('[register] Rate limit check failed, allowing request:', err)
+    return rateLimitFailClosedResponse('register', err)
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
