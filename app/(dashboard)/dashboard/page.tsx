@@ -11,6 +11,7 @@ import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { getCurrentUserRole } from '@/lib/auth-helpers'
 import { getAgencyVideos } from '@/lib/dashboard'
 import { AgentDashboard } from '@/components/dashboard/AgentDashboard'
+import { DashboardError } from '@/components/dashboard/DashboardError'
 
 const AGENT_PLUS_ROLES = new Set(['owner', 'admin_agent', 'agent'])
 
@@ -55,7 +56,7 @@ export default async function DashboardPage() {
         <p className="text-sm text-muted-foreground mt-1">All videos across your agencies.</p>
       </div>
 
-      <AgentDashboard initialVideos={initialVideos ?? []} error={error} />
+      {error ? <DashboardError /> : <AgentDashboard initialVideos={initialVideos ?? []} />}
     </main>
   )
 }
