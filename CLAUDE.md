@@ -169,8 +169,8 @@ Guest: read-only via signed link, no Supabase access.
 - **S0** — Infrastructure & Auth ✅ done
 - **S1** — Upload, Player, Comments, Versioning ✅ done
 - **S2** — Dashboards, Notifications, Guest Links ✅ done (15/15)
-- **S3** — Billing, Compliance, Security Hardening ← in progress, 12/15 done (`tasks/sprint-3.md`; remaining: COMPLY-002 right-to-erasure, COMPLY-003 cookie-consent verify-only, SEC-002 R2 private audit)
-- **S4** — Accessibility, PWA, Launch Prep
+- **S3** — Billing, Compliance, Security Hardening ✅ done (15/15; erasure live-verified on hudo-dev. Open follow-ups from the R2 audit, separate PRs: tighten R2 CORS `AllowedOrigins` — currently allows `https://*.vercel.app`, any Vercel project — and r2.dev-toggle dashboard sign-off pre-launch; see `docs/r2-security-audit.md`)
+- **S4** — Accessibility, PWA, Launch Prep ← next
 
 > Sprint markers above are a static summary; `node orchestrate.js status` is the live source of truth.
 

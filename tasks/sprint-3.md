@@ -63,13 +63,13 @@ NOTES: M — security surface (RLS, insert-only). Run devsecops-security-enginee
 
 ---
 
-- [ ] **S3-COMPLY-003** — Build cookie consent banner
+- [x] **S3-COMPLY-003** — Build cookie consent banner
 
 TASK_ID: S3-COMPLY-003
 TITLE: Build cookie consent banner
 BRANCH: feat/s3-comply-003-cookie-consent
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Banner appears on first visit for unauthenticated and authenticated users who have not yet consented
@@ -205,13 +205,13 @@ NOTES: M — Stripe Customer Portal URL generation happens server-side only.
 
 ---
 
-- [ ] **S3-COMPLY-002** — Implement right-to-erasure
+- [x] **S3-COMPLY-002** — Implement right-to-erasure
 
 TASK_ID: S3-COMPLY-002
 TITLE: Implement right-to-erasure
 BRANCH: feat/s3-comply-002-right-to-erasure
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S3-COMPLY-001
 ACCEPTANCE_CRITERIA:
   - API endpoint DELETE /api/users/:id/data — owner or admin_agent auth check enforced
@@ -265,13 +265,13 @@ NOTES: M — security surface. Run devsecops-security-engineer gate before merge
 
 ---
 
-- [ ] **S3-SEC-002** — Confirm R2 bucket is fully private
+- [x] **S3-SEC-002** — Confirm R2 bucket is fully private
 
 TASK_ID: S3-SEC-002
 TITLE: Confirm R2 bucket is fully private
 BRANCH: feat/s3-sec-002-r2-private-audit
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Verify hudo-staging and hudo-prod buckets have no public bucket policy (no public-read ACL)
