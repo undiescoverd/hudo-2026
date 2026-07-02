@@ -232,13 +232,13 @@ NOTES: L — security surface (auth session revocation, cascading deletes). Run 
 
 ---
 
-- [ ] **S3-SEC-001** — Implement API rate limiting (full audit)
+- [x] **S3-SEC-001** — Implement API rate limiting (full audit)
 
 TASK_ID: S3-SEC-001
 TITLE: Implement API rate limiting (full audit)
 BRANCH: feat/s3-sec-001-rate-limiting-audit
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - All rate-limited endpoints confirmed Redis-backed via Upstash and return 429 + Retry-After header
@@ -285,13 +285,13 @@ NOTES: S — audit + doc task; minimal code changes expected. May surface fixes 
 
 ---
 
-- [ ] **S3-SEC-003** — Stripe webhook security audit
+- [x] **S3-SEC-003** — Stripe webhook security audit
 
 TASK_ID: S3-SEC-003
 TITLE: Stripe webhook security audit
 BRANCH: feat/s3-sec-003-webhook-security-audit
 MODEL: haiku-4.5
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S3-BILLING-002
 ACCEPTANCE_CRITERIA:
   - Confirm signature validation present on every webhook code path (no bypass possible)
@@ -331,13 +331,13 @@ NOTES: M — depends on R2 creds in env (already present). Hobby plan = max dail
 
 ---
 
-- [ ] **S3-SEC-005** — Fix privilege escalation in member-add route
+- [x] **S3-SEC-005** — Fix privilege escalation in member-add route
 
 TASK_ID: S3-SEC-005
 TITLE: Fix privilege escalation in member-add route
 BRANCH: feat/s3-sec-005-member-role-escalation
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Grantable roles depend on caller role: owner may grant owner|admin_agent|agent; admin_agent may grant agent only (currently an admin_agent can mint an owner — app/api/agencies/[id]/members/route.ts line 96 vs 118)
@@ -352,13 +352,13 @@ NOTES: S — real security bug found in 2026-07-02 codebase audit (verified). Se
 
 ---
 
-- [ ] **S3-SEC-006** — Wire Sentry to route errors + swallowed failures
+- [x] **S3-SEC-006** — Wire Sentry to route errors + swallowed failures
 
 TASK_ID: S3-SEC-006
 TITLE: Wire Sentry to route errors + swallowed failures
 BRANCH: feat/s3-sec-006-sentry-wiring
 MODEL: sonnet-4.6
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - instrumentation.ts exports onRequestError (Sentry.captureRequestError) so route errors reach Sentry

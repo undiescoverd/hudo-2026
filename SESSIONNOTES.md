@@ -8,6 +8,14 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-07-02 — Codebase improvement plan: 16 PRs (#115–#131) across security/CI/UX/refactor waves
+
+- **Task:** Full execution of the approved codebase-improvement plan (audit → 4 waves). Wave 1 security: S3-SEC-005 privilege escalation (#119), S3-SEC-001 fail-closed rate limiting (#123), S3-SEC-003 webhook retry contract (#120), S3-SEC-006 Sentry wiring + PII scrub (#122). Wave 2 CI: unit tests into CI (#117+#121), pre-push build hook (#118), RLS 12/12 (#124). Wave 3 UX: comment-panel error state (#126), dashboard boundaries (#127), a11y (#125). Wave 4: supabase-admin extraction (#130), dead-code sweep (#128), CommentTimeline wiring (#129), route-helper consolidation (#131).
+- **Models:** planner=fable, executors=sonnet (features/security) + haiku (mechanical); gates=hudo-security-reviewer ×5 + rls-tenancy-auditor ×1.
+- **Outcome:** done — all PRs merged green; S3-SEC-001/003/005/006 Done in Linear (RES-70/72/197/198).
+- **Notes:** The Sentry gate rejected #122 TWICE and was right both times: (1) bare `captureException` still ships full request context (guest token in url, sb-access-token cookie, POST body) via requestDataIntegration defaults — empirically reproduced; (2) after the `beforeSend` scrub fix, transaction events (tracesSampleRate 0.1) bypass `beforeSend` entirely — the leak was PRE-EXISTING for ~10% of requests to token routes. Fix: `scrubSentryEvent` wired to BOTH `beforeSend` and `beforeSendTransaction` on both runtimes, token+code URL redaction. Also: #117 was accidentally merged before its Node-22 fix (a `;` instead of `&&` between watch and merge in an automation chain — repo doesn't enforce required checks on admin merges); hotfixed in #121 within minutes.
+- **Gotcha (if any):** Three distilled to the Failure Log: node:test glob needs Node 21+ (CI was 20); `.gitignore` `node_modules/` doesn't match worktree SYMLINKS (one got committed, broke CI install); Sentry `beforeSend` doesn't cover transactions. Optional follow-up from the RLS gate: add a cross-tenant UPDATE negative case to `tests/rls/comment_reads.test.sql` for symmetry.
+
 ## 2026-07-02 — RLS pgTAP coverage for comment_reads + users (12/12 tables)
 
 - **Task:** `tests/rls/` covered 10 of 12 tables; added `comment_reads.test.sql` (11 tests) and `users.test.sql` (11 tests) to close the gap, in worktree branch `chore/rls-tests-comment-reads-users`.
