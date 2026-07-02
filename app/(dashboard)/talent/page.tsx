@@ -11,6 +11,7 @@ import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { getCurrentUserRole } from '@/lib/auth-helpers'
 import { getTalentVideos } from '@/lib/talent-dashboard'
 import { TalentDashboard } from '@/components/dashboard/TalentDashboard'
+import { DashboardError } from '@/components/dashboard/DashboardError'
 
 export default async function TalentPage() {
   const supabase = await createSupabaseServerClient(
@@ -47,13 +48,7 @@ export default async function TalentPage() {
         <p className="text-sm text-muted-foreground mt-1">Your videos across all agencies.</p>
       </div>
 
-      {error ? (
-        <p className="text-sm text-destructive">
-          Unable to load videos right now. Please try again later.
-        </p>
-      ) : (
-        <TalentDashboard videos={videos ?? []} />
-      )}
+      {error ? <DashboardError /> : <TalentDashboard videos={videos ?? []} />}
     </main>
   )
 }
