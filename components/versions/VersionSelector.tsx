@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
-interface Version {
+export interface Version {
   id: string
   versionNumber: number
   fileSizeBytes: number
@@ -14,18 +14,30 @@ interface VersionSelectorProps {
   videoId: string
   activeVersionId: string | null
   onVersionChange: (versionId: string) => void
+  /**
+   * Optional pre-fetched versions list, for callers that already hit
+   * GET /api/videos/:id/versions themselves (e.g. the video page also needs
+   * `agencyId` from that same response). Semantics:
+   *  - omitted (undefined): uncontrolled — VersionSelector fetches its own data
+   *  - null: controlled, still loading — show the loading state, skip the fetch
+   *  - array: controlled, loaded — render directly, skip the fetch
+   */
+  versions?: Version[] | null
 }
 
 export function VersionSelector({
   videoId,
   activeVersionId,
   onVersionChange,
+  versions: controlledVersions,
 }: VersionSelectorProps) {
-  const [versions, setVersions] = useState<Version[]>([])
-  const [loading, setLoading] = useState(true)
+  const isControlled = controlledVersions !== undefined
+  const [fetchedVersions, setFetchedVersions] = useState<Version[]>([])
+  const [loading, setLoading] = useState(!isControlled)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (isControlled) return
     let cancelled = false
     setLoading(true)
     setError(null)
@@ -37,7 +49,7 @@ export function VersionSelector({
       })
       .then(({ versions: fetched }) => {
         if (!cancelled) {
-          setVersions(fetched)
+          setFetchedVersions(fetched)
           // Auto-select the latest version (first in list, descending order) if nothing selected
           if (!activeVersionId && fetched.length > 0) {
             onVersionChange(fetched[0].id)
@@ -56,9 +68,21 @@ export function VersionSelector({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoId])
+  }, [videoId, isControlled])
 
-  if (loading) {
+  // Controlled mode: auto-select the latest version as soon as the caller's
+  // data arrives (mirrors the uncontrolled-mode auto-select above).
+  useEffect(() => {
+    if (isControlled && controlledVersions && !activeVersionId && controlledVersions.length > 0) {
+      onVersionChange(controlledVersions[0].id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isControlled, controlledVersions, activeVersionId])
+
+  const versions = isControlled ? (controlledVersions ?? []) : fetchedVersions
+  const isLoading = isControlled ? controlledVersions === null : loading
+
+  if (isLoading) {
     return (
       <div className="flex items-center gap-2" aria-label="Loading versions">
         {[1, 2].map((i) => (
