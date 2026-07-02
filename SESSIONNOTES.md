@@ -8,6 +8,14 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-07-02 — RLS pgTAP coverage for comment_reads + users (12/12 tables)
+
+- **Task:** `tests/rls/` covered 10 of 12 tables; added `comment_reads.test.sql` (11 tests) and `users.test.sql` (11 tests) to close the gap, in worktree branch `chore/rls-tests-comment-reads-users`.
+- **Models:** planner=opus, executor=sonnet.
+- **Outcome:** done (PR opened) — `supabase test db tests/rls` 105/105 across all 14 files, run against the CI-pinned CLI/service config.
+- **Notes:** `comment_reads` (0014) tests `comment_reads_select_own`/`_insert_own`/`_update_own` (all scoped via `EXISTS (... memberships ...)`, not a direct agency_id column) + no-DELETE-policy + anon-deny, including a same-tenant own-row-isolation case (Alice can't see Toby's marker) and a superuser-seeded cross-tenant row to prove the membership EXISTS check — not just ownership — blocks Bob. `users` (0002) tests `users_select_self`, `users_select_agency` (incl. a user with memberships in TWO agencies seeing users from both), `users_update_self`, no-INSERT-policy (throws 42501, since INSERT WITH CHECK failure always errors, unlike UPDATE/DELETE which silently filter to 0 rows), no-DELETE-policy, anon-deny, and an isolation case (a user with zero memberships can still read their own row, proving `users_select_self` doesn't depend on `users_select_agency`).
+- **Gotcha (if any):** **`npx supabase` (latest, currently v2.109.0) fails ALL RLS test files** — including every pre-existing one — with `permission denied for table memberships`, even after a full `supabase stop --no-backup && supabase start`. The repo's CI pins `supabase/setup-cli@v1` at `version: 2.75.0` and starts with `-x realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor` (`.github/workflows/ci.yml`). Reproducing that exact CLI version + flag set (`npx -y supabase@2.75.0 start -x ...`) fixed it and gave a clean 105/105 pass — something changed between 2.75.0 and 2.109.0 in how default grants/roles get bootstrapped for `supabase test db`. Rule: don't validate `tests/rls/` with a bare `npx supabase` — pin the CLI to match `.github/workflows/ci.yml` exactly, or a false "docker/CLI is broken" conclusion follows. Also: `supabase stop --no-backup` wipes the local `hudo-dev` Docker volume — avoid it if there's local dev data worth keeping.
+
 ## 2026-06-21 — Fixed 2 stale source-pattern unit tests (PR #115)
 
 - **Task:** Fix the two known-stale source-scanning unit tests that blocked wiring `pnpm test` into CI. Tester run for GLM-5.2 driving a self-terminating agent loop (Reason→Act→Observe→Check, solo loop, 6-pass hard cap).

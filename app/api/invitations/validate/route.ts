@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getClientIp } from '@/lib/rate-limit'
+import { checkRateLimit } from '@/lib/api-helpers'
 
 /**
  * GET /api/invitations/validate?token=...
@@ -11,20 +12,19 @@ import { getClientIp } from '@/lib/rate-limit'
  * to prevent enumeration.
  */
 export async function GET(request: NextRequest) {
-  // Rate limit: 10 validations per IP per hour
+  // Rate limit: 10 validations per IP per hour.
+  // Fail-closed on Redis error: unauthenticated token-enumeration surface
+  // (see lib/api-helpers.ts) — returns 503, not a silent allow.
   const ip = getClientIp(request)
-  try {
-    const { rateLimit } = await import('@/lib/redis')
-    const remaining = await rateLimit(`invitation:validate:ip:${ip}`, 10, 3600)
-    if (remaining === -1) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': '3600' } }
-      )
-    }
-  } catch (err) {
-    console.error('[invitations/validate] Rate limit check failed, allowing request:', err)
-  }
+  const rl = await checkRateLimit(
+    `invitation:validate:ip:${ip}`,
+    10,
+    3600,
+    'invitations/validate',
+    'Too many requests. Please try again later.',
+    'fail-closed'
+  )
+  if (rl) return rl
 
   const token = request.nextUrl.searchParams.get('token')
 
