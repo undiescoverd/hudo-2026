@@ -64,8 +64,11 @@ export async function getCurrentUserRole(supabase: SupabaseClient): Promise<Curr
   }
 
   return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase user type is broad
-    user: user as any,
+    user: {
+      id: user.id,
+      email: user.email ?? null,
+      user_metadata: user.user_metadata,
+    },
     role,
     agency_ids,
     agent_agency_ids,
