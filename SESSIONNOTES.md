@@ -8,6 +8,13 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-07-02 — Live smoke test PASSED on preview (post-#131 code)
+
+- **Task:** live-smoke-test walkthrough (per `.claude/skills/live-smoke-test/SKILL.md`) on the `chore/audit-run-wrapup` preview, covering all 16 merged audit PRs.
+- **Models:** planner=fable (drove Playwright MCP directly).
+- **Outcome:** done — all steps pass. Sign-in (owner@hudo.test) → `/videos`; `/dashboard` renders both seed videos with statuses/comment counts; crown-jewel `55c07ab0…` plays (`readyState 4`, `error null`, signed `hudo-staging` R2 URL, `currentTime` 0→2.16s); comment thread + input mounted AND the new #129 CommentTimeline marker renders on the seek bar; guest link minted → guest page plays (`readyState 4`, 0→2.19s) + comments render + view-count RPC incremented ("Views: 1") → link revoked → token returns 404. Console clean of `media-src` violations on both authed + guest pages (only the benign vercel.live preview-feedback CSP block + favicon 404).
+- **Gotcha (if any):** **A paused (INACTIVE) Supabase project surfaces as "Invalid email or password" (401) on sign-in** — hudo-staging had auto-paused from inactivity, and the first smoke-test attempt looked like a credentials bug. Check `get_project` status (or the dashboard) before debugging auth against staging after idle periods; MCP `execute_sql` also just times out ("Connection terminated") on a paused project.
+
 ## 2026-07-02 — Codebase improvement plan: 16 PRs (#115–#131) across security/CI/UX/refactor waves
 
 - **Task:** Full execution of the approved codebase-improvement plan (audit → 4 waves). Wave 1 security: S3-SEC-005 privilege escalation (#119), S3-SEC-001 fail-closed rate limiting (#123), S3-SEC-003 webhook retry contract (#120), S3-SEC-006 Sentry wiring + PII scrub (#122). Wave 2 CI: unit tests into CI (#117+#121), pre-push build hook (#118), RLS 12/12 (#124). Wave 3 UX: comment-panel error state (#126), dashboard boundaries (#127), a11y (#125). Wave 4: supabase-admin extraction (#130), dead-code sweep (#128), CommentTimeline wiring (#129), route-helper consolidation (#131).
