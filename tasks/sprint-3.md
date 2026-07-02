@@ -247,14 +247,21 @@ ACCEPTANCE_CRITERIA:
   - Guest link validation: 20 requests/IP/min
   - Auth endpoints (sign-in, sign-up, magic-link): confirm limits in place
   - Any endpoint missing a limit gets one added; any limit not returning Retry-After is fixed
+  - checkRateLimit in lib/api-helpers.ts no longer fails open on Redis errors: fail-closed (503 + Retry-After) for auth + invitation endpoints; posture per endpoint class documented in route headers
+  - Comment routes' inline fail-closed rate-limit blocks migrated onto the shared helper (behaviour unchanged)
+  - app/api/dashboard/videos/route.ts gets a rate limit (open TODO at line 14)
+  - Unit test: throwing Redis mock → auth endpoints 503, non-auth allow
   - pnpm type-check && pnpm lint green
 FILES:
   - lib/rate-limit.ts
+  - lib/api-helpers.ts
   - app/api/videos/upload/presign/route.ts
   - app/api/videos/[videoId]/comments/route.ts
+  - app/api/comments/[id]/route.ts
   - app/api/guest-links/[token]/validate/route.ts
+  - app/api/dashboard/videos/route.ts
   - app/api/auth/route.ts (if applicable)
-NOTES: M — security surface. Run devsecops-security-engineer gate before merge.
+NOTES: M — security surface. Run devsecops-security-engineer gate before merge. Extended 2026-07-02 (codebase audit): auth rate limiting currently fails open (lib/api-helpers.ts:22-24 swallows Redis errors) — fail-closed fix folded in here.
 
 ---
 
@@ -290,12 +297,15 @@ ACCEPTANCE_CRITERIA:
   - Confirm signature validation present on every webhook code path (no bypass possible)
   - Confirm idempotency prevents duplicate records for replayed events
   - Confirm STRIPE_SECRET_KEY absent from client bundle (grep + bundle analysis)
+  - handleCheckoutSessionCompleted and handleInvoicePaymentFailed (lib/billing.ts) no longer silently return on missing customer/subscription — they throw (per the file's own "throw so Stripe retries" contract) + Sentry.captureException
+  - Unit test: checkout-completed with missing customer throws; captureException called
   - Findings documented; any gaps fixed in the same PR
   - pnpm type-check && pnpm lint green
 FILES:
   - app/api/webhooks/stripe/route.ts
+  - lib/billing.ts
   - docs/stripe-security-audit.md
-NOTES: S — audit task on top of BILLING-002. Run devsecops-security-engineer gate before merge.
+NOTES: S — audit task on top of BILLING-002. Run devsecops-security-engineer gate before merge. Extended 2026-07-02 (codebase audit): silent no-ops in lib/billing.ts (~line 154, ~line 294) break the Stripe retry contract — checkout completes but agency never gets stripe_customer_id; past_due never recorded.
 
 ---
 
@@ -318,3 +328,54 @@ FILES:
   - app/api/cron/storage-reconcile/route.ts
   - vercel.json (cron entry)
 NOTES: M — depends on R2 creds in env (already present). Hobby plan = max daily frequency (0 0/2 * * *). Log drift to Sentry only; never auto-correct.
+
+---
+
+- [ ] **S3-SEC-005** — Fix privilege escalation in member-add route
+
+TASK_ID: S3-SEC-005
+TITLE: Fix privilege escalation in member-add route
+BRANCH: feat/s3-sec-005-member-role-escalation
+MODEL: sonnet-4.6
+STATUS: not_started
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - Grantable roles depend on caller role: owner may grant owner|admin_agent|agent; admin_agent may grant agent only (currently an admin_agent can mint an owner — app/api/agencies/[id]/members/route.ts line 96 vs 118)
+  - admin_agent POST with role 'owner' or 'admin_agent' → 403; owner POST with any of the three → 201
+  - Audit mislabel fixed: member add keeps action 'role_changed' (0001 enum has no member_added) but adds metadata.event: 'member_added'
+  - Route unit tests updated to cover the caller-role matrix
+  - pnpm type-check && pnpm lint && pnpm test green
+FILES:
+  - app/api/agencies/[id]/members/route.ts
+  - app/api/agencies/[id]/members/route.test.ts
+NOTES: S — real security bug found in 2026-07-02 codebase audit (verified). Security surface — run hudo-security-reviewer gate before merge.
+
+---
+
+- [ ] **S3-SEC-006** — Wire Sentry to route errors + swallowed failures
+
+TASK_ID: S3-SEC-006
+TITLE: Wire Sentry to route errors + swallowed failures
+BRANCH: feat/s3-sec-006-sentry-wiring
+MODEL: sonnet-4.6
+STATUS: not_started
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - instrumentation.ts exports onRequestError (Sentry.captureRequestError) so route errors reach Sentry
+  - Sentry.captureException added to the four fire-and-forget paths: lib/audit.ts:86 (audit insert failure — compliance-relevant), app/api/guest/[token]/playback-url/route.ts:117, app/api/videos/[videoId]/versions/[versionId]/comments/route.ts:273 (notification enqueue), app/api/invitations/accept/route.ts:127-130 (users-row insert drift)
+  - Swallowed paths still never throw into the request path (behaviour unchanged; observability added)
+  - pnpm type-check && pnpm lint && pnpm test green
+FILES:
+  - instrumentation.ts
+  - lib/audit.ts
+  - app/api/guest/[token]/playback-url/route.ts
+  - app/api/videos/[videoId]/versions/[versionId]/comments/route.ts
+  - app/api/invitations/accept/route.ts
+NOTES: S — found in 2026-07-02 codebase audit: Sentry.init exists but no onRequestError export; only 2 files ever call captureException. Security surface (app/api/) — run hudo-security-reviewer gate before merge.
+
+---
+
+### Deferred (from 2026-07-02 codebase audit — documented, not scheduled)
+
+- **Source-pattern test remediation:** ~18 `app/api/**/route.test.ts` files regex `fs.readFileSync` source instead of invoking handlers, plus tautological status assertions. High effort; the e2e layer addresses the same risk class more cheaply. Revisit after Playwright e2e is real.
+- **zod/validation standardization:** no validator library anywhere; validation is hand-rolled but functional. Big churn, modest payoff.

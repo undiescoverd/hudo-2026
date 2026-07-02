@@ -23,7 +23,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22+: `pnpm test` relies on node:test glob expansion ('**/*.test.ts'),
+          # which Node 20 (EOL 2026-04) does not support.
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -40,6 +42,9 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Unit tests
+        run: pnpm test
 
   rls-tests:
     name: RLS Policy Tests

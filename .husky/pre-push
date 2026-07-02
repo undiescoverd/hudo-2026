@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "🔨 Running pnpm build (the real CI gate) — skip with git push --no-verify when iterating"
+pnpm build
