@@ -4,6 +4,12 @@
  * AgentDashboard — client wrapper that holds filter/search/selection state.
  * Receives initialVideos from the server component; on filter change it
  * fetches updated results from GET /api/dashboard/videos.
+ *
+ * Error convention: the initial-load error case is owned by the server
+ * component (`app/(dashboard)/dashboard/page.tsx` renders the shared
+ * <DashboardError /> instead of mounting this component at all). This
+ * component only owns errors from its own client-side filter/search
+ * fetches, surfaced inline near the filter controls with a retry action.
  */
 
 import { useState, useCallback, useTransition } from 'react'
@@ -16,14 +22,16 @@ import type { VideoStatus } from '@/lib/video-status'
 
 type Props = {
   initialVideos: AgencyVideoRow[]
-  error?: string | null
 }
 
-export function AgentDashboard({ initialVideos, error }: Props) {
+const FILTER_FETCH_ERROR_MESSAGE = "Couldn't update the video list. Please try again."
+
+export function AgentDashboard({ initialVideos }: Props) {
   const [videos, setVideos] = useState<AgencyVideoRow[]>(initialVideos)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState<VideoStatus[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const fetchVideos = useCallback((statuses: VideoStatus[], q: string) => {
@@ -37,11 +45,16 @@ export function AgentDashboard({ initialVideos, error }: Props) {
         if (res.ok) {
           const json = (await res.json()) as { data: AgencyVideoRow[] }
           setVideos(json.data)
+          setFetchError(null)
           // Clear selection on filter change
           setSelectedIds([])
+        } else {
+          console.error('[AgentDashboard] fetch failed with status', res.status)
+          setFetchError(FILTER_FETCH_ERROR_MESSAGE)
         }
       } catch (err) {
         console.error('[AgentDashboard] fetch error', err)
+        setFetchError(FILTER_FETCH_ERROR_MESSAGE)
       }
     })
   }, [])
@@ -57,12 +70,8 @@ export function AgentDashboard({ initialVideos, error }: Props) {
     fetchVideos(statusFilter, q)
   }
 
-  if (error) {
-    return (
-      <p className="text-sm text-destructive">
-        Couldn&apos;t load videos right now. Please try again later.
-      </p>
-    )
+  function handleRetry() {
+    fetchVideos(statusFilter, searchQuery)
   }
 
   return (
@@ -78,6 +87,23 @@ export function AgentDashboard({ initialVideos, error }: Props) {
         />
         <StatusFilter selected={statusFilter} onChange={handleStatusChange} />
       </div>
+
+      {/* Filter-fetch error — initial-load errors are handled by the server
+          component instead; this only fires for client-side refetches. */}
+      {fetchError && (
+        <div className="flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+          <p className="text-sm text-destructive" role="alert">
+            {fetchError}
+          </p>
+          <button
+            type="button"
+            onClick={handleRetry}
+            className="shrink-0 rounded-md bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive hover:bg-destructive/20"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Bulk actions row */}
       <BulkStatusUpdate
