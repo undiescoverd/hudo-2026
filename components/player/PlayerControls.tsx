@@ -42,6 +42,7 @@ export function PlayerControls({
         onChange={(e) => onSeek(Number(e.target.value))}
         className="h-1 w-full cursor-pointer accent-white"
         aria-label="Seek"
+        aria-valuetext={`${formatTime(currentTime)} / ${formatTime(duration)}`}
       />
 
       <div className="flex items-center gap-3">
@@ -81,6 +82,7 @@ export function PlayerControls({
             onChange={(e) => onVolumeChange(Number(e.target.value))}
             className="h-1 w-20 cursor-pointer accent-white"
             aria-label="Volume"
+            aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)}%`}
           />
 
           {/* Fullscreen */}

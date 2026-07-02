@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { type Notification, notificationHref } from '@/hooks/useNotifications'
 
@@ -55,6 +56,62 @@ export function NotificationPanel({
   onClose,
 }: NotificationPanelProps) {
   const router = useRouter()
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // Focus management: move focus to panel on mount, trap focus within it
+  useEffect(() => {
+    const panel = panelRef.current
+    if (!panel) return
+
+    // Focus the first focusable element (button or link) in the panel
+    const focusableElements = panel.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    const firstFocusable = focusableElements[0] as HTMLElement | undefined
+    if (firstFocusable) {
+      firstFocusable.focus()
+    } else {
+      // If no focusable element, focus the panel itself
+      panel.setAttribute('tabindex', '-1')
+      panel.focus()
+    }
+
+    // Focus trap: prevent Tab from leaving the panel
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+
+      const focusableEls = Array.from(
+        panel.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      ) as HTMLElement[]
+
+      if (focusableEls.length === 0) return
+
+      const firstEl = focusableEls[0]
+      const lastEl = focusableEls[focusableEls.length - 1]
+      const isShiftTab = e.shiftKey
+
+      if (isShiftTab) {
+        // Shift+Tab on first element: focus last
+        if (document.activeElement === firstEl) {
+          e.preventDefault()
+          lastEl.focus()
+        }
+      } else {
+        // Tab on last element: focus first
+        if (document.activeElement === lastEl) {
+          e.preventDefault()
+          firstEl.focus()
+        }
+      }
+    }
+
+    panel.addEventListener('keydown', handleKeyDown)
+    return () => {
+      panel.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
 
   const handleNotificationClick = async (n: Notification) => {
     if (!n.read_at) {
@@ -70,6 +127,7 @@ export function NotificationPanel({
 
   return (
     <div
+      ref={panelRef}
       className="absolute right-0 top-full z-50 mt-2 w-80 rounded-lg border border-gray-200 bg-white shadow-lg"
       role="dialog"
       aria-label="Notifications"

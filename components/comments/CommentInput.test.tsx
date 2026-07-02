@@ -84,3 +84,17 @@ describe('CommentInput — comment_type derivation invariants', () => {
     assert.match(source, /'point'|"point"/)
   })
 })
+
+describe('CommentInput — accessibility invariants', () => {
+  let source: string
+
+  before(() => {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url))
+    const filePath = path.resolve(currentDir, 'CommentInput.tsx')
+    source = fs.readFileSync(filePath, 'utf8')
+  })
+
+  it('error message has role="alert" for screen readers', () => {
+    assert.match(source, /role="alert"/)
+  })
+})
