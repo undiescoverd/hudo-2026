@@ -115,7 +115,7 @@ Entry format:
 
 ## Code Quality
 
-- **Pre-commit hooks** via Husky + lint-staged. Staged files are auto-formatted (Prettier) and linted (ESLint) on every commit. Config in `package.json` under `lint-staged`.
+- **Pre-commit hooks** via Husky + lint-staged. Staged files are auto-formatted (Prettier) and linted (ESLint) on every commit. Config in `package.json` under `lint-staged`. **Pre-push** runs `pnpm build` (the real CI gate); skip with `git push --no-verify` when iterating.
 - **Claude hooks** in `.claude/settings.json`:
   - **PreToolUse** — blocks any Edit/Write to `.env*` files (exit 2); **and** on a `Write` to `supabase/migrations/*.sql` emits an advisory `systemMessage` (non-blocking) reminding you to apply via Supabase MCP `apply_migration` to **both** hudo-dev and hudo-staging, not the SQL editor.
   - **PostToolUse** — after any `.ts`/`.tsx` edit runs `pnpm type-check` (last 20 lines); **then** runs the colocated unit test: if the edited file is `*.test.ts(x)` it runs that file, else if a sibling `<base>.test.ts(x)` exists it runs `pnpm exec tsx --test <sibling>` and surfaces `tail -20`. Non-blocking/informational — closes the "unit tests, no CI step" gap at edit time (a failing/stale test only prints, never blocks the edit).
