@@ -24,8 +24,9 @@
  * data loss, not a no-op. Never `return` early on a missing field; throw so the webhook
  * route (app/api/webhooks/stripe/route.ts) returns 500 and Stripe retries, AND so the
  * idempotency claim is never written for a failed attempt (see that file's header comment).
- * Every throw path also calls Sentry.captureException first so the failure is observable
- * without waiting for a support ticket.
+ * The missing-field throw paths also call Sentry.captureException first so the failure is
+ * observable without waiting for a support ticket (updateAgencyOrThrow's DB-error throws
+ * do not — they still 500 and stay retryable, just without direct Sentry capture).
  *
  * current_period_end: read from subscription.items.data[0].current_period_end (UNIX seconds;
  * moved off Subscription top-level in Stripe SDK v17+ / API 2026-05-27 "dahlia").
