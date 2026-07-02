@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit } from '@/lib/api-helpers'
@@ -33,9 +33,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[video:status:patch] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -160,7 +159,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
 
   // Use service-role client for both audit_log insert and video update.
   // audit_log is insert-only — RLS blocks client writes.
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   const actorName =
     typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()

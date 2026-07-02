@@ -83,7 +83,7 @@ describe('billing/portal route — source invariants', () => {
   })
 
   it('uses service-role client for membership and agency queries (bypasses RLS)', () => {
-    const adminIdx = source.indexOf('const admin = createClient')
+    const adminIdx = source.indexOf('const admin = createAdminClient()')
     const membershipIdx = source.indexOf(".from('memberships')")
     const agencyIdx = source.indexOf(".from('agencies')")
     assert.ok(adminIdx !== -1, 'must create service-role admin client')

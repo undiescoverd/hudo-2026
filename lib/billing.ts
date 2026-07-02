@@ -33,21 +33,11 @@
  */
 
 import type Stripe from 'stripe'
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/nextjs'
 import { getPlanFromPrice } from '@/lib/stripe'
 import { getStorageLimitBytes } from '@/lib/plans'
-
-// ---------------------------------------------------------------------------
-// Admin client factory (service-role — bypasses RLS for billing writes)
-// ---------------------------------------------------------------------------
-
-function createAdminClient(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('[billing] Missing Supabase env vars')
-  return createClient(url, key)
-}
+import { createAdminClient } from '@/lib/supabase-admin'
 
 /** Minimal shape of the Sentry client used here — matches `Sentry.captureException`. */
 type SentryLike = {

@@ -1,10 +1,11 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit, requireAgentRole } from '@/lib/api-helpers'
 import { generateGuestToken, hashGuestToken } from '@/lib/guest-tokens'
 import { isValidUUID } from '@/lib/validation'
 import { logEvent } from '@/lib/audit'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 /**
  * POST /api/videos/:videoId/guest-links
@@ -28,13 +29,11 @@ type AuthorizedContext = {
 }
 
 async function authorizeVideoAccess(
-  supabaseUrl: string,
-  serviceRoleKey: string,
   videoId: string,
   userId: string,
   actionMessage: string
 ): Promise<AuthorizedContext | NextResponse> {
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   const { data: video } = await admin
     .from('videos')
@@ -61,9 +60,8 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[guest-links:post] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -100,13 +98,7 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
     expiresAt = d.toISOString()
   }
 
-  const ctx = await authorizeVideoAccess(
-    supabaseUrl,
-    serviceRoleKey,
-    videoId,
-    user.id,
-    'Only agents can manage guest links'
-  )
+  const ctx = await authorizeVideoAccess(videoId, user.id, 'Only agents can manage guest links')
   if (ctx instanceof NextResponse) return ctx
   const { admin, video } = ctx
 
@@ -170,9 +162,8 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[guest-links:get] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -195,13 +186,7 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
   )
   if (rl) return rl
 
-  const ctx = await authorizeVideoAccess(
-    supabaseUrl,
-    serviceRoleKey,
-    videoId,
-    user.id,
-    'Only agents can manage guest links'
-  )
+  const ctx = await authorizeVideoAccess(videoId, user.id, 'Only agents can manage guest links')
   if (ctx instanceof NextResponse) return ctx
   const { admin } = ctx
 

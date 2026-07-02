@@ -1,8 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getClientIp } from '@/lib/rate-limit'
 import { checkRateLimit } from '@/lib/api-helpers'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 /**
  * GET /api/invitations/validate?token=...
@@ -32,17 +32,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ valid: false })
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!supabaseUrl || !serviceRoleKey) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[invitations/validate] Missing Supabase environment variables')
     return NextResponse.json({ valid: false })
   }
 
   const tokenHash = crypto.createHash('sha256').update(Buffer.from(token, 'hex')).digest('hex')
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   const { data: invitation } = await admin
     .from('invitations')

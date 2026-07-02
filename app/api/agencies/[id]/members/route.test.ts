@@ -119,8 +119,8 @@ describe('members route — source invariants', () => {
     assert.match(source, /isValidUUID\(b\.user_id\)/)
   })
 
-  it('uses service role client for privileged DB writes (createClient)', () => {
-    assert.match(source, /createClient\(supabaseUrl,\s*serviceRoleKey\)/)
+  it('uses service role client for privileged DB writes (createAdminClient)', () => {
+    assert.match(source, /createAdminClient\(\)/)
   })
 
   it('uses createServerClient for auth', () => {

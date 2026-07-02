@@ -1,6 +1,7 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/nextjs'
 import { createStorageClient, type StorageClient } from '@/lib/storage'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 /**
  * Storage reconciliation core (S3-SEC-004).
@@ -27,13 +28,6 @@ export interface ReconcileDeps {
   sentry?: {
     captureMessage: (msg: string, context?: Record<string, unknown>) => void
   }
-}
-
-function createAdminClient(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('[cron/storage-reconcile] Missing Supabase env vars')
-  return createClient(url, key)
 }
 
 /**

@@ -74,8 +74,8 @@ describe('billing route — source invariants', () => {
     assert.match(source, /logEvent/)
   })
 
-  it('uses service role client for DB writes (createClient)', () => {
-    assert.match(source, /createClient\(supabaseUrl,\s*serviceRoleKey\)/)
+  it('uses service role client for DB writes (createAdminClient)', () => {
+    assert.match(source, /createAdminClient\(\)/)
   })
 
   it('uses createServerClient for auth', () => {

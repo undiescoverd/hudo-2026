@@ -1,10 +1,10 @@
-import { createClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { validatePassword } from '@/lib/auth-validation'
 import crypto from 'crypto'
 import { getClientIp } from '@/lib/rate-limit'
 import { checkRateLimit } from '@/lib/api-helpers'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 /**
  * POST /api/invitations/accept
@@ -45,17 +45,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid or expired invitation' }, { status: 410 })
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!supabaseUrl || !serviceRoleKey) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[invitations/accept] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
 
   const tokenHash = crypto.createHash('sha256').update(Buffer.from(token, 'hex')).digest('hex')
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   // Atomically claim the invitation: UPDATE only if not already accepted and not expired.
   // This prevents TOCTOU race conditions where two concurrent requests could both

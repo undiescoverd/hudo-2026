@@ -23,7 +23,7 @@
 
 import 'server-only'
 
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -49,9 +49,8 @@ const BILLING_RATE_WINDOW = 60 // seconds
 async function getAuthedOwner(request: NextRequest, agencyId: string) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return { error: NextResponse.json({ error: 'Server configuration error' }, { status: 500 }) }
   }
 
@@ -77,7 +76,7 @@ async function getAuthedOwner(request: NextRequest, agencyId: string) {
     return { error: NextResponse.json({ error: 'Authentication required' }, { status: 401 }) }
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   // Owner-only check. Distinguish a genuine DB error (→500) from "no membership
   // row" (PGRST116 → 403) so an outage isn't masked as an auth failure.

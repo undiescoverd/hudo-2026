@@ -227,8 +227,8 @@ describe('comments collection route — source invariants', () => {
     assert.doesNotMatch(source, /\.delete\(\)/)
   })
 
-  it('uses service role client for DB ops (createClient)', () => {
-    assert.match(source, /createClient\(supabaseUrl,\s*serviceRoleKey\)/)
+  it('uses service role client for DB ops (createAdminClient)', () => {
+    assert.match(source, /createAdminClient\(\)/)
   })
 
   it('uses createServerClient for auth', () => {

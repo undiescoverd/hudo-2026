@@ -8,7 +8,7 @@
  * - Rate-limited via Upstash Redis
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -32,9 +32,8 @@ export async function PATCH(_request: NextRequest, { params }: { params: { id: s
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[notifications/[id]:PATCH] Missing Supabase environment variables')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
@@ -78,7 +77,7 @@ export async function PATCH(_request: NextRequest, { params }: { params: { id: s
     console.error('[notifications/[id]:PATCH] Rate limit check failed, allowing request:', err)
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createAdminClient()
 
   // Scope update to both id AND recipient_id — this is the authorization check.
   // If the notification belongs to another user, zero rows are updated → 404.
