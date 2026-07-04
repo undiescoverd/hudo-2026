@@ -328,13 +328,15 @@ export async function POST(request: NextRequest) {
             )
           } else {
             flipped = true
-            enqueueUploadNotification({
+            // Awaited, not fire-and-forget: this is the last async op before the
+            // response, and Vercel freezes the function once the response returns —
+            // an unawaited insert here gets dropped (live-verified on staging).
+            // enqueueUploadNotification never throws, so awaiting cannot fail the upload.
+            await enqueueUploadNotification({
               agencyId: agencyId as string,
               videoId,
               uploaderId: user.id,
-            }).catch((err) =>
-              console.error('[upload/complete] enqueueUploadNotification unhandled rejection:', err)
-            )
+            })
           }
         }
       }

@@ -257,6 +257,13 @@ describe('complete route — source invariants', () => {
     assert.ok(failBranchPos < enqueuePos, 'enqueue must come after the 0-rows guard')
   })
 
+  it('AWAITS the notification enqueue (fire-and-forget gets dropped when Vercel freezes the fn)', () => {
+    // Live-verified on staging: an unawaited insert as the last async op before
+    // the response never completes. The enqueue never throws, so awaiting is safe.
+    assert.match(source, /await enqueueUploadNotification\(/)
+    assert.doesNotMatch(source, /enqueueUploadNotification\([\s\S]*?\)\s*\.catch/)
+  })
+
   // ── R2 key binding ───────────────────────────────────────────────────────
 
   it('rejects an r2Key that does not belong to this agency/video with 400', () => {
