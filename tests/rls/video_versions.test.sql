@@ -5,13 +5,24 @@
 --   video_versions_select — Agents/owners/admin_agents see all
 --                           versions in their agency; talent sees
 --                           only versions of their own videos.
---   video_versions_insert — Agents+ can insert versions
---                           (uploaded_by = self).
+--   video_versions_insert — Agents+ can insert versions for any video
+--                           in their agency (uploaded_by = self).
+--                           Talent (S4-UPLOAD-001 self-upload) may also
+--                           insert a version for a video they own
+--                           (video.talent_id = auth.uid()), still
+--                           requiring uploaded_by = self — inserting on
+--                           another talent's video, or with uploaded_by
+--                           set to someone else, is blocked (42501).
+--                           Tenant integrity: the row's agency_id must
+--                           equal the referenced video's real agency_id,
+--                           so a multi-agency member cannot tag a version
+--                           of an agency-K video with agency_id = L
+--                           (blocked, 42501).
 --   Cross-agency         — No cross-agency access.
 -- =============================================================
 
 BEGIN;
-SELECT plan(6);
+SELECT plan(9);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -35,7 +46,10 @@ INSERT INTO memberships (user_id, agency_id, role) VALUES
   ('dbeef007-0007-4000-a000-000000000001'::uuid, 'c0ffee07-0000-4000-a000-000000000001'::uuid, 'agent'),
   ('dbeef007-0007-4000-a000-000000000002'::uuid, 'c0ffee07-0000-4000-a000-000000000001'::uuid, 'talent'),
   ('dbeef007-0007-4000-a000-000000000003'::uuid, 'c0ffee07-0000-4000-a000-000000000001'::uuid, 'talent'),
-  ('dbeef007-0007-4000-a000-000000000004'::uuid, 'c0ffee07-0000-4000-a000-000000000002'::uuid, 'agent');
+  ('dbeef007-0007-4000-a000-000000000004'::uuid, 'c0ffee07-0000-4000-a000-000000000002'::uuid, 'agent'),
+  -- K1 also holds a talent membership in Agency L — used by Test 9 to prove
+  -- the tenant-integrity invariant (agency_id must match the video's agency).
+  ('dbeef007-0007-4000-a000-000000000002'::uuid, 'c0ffee07-0000-4000-a000-000000000002'::uuid, 'talent');
 
 -- Videos: one per talent in Agency K
 INSERT INTO videos (id, agency_id, talent_id, title) VALUES
@@ -113,7 +127,26 @@ SELECT lives_ok(
 );
 
 
--- ── Test 6: video_versions_insert — talent cannot insert versions ──
+-- ── Test 6: video_versions_insert — talent can insert a version on their own video (S4-UPLOAD-001) ──
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef007-0007-4000-a000-000000000002","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT lives_ok(
+  $$INSERT INTO video_versions (id, video_id, agency_id, version_number, r2_key, file_size_bytes, uploaded_by)
+    VALUES (
+      'bee00007-0007-4000-a000-000000000003'::uuid,
+      'b1de0007-0007-4000-a000-000000000001'::uuid,
+      'c0ffee07-0000-4000-a000-000000000001'::uuid,
+      3, 'k/k1-v3-self.mp4', 300000000,
+      'dbeef007-0007-4000-a000-000000000002'::uuid
+    )$$,
+  'video_versions_insert: Talent K1 can self-upload a version on their own video (uploaded_by = self)'
+);
+
+
+-- ── Test 7: video_versions_insert — talent cannot insert a version on another talent's video ──
 RESET ROLE;
 SELECT set_config('request.jwt.claims',
   '{"sub":"dbeef007-0007-4000-a000-000000000002","role":"authenticated"}', true);
@@ -122,15 +155,61 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$INSERT INTO video_versions (id, video_id, agency_id, version_number, r2_key, file_size_bytes, uploaded_by)
     VALUES (
-      'bee00007-0007-4000-a000-000000000098'::uuid,
-      'b1de0007-0007-4000-a000-000000000001'::uuid,
+      'bee00007-0007-4000-a000-000000000004'::uuid,
+      'b1de0007-0007-4000-a000-000000000002'::uuid,
       'c0ffee07-0000-4000-a000-000000000001'::uuid,
-      3, 'k/k1-v3.mp4', 300000000,
+      2, 'k/k2-v2-hijack.mp4', 200000000,
       'dbeef007-0007-4000-a000-000000000002'::uuid
     )$$,
   '42501',
   'new row violates row-level security policy for table "video_versions"',
-  'video_versions_insert: Talent K1 cannot insert versions'
+  'video_versions_insert: Talent K1 cannot insert a version on Talent K2''s video'
+);
+
+
+-- ── Test 8: video_versions_insert — talent cannot set uploaded_by to someone else ──
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef007-0007-4000-a000-000000000002","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT throws_ok(
+  $$INSERT INTO video_versions (id, video_id, agency_id, version_number, r2_key, file_size_bytes, uploaded_by)
+    VALUES (
+      'bee00007-0007-4000-a000-000000000005'::uuid,
+      'b1de0007-0007-4000-a000-000000000001'::uuid,
+      'c0ffee07-0000-4000-a000-000000000001'::uuid,
+      4, 'k/k1-v4-spoof.mp4', 400000000,
+      'dbeef007-0007-4000-a000-000000000001'::uuid
+    )$$,
+  '42501',
+  'new row violates row-level security policy for table "video_versions"',
+  'video_versions_insert: Talent K1 cannot insert a version with uploaded_by = Agent K'
+);
+
+
+-- ── Test 9: video_versions_insert — tenant integrity: agency_id must match the video's agency ──
+-- K1 is a talent member of BOTH Agency K and Agency L. Without the invariant
+-- (agency_id = video's real agency_id), K1 could insert a version of their own
+-- Agency-K video tagged agency_id = L — leaking it to Agency L's agents via
+-- video_versions_select. Must be blocked.
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef007-0007-4000-a000-000000000002","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT throws_ok(
+  $$INSERT INTO video_versions (id, video_id, agency_id, version_number, r2_key, file_size_bytes, uploaded_by)
+    VALUES (
+      'bee00007-0007-4000-a000-000000000006'::uuid,
+      'b1de0007-0007-4000-a000-000000000001'::uuid,
+      'c0ffee07-0000-4000-a000-000000000002'::uuid,
+      5, 'k/k1-v5-crosstenant.mp4', 500000000,
+      'dbeef007-0007-4000-a000-000000000002'::uuid
+    )$$,
+  '42501',
+  'new row violates row-level security policy for table "video_versions"',
+  'video_versions_insert: K1 cannot tag a version of their Agency-K video with agency_id = Agency L'
 );
 
 RESET ROLE;

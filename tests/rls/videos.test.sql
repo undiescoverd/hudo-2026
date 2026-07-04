@@ -6,13 +6,18 @@
 --                           in their agency; cross-agency read is blocked.
 --   videos_select_talent  — Talent can only read their own videos
 --                           (talent_id = auth.uid()), not other talent's.
---   videos_insert         — Only agents+ can insert videos; talent has
---                           no INSERT policy and is blocked.
+--   videos_insert         — Agents+ can insert any video in their agency.
+--                           Talent (S4-UPLOAD-001 self-upload) may insert
+--                           only a video with talent_id = auth.uid(), and
+--                           only within an agency where they hold the
+--                           'talent' role — inserting for another user's
+--                           talent_id, or into an agency they don't belong
+--                           to as talent, is blocked (42501).
 --   videos_update_talent  — Talent can update only their own videos.
 -- =============================================================
 
 BEGIN;
-SELECT plan(8);
+SELECT plan(10);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -130,8 +135,28 @@ SELECT lives_ok(
 );
 
 
--- ── Test 7: videos_insert — talent has no INSERT policy (blocked) ─────
--- PRD: Talent cannot upload videos directly; only agents can.
+-- ── Test 7: videos_insert — talent can self-upload (S4-UPLOAD-001) ────
+-- PRD: Talent may insert a video for themselves (talent_id = auth.uid())
+-- within an agency where they hold the 'talent' role.
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef002-0002-4000-a000-000000000002","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT lives_ok(
+  $$INSERT INTO videos (id, agency_id, talent_id, title)
+    VALUES (
+      'b1de0002-0002-4000-a000-000000000005'::uuid,
+      'c0ffee02-0000-4000-a000-000000000001'::uuid,
+      'dbeef002-0002-4000-a000-000000000002'::uuid,
+      'Talent Self-Upload'
+    )$$,
+  'videos_insert: Talent Tara can self-upload a video with her own talent_id'
+);
+
+
+-- ── Test 8: videos_insert WITH CHECK — talent cannot impersonate another talent
+-- PRD: Talent may only insert with their own talent_id, never someone else's.
 RESET ROLE;
 SELECT set_config('request.jwt.claims',
   '{"sub":"dbeef002-0002-4000-a000-000000000002","role":"authenticated"}', true);
@@ -140,18 +165,39 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$INSERT INTO videos (id, agency_id, talent_id, title)
     VALUES (
-      'b1de0002-0002-4000-a000-000000000099'::uuid,
+      'b1de0002-0002-4000-a000-000000000006'::uuid,
       'c0ffee02-0000-4000-a000-000000000001'::uuid,
-      'dbeef002-0002-4000-a000-000000000002'::uuid,
-      'Talent Unauthorised Upload'
+      'dbeef002-0002-4000-a000-000000000003'::uuid,
+      'Talent Impersonation Attempt'
     )$$,
   '42501',
   'new row violates row-level security policy for table "videos"',
-  'videos_insert: Talent has no INSERT policy — upload blocked'
+  'videos_insert WITH CHECK: Tara cannot insert a video with Tom''s talent_id'
 );
 
 
--- ── Test 8: videos_insert WITH CHECK — agent cannot insert for other agency
+-- ── Test 9: videos_insert WITH CHECK — talent cannot self-upload into a foreign agency
+-- PRD: Talent's self-upload is scoped to an agency where they hold the 'talent' role.
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef002-0002-4000-a000-000000000002","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT throws_ok(
+  $$INSERT INTO videos (id, agency_id, talent_id, title)
+    VALUES (
+      'b1de0002-0002-4000-a000-000000000007'::uuid,
+      'c0ffee02-0000-4000-a000-000000000002'::uuid,
+      'dbeef002-0002-4000-a000-000000000002'::uuid,
+      'Talent Cross-Agency Self-Upload Attempt'
+    )$$,
+  '42501',
+  'new row violates row-level security policy for table "videos"',
+  'videos_insert WITH CHECK: Tara cannot self-upload into Agency B (not a talent member there)'
+);
+
+
+-- ── Test 10: videos_insert WITH CHECK — agent cannot insert for other agency
 -- PRD: An agent in Agency A cannot create a video in Agency B.
 RESET ROLE;
 SELECT set_config('request.jwt.claims',
