@@ -9,7 +9,7 @@ Video review platform for talent agencies. Frame.io-style: upload → timestampe
 | Frontend | Next.js 14 App Router, TypeScript strict, Tailwind, Shadcn UI |
 | Auth | Supabase Auth (email/password only; social = post-MVP) |
 | Database | Supabase PostgreSQL + RLS on every table |
-| Realtime | Supabase Realtime (scoped to `video_version_id` only) |
+| Realtime | Supabase Realtime — 3 published tables: comments (per `video_version_id`), notifications (per-user `recipient_id`), videos (per-agency `agency_id`; RLS scopes each subscriber to their own rows) |
 | Storage | Cloudflare R2 (private bucket, signed URLs) |
 | Rate limiting | Upstash Redis |
 | Email | Resend |
