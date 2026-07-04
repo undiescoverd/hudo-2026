@@ -20,7 +20,7 @@ TASK_ID: S4-UPLOAD-001
 TITLE: Talent self-upload (camera-roll picker → pending_review + live status)
 BRANCH: feat/s4-S4-UPLOAD-001-talent-self-upload
 MODEL: sonnet
-STATUS: in_progress
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Talent role can presign/complete/multipart/thumbnail uploads via new requireUploadRole gate (UPLOAD_ROLES = agent+ AND talent); AGENT_PLUS_ROLES unchanged
