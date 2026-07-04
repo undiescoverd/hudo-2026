@@ -45,10 +45,27 @@ CORS must be configured on **all three buckets** to allow browser-based PUT uplo
       "AllowedHeaders": [
         "Content-Type"
       ],
+      "ExposeHeaders": [
+        "ETag"
+      ],
       "MaxAgeSeconds": 3600
     }
   ]
 }
+```
+
+**`ExposeHeaders: ["ETag"]` is required for multipart uploads.** The browser must read
+each part PUT's `ETag` response header to complete the multipart upload
+(`CompleteMultipartUpload` needs every part's ETag); without this the part upload
+*succeeds* but the client fails with "Part upload succeeded but ETag header was
+missing" — so every file >50 MB dies client-side while single-PUT uploads work fine.
+Live-verified on staging 2026-07-05: both `hudo-dev` and `hudo-staging` were missing
+it. Apply with:
+
+```bash
+AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY \
+aws s3api put-bucket-cors --bucket <bucket> --endpoint-url "$R2_ENDPOINT" \
+  --cors-configuration file://cors.json   # cors.json = the block above with the bucket's existing AllowedOrigins
 ```
 
 **Important:** `AllowedMethods` includes **PUT only**. GET is **not** allowed via CORS because:
