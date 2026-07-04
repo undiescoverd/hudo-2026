@@ -2,7 +2,7 @@ import { createAdminClient } from '@/lib/supabase-admin'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getStorage } from '@/lib/storage'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
-import { checkRateLimit, requireAgentRole, requireMembership } from '@/lib/api-helpers'
+import { checkRateLimit, requireMembership, requireUploadRole } from '@/lib/api-helpers'
 import { isValidUUID } from '@/lib/validation'
 
 const MAX_THUMBNAIL_SIZE = 2 * 1024 * 1024 // 2MB
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
   // Fetch video and verify ownership
   const { data: video, error: videoError } = await admin
     .from('videos')
-    .select('id, agency_id')
+    .select('id, agency_id, talent_id')
     .eq('id', videoId)
     .single()
 
@@ -67,14 +67,18 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  // Membership + agent+ role check
-  const membership = await requireAgentRole(
+  // Membership + agent+/talent role check
+  const membership = await requireUploadRole(
     admin,
     user.id,
     video.agency_id,
-    'Only agents and above can upload thumbnails'
+    'You do not have permission to upload thumbnails'
   )
   if (membership instanceof NextResponse) return membership
+
+  if (membership.role === 'talent' && video.talent_id !== user.id) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  }
 
   // Validate content type (strip parameters like charset)
   const rawContentType = request.headers.get('content-type')

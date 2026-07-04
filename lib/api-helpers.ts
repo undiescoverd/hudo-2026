@@ -4,6 +4,13 @@ import { NextResponse } from 'next/server'
 export const AGENT_PLUS_ROLES = ['owner', 'admin_agent', 'agent'] as const
 
 /**
+ * Roles permitted to drive the upload pipeline (presign/complete/multipart-url/
+ * thumbnail POST). Talent may self-upload for their own videos (`talent_id`
+ * ownership enforced by each route); agent+ retains full access as before.
+ */
+export const UPLOAD_ROLES = [...AGENT_PLUS_ROLES, 'talent'] as const
+
+/**
  * Rate-limit failure posture, per endpoint class:
  * - 'fail-open' (default): authenticated data reads/writes (dashboards, comments,
  *   notifications, video metadata). Availability during a brief Redis outage matters
@@ -96,6 +103,27 @@ export async function requireAgentRole(
   const result = await requireMembership(admin, userId, agencyId)
   if (result instanceof NextResponse) return result
   if (!AGENT_PLUS_ROLES.includes(result.role as (typeof AGENT_PLUS_ROLES)[number])) {
+    return NextResponse.json({ error: actionMessage }, { status: 403 })
+  }
+  return result
+}
+
+/**
+ * Same shape as requireAgentRole, but also admits `talent` — used by the
+ * upload pipeline so talent can self-upload. Callers must branch on the
+ * returned `role` to enforce talent-only ownership checks (talent_id
+ * must equal the caller), since this helper only verifies the role is
+ * one of UPLOAD_ROLES, not per-resource ownership.
+ */
+export async function requireUploadRole(
+  admin: SupabaseClient,
+  userId: string,
+  agencyId: string,
+  actionMessage: string
+): Promise<{ role: string } | NextResponse> {
+  const result = await requireMembership(admin, userId, agencyId)
+  if (result instanceof NextResponse) return result
+  if (!UPLOAD_ROLES.includes(result.role as (typeof UPLOAD_ROLES)[number])) {
     return NextResponse.json({ error: actionMessage }, { status: 403 })
   }
   return result

@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getStorage } from '@/lib/storage'
 import { PRESIGNED_URL_EXPIRY, UPLOAD_RATE_WINDOW } from '@/lib/upload-validation'
+import { requireUploadRole } from '@/lib/api-helpers'
 
 const MAX_PARTS_PER_REQUEST = 10
 const MULTIPART_URL_RATE_LIMIT = 60 // 60 part-URL requests per user per hour
@@ -25,7 +26,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
-  const { r2Key, r2UploadId, partNumbers } = body as Record<string, unknown>
+  const {
+    r2Key,
+    r2UploadId,
+    partNumbers: rawPartNumbers,
+    partNumber,
+  } = body as Record<string, unknown>
+
+  // Normalize input: accept either the documented `partNumbers` array or the
+  // legacy/client-sent singular `partNumber` (see CLAUDE.md multipart bug fix —
+  // the client historically sent `partNumber` while this route only accepted
+  // `partNumbers`). Both shapes are supported going forward for compatibility.
+  const partNumbers = rawPartNumbers ?? (partNumber !== undefined ? [partNumber] : undefined)
 
   // --- Input validation ---
 
@@ -103,28 +115,33 @@ export async function POST(request: NextRequest) {
   // --- Membership check: derive agency from the R2 key (format: {agencyId}/{videoId}/{uploadId}.ext) ---
 
   const agencyId = r2Key.split('/')[0]
-  if (!agencyId) {
+  const keyVideoId = r2Key.split('/')[1]
+  if (!agencyId || !keyVideoId) {
     return NextResponse.json({ error: 'Invalid R2 key format' }, { status: 400 })
   }
 
   const admin = createAdminClient()
-  const { data: membership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', agencyId)
-    .single()
 
-  if (!membership) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
+  const membership = await requireUploadRole(
+    admin,
+    user.id,
+    agencyId,
+    'Only agents and above can request upload URLs'
+  )
+  if (membership instanceof NextResponse) return membership
 
-  const agentPlusRoles = ['owner', 'admin_agent', 'agent']
-  if (!agentPlusRoles.includes(membership.role)) {
-    return NextResponse.json(
-      { error: 'Only agents and above can request upload URLs' },
-      { status: 403 }
-    )
+  // Talent may only request part URLs for their own video, and only within
+  // the agency encoded in the R2 key. Agent+ callers are unrestricted (as before).
+  if (membership.role === 'talent') {
+    const { data: video, error: videoError } = await admin
+      .from('videos')
+      .select('id, agency_id, talent_id')
+      .eq('id', keyVideoId)
+      .single()
+
+    if (videoError || !video || video.talent_id !== user.id || video.agency_id !== agencyId) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
   }
 
   // --- Generate presigned URLs for each part ---
@@ -133,14 +150,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const partUrls: { partNumber: number; url: string }[] = []
-    for (const partNumber of partNumbers as number[]) {
-      const url = await storage.generatePartUploadUrl(
-        r2Key,
-        r2UploadId,
-        partNumber,
-        PRESIGNED_URL_EXPIRY
-      )
-      partUrls.push({ partNumber, url })
+    for (const pn of partNumbers as number[]) {
+      const url = await storage.generatePartUploadUrl(r2Key, r2UploadId, pn, PRESIGNED_URL_EXPIRY)
+      partUrls.push({ partNumber: pn, url })
     }
 
     return NextResponse.json({ partUrls, expiresIn: PRESIGNED_URL_EXPIRY })

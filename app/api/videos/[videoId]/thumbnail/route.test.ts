@@ -101,12 +101,32 @@ describe('thumbnail route — role authorization', () => {
     assert.ok(AGENT_PLUS_ROLES.includes('agent'))
   })
 
-  it('talent cannot upload thumbnails', () => {
-    assert.ok(!AGENT_PLUS_ROLES.includes('talent'))
-  })
-
   it('guest cannot upload thumbnails', () => {
     assert.ok(!AGENT_PLUS_ROLES.includes('guest'))
+  })
+})
+
+describe('thumbnail route — talent self-upload (S4-UPLOAD-001)', () => {
+  it('UPLOAD_ROLES (real import) includes talent and all agent+ roles', async () => {
+    const { UPLOAD_ROLES } = await import('../../../../../lib/api-helpers')
+    assert.deepEqual([...UPLOAD_ROLES].sort(), ['admin_agent', 'agent', 'owner', 'talent'].sort())
+  })
+
+  // Replicates the ownership guard added to the POST handler.
+  function talentOwnershipBlocked(role: string, videoTalentId: string, userId: string): boolean {
+    return role === 'talent' && videoTalentId !== userId
+  }
+
+  it('allows talent uploading a thumbnail on their own video', () => {
+    assert.equal(talentOwnershipBlocked('talent', 'user-1', 'user-1'), false)
+  })
+
+  it('blocks talent uploading a thumbnail on another talent video', () => {
+    assert.equal(talentOwnershipBlocked('talent', 'other-user', 'user-1'), true)
+  })
+
+  it('never blocks agent+', () => {
+    assert.equal(talentOwnershipBlocked('agent', 'someone-else', 'user-1'), false)
   })
 })
 
@@ -162,5 +182,15 @@ describe('thumbnail route — source invariants', () => {
   it('validates videoId with UUID helper in both handlers', () => {
     const uuidChecks = source.match(/isValidUUID\(videoId\)/g)
     assert.ok(uuidChecks && uuidChecks.length >= 2, 'Both POST and GET must validate videoId')
+  })
+
+  it('POST uses requireUploadRole, not requireAgentRole', () => {
+    assert.match(source, /requireUploadRole/)
+    assert.doesNotMatch(source, /requireAgentRole/)
+  })
+
+  it('POST video select includes talent_id and enforces talent ownership', () => {
+    assert.match(source, /\.select\('id, agency_id, talent_id'\)/)
+    assert.match(source, /membership\.role === 'talent' && video\.talent_id !== user\.id/)
   })
 })
