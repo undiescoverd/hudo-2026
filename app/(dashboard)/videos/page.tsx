@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { getCurrentUserRole } from '@/lib/auth-helpers'
 import { StatusBadge } from '@/lib/video-status'
+import { VideoStatusLive } from '@/components/dashboard/VideoStatusLive'
 
 type Video = {
   id: string
@@ -15,6 +17,8 @@ export default async function VideosPage() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
+
+  const { agency_ids } = await getCurrentUserRole(supabase)
 
   const { data: videos, error } = await supabase
     .from('videos')
@@ -34,6 +38,10 @@ export default async function VideosPage() {
 
   return (
     <main className="max-w-7xl mx-auto px-4 py-8">
+      {agency_ids.map((id) => (
+        <VideoStatusLive key={id} agencyId={id} />
+      ))}
+
       <h1 className="text-2xl font-semibold mb-6">Videos</h1>
 
       {list.length === 0 ? (

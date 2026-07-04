@@ -12,6 +12,7 @@ import { getCurrentUserRole } from '@/lib/auth-helpers'
 import { getTalentVideos } from '@/lib/talent-dashboard'
 import { TalentDashboard } from '@/components/dashboard/TalentDashboard'
 import { DashboardError } from '@/components/dashboard/DashboardError'
+import { VideoStatusLive } from '@/components/dashboard/VideoStatusLive'
 
 export default async function TalentPage() {
   const supabase = await createSupabaseServerClient(
@@ -43,6 +44,10 @@ export default async function TalentPage() {
 
   return (
     <main className="max-w-7xl mx-auto px-4 py-8">
+      {agency_ids.map((id) => (
+        <VideoStatusLive key={id} agencyId={id} />
+      ))}
+
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">My Videos</h1>
         <p className="text-sm text-muted-foreground mt-1">Your videos across all agencies.</p>

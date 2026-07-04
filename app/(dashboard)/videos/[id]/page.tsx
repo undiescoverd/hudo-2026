@@ -9,6 +9,7 @@ import { VersionSelector, type Version } from '@/components/versions/VersionSele
 import { MobilePlayerLayout } from '@/components/player/MobilePlayerLayout'
 import { GuestShareButton } from '@/components/guest/GuestShareButton'
 import { CommentPanel } from '@/components/comments/CommentPanel'
+import { VideoStatusLive } from '@/components/dashboard/VideoStatusLive'
 import { useVideoComments } from '@/hooks/useVideoComments'
 import { createClient } from '@/lib/auth'
 
@@ -97,6 +98,10 @@ export default function VideoPage({ params }: Props) {
 
   return (
     <main className="min-h-screen">
+      {/* This page is a client component fed by client-side fetches, so
+          router.refresh() would be a no-op here — pass fetchVersions so live
+          video events re-pull the versions list instead. */}
+      {agencyId && <VideoStatusLive agencyId={agencyId} onChange={fetchVersions} />}
       <div className="px-4 pt-4 pb-2 flex items-center justify-between">
         <Link
           href="/videos"
