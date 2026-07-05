@@ -8,6 +8,13 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-07-05 — Comment realtime INSERT-echo self-clobber (follow-up to the display fixes)
+
+- **Task:** Follow-up on the commenting bug-check (commit `6f8eaa6`). The prior fix merged author fields on `handleUpdate` but not `handleInsert`, and the earlier note wrongly concluded the INSERT case was "by design, out of scope."
+- **Models:** planner=opus, fix=opus.
+- **Outcome:** done. `handleInsert` now merges on id collision (same `?? existing` pattern as `handleUpdate`) instead of replace-or-keep. Test added; suite green.
+- **Gotcha (if any):** The Realtime INSERT **echo of your OWN just-posted comment** (raw row → `authorName` null) races the POST response (named). Both share the `id`, so the dedup-by-id guard keeps one — and when the raw echo won, the canonical named copy was dropped and the author saw "Unknown" on their _own_ comment until refresh. This is distinct from another user's INSERT (which legitimately has no prior row to preserve). Rule: the INSERT and UPDATE realtime handlers for an embed-bearing list MUST be **symmetric** — merge preferring the copy that has the embed fields; fixing only UPDATE leaves the self-echo race live. Now distilled in CLAUDE.md → Failure Log and the wiki page `concepts/realtime-payload-missing-embed-fields`.
+
 ## 2026-07-05 — Commenting bug-check + display fixes (all user types)
 
 - **Task:** App-wide comment bug-check. Fixed: authed comments showed no author name (only 2-char UUID initials) and no created-at time; four duplicate hour-blind `formatTime` copies (`1:23:45` rendered `83:45`); no per-version count header on the authed panel; guest timecodes non-clickable.
