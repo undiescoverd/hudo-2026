@@ -138,6 +138,7 @@ async function performUpload(
         agencyId: aid,
         r2Key: presign.r2Key,
         fileSizeBytes: f.size,
+        multipart: true,
         r2UploadId: presign.r2UploadId,
         parts,
       }),
