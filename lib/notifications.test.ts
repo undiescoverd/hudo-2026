@@ -274,3 +274,176 @@ describe('batchAndSendNotifications — no unsent', async () => {
     assert.deepEqual(result, { sent: 0, errors: 0 })
   })
 })
+
+// ---------------------------------------------------------------------------
+// enqueueUploadNotification (S4-UPLOAD-001 — talent self-upload status flip)
+//
+// enqueueUploadNotification always calls createAdminClient() internally
+// (mirroring enqueueCommentNotification), so an optional `deps.admin` override
+// — the same injectable-client shape already used by batchAndSendNotifications
+// above — is threaded through purely for testability; real call sites never
+// pass it. This lets us assert real query/insert behavior without any ESM
+// module-mocking (not set up for this test runner — see lib/audit.test.ts).
+// ---------------------------------------------------------------------------
+
+type ChainCall = { method: string; args: unknown[] }
+
+// `calls` is passed in (rather than owned by the chain) so the caller can hold
+// a reference to it *before* enqueueUploadNotification runs — the chain is
+// only constructed lazily inside admin.from('memberships'), which happens
+// during the call, not at test-setup time.
+function makeMembershipsChain(
+  calls: ChainCall[],
+  data: unknown[],
+  error: { message: string } | null = null
+) {
+  const chain: any = {
+    select: (...args: unknown[]) => {
+      calls.push({ method: 'select', args })
+      return chain
+    },
+    eq: (...args: unknown[]) => {
+      calls.push({ method: 'eq', args })
+      return chain
+    },
+    neq: (...args: unknown[]) => {
+      calls.push({ method: 'neq', args })
+      return chain
+    },
+    then: (resolve: (v: unknown) => unknown) => resolve({ data, error }),
+  }
+  return chain
+}
+
+function makeUploadAdmin(
+  members: { user_id: string; role: string }[],
+  opts: {
+    membersError?: { message: string } | null
+    insertError?: { message: string } | null
+  } = {}
+) {
+  const insertedRows: Record<string, unknown>[] = []
+  const fromCalls: string[] = []
+  const membershipsCalls: ChainCall[] = []
+
+  const admin = {
+    from: (table: string) => {
+      fromCalls.push(table)
+      if (table === 'memberships') {
+        return makeMembershipsChain(membershipsCalls, members, opts.membersError ?? null)
+      }
+      if (table === 'notifications') {
+        return {
+          insert: (rows: Record<string, unknown>[]) => {
+            insertedRows.push(...rows)
+            return Promise.resolve({ error: opts.insertError ?? null })
+          },
+        }
+      }
+      throw new Error(`Unexpected table: ${table}`)
+    },
+  }
+
+  return { admin, insertedRows, fromCalls, membershipsCalls }
+}
+
+describe('enqueueUploadNotification', () => {
+  const AGENCY_ID = 'agency-1'
+  const VIDEO_ID = 'video-1'
+  const UPLOADER_ID = 'uploader-1'
+
+  it('inserts only agent+ recipients (excludes talent) and scopes the query to exclude the uploader', async () => {
+    const { enqueueUploadNotification } = await import('./notifications')
+
+    const members = [
+      { user_id: 'agent-1', role: 'agent' },
+      { user_id: 'owner-1', role: 'owner' },
+      { user_id: 'admin-1', role: 'admin_agent' },
+      { user_id: 'talent-1', role: 'talent' },
+    ]
+    const { admin, insertedRows, membershipsCalls } = makeUploadAdmin(members)
+
+    await enqueueUploadNotification(
+      { agencyId: AGENCY_ID, videoId: VIDEO_ID, uploaderId: UPLOADER_ID },
+      { admin: admin as unknown as SupabaseClient }
+    )
+
+    assert.deepEqual(insertedRows.map((r) => r.recipient_id).sort(), [
+      'admin-1',
+      'agent-1',
+      'owner-1',
+    ])
+    assert.ok(
+      insertedRows.every((r) => r.type === 'status_changed' && r.comment_id === null),
+      'every row must be type status_changed with comment_id null'
+    )
+    assert.ok(
+      membershipsCalls.some(
+        (c: ChainCall) => c.method === 'neq' && c.args[0] === 'user_id' && c.args[1] === UPLOADER_ID
+      ),
+      'query must scope out the uploader via .neq(user_id, uploaderId)'
+    )
+  })
+
+  it('no-ops when there are no members at all', async () => {
+    const { enqueueUploadNotification } = await import('./notifications')
+    const { admin, insertedRows, fromCalls } = makeUploadAdmin([])
+
+    await enqueueUploadNotification(
+      { agencyId: AGENCY_ID, videoId: VIDEO_ID, uploaderId: UPLOADER_ID },
+      { admin: admin as unknown as SupabaseClient }
+    )
+
+    assert.equal(insertedRows.length, 0)
+    assert.ok(!fromCalls.includes('notifications'), 'must not query notifications when no members')
+  })
+
+  it('no-ops when every member is talent (no eligible recipients)', async () => {
+    const { enqueueUploadNotification } = await import('./notifications')
+    const members = [
+      { user_id: 'talent-1', role: 'talent' },
+      { user_id: 'talent-2', role: 'talent' },
+    ]
+    const { admin, insertedRows } = makeUploadAdmin(members)
+
+    await enqueueUploadNotification(
+      { agencyId: AGENCY_ID, videoId: VIDEO_ID, uploaderId: UPLOADER_ID },
+      { admin: admin as unknown as SupabaseClient }
+    )
+
+    assert.equal(insertedRows.length, 0)
+  })
+
+  it('never throws when the memberships query errors', async () => {
+    const { enqueueUploadNotification } = await import('./notifications')
+    const { admin, insertedRows } = makeUploadAdmin([], { membersError: { message: 'db down' } })
+
+    await assert.doesNotReject(() =>
+      enqueueUploadNotification(
+        { agencyId: AGENCY_ID, videoId: VIDEO_ID, uploaderId: UPLOADER_ID },
+        { admin: admin as unknown as SupabaseClient }
+      )
+    )
+    assert.equal(insertedRows.length, 0)
+  })
+
+  it('never throws when the notifications insert errors', async () => {
+    const { enqueueUploadNotification } = await import('./notifications')
+    const members = [{ user_id: 'agent-1', role: 'agent' }]
+    const { admin } = makeUploadAdmin(members, { insertError: { message: 'insert failed' } })
+
+    await assert.doesNotReject(() =>
+      enqueueUploadNotification(
+        { agencyId: AGENCY_ID, videoId: VIDEO_ID, uploaderId: UPLOADER_ID },
+        { admin: admin as unknown as SupabaseClient }
+      )
+    )
+  })
+
+  it('never throws on a config error (no deps.admin, createAdminClient throws in test env)', async () => {
+    const { enqueueUploadNotification } = await import('./notifications')
+    await assert.doesNotReject(() =>
+      enqueueUploadNotification({ agencyId: AGENCY_ID, videoId: VIDEO_ID, uploaderId: UPLOADER_ID })
+    )
+  })
+})

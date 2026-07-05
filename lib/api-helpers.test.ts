@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import { before, describe, it } from 'node:test'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { NextResponse } from 'next/server'
 
 // ---------------------------------------------------------------------------
 // checkRateLimit — real behaviour against a mocked (throwing) Upstash Redis
@@ -199,6 +200,85 @@ describe('requireAgentRole — logic', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// UPLOAD_ROLES / requireUploadRole — S4-UPLOAD-001 talent self-upload
+// ---------------------------------------------------------------------------
+
+describe('UPLOAD_ROLES', () => {
+  it('is AGENT_PLUS_ROLES plus talent', async () => {
+    const { UPLOAD_ROLES, AGENT_PLUS_ROLES } = await import('./api-helpers')
+    assert.deepEqual([...UPLOAD_ROLES], [...AGENT_PLUS_ROLES, 'talent'])
+  })
+
+  it('does not widen AGENT_PLUS_ROLES itself', async () => {
+    const { AGENT_PLUS_ROLES } = await import('./api-helpers')
+    assert.deepEqual([...AGENT_PLUS_ROLES], ['owner', 'admin_agent', 'agent'])
+  })
+
+  it('excludes guest', async () => {
+    const { UPLOAD_ROLES } = await import('./api-helpers')
+    assert.equal((UPLOAD_ROLES as readonly string[]).includes('guest'), false)
+  })
+})
+
+describe('requireUploadRole — behavior (mocked SupabaseClient)', () => {
+  // Minimal stub mirroring requireMembership's query shape:
+  // admin.from('memberships').select('role').eq('user_id', ...).eq('agency_id', ...).single()
+  function makeAdmin(result: {
+    data: { role: string } | null
+    error: { code?: string; message: string } | null
+  }) {
+    return {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              single: async () => result,
+            }),
+          }),
+        }),
+      }),
+    }
+  }
+
+  it('returns the membership for a talent role', async () => {
+    const { requireUploadRole } = await import('./api-helpers')
+    const admin = makeAdmin({ data: { role: 'talent' }, error: null })
+    const result = await requireUploadRole(admin as never, 'user-1', 'agency-1', 'Denied')
+    assert.deepEqual(result, { role: 'talent' })
+  })
+
+  it('returns the membership for an agent+ role', async () => {
+    const { requireUploadRole } = await import('./api-helpers')
+    const admin = makeAdmin({ data: { role: 'agent' }, error: null })
+    const result = await requireUploadRole(admin as never, 'user-1', 'agency-1', 'Denied')
+    assert.deepEqual(result, { role: 'agent' })
+  })
+
+  it('returns 403 for a role outside UPLOAD_ROLES (e.g. guest)', async () => {
+    const { requireUploadRole } = await import('./api-helpers')
+    const admin = makeAdmin({ data: { role: 'guest' }, error: null })
+    const result = await requireUploadRole(
+      admin as never,
+      'user-1',
+      'agency-1',
+      'You do not have permission to upload videos'
+    )
+    assert.ok(result instanceof NextResponse)
+    assert.equal((result as NextResponse).status, 403)
+    const body = await (result as NextResponse).json()
+    assert.equal(body.error, 'You do not have permission to upload videos')
+  })
+
+  it('returns 403 when there is no membership (PGRST116)', async () => {
+    const { requireUploadRole } = await import('./api-helpers')
+    const admin = makeAdmin({ data: null, error: { code: 'PGRST116', message: 'no rows' } })
+    const result = await requireUploadRole(admin as never, 'user-1', 'agency-1', 'Denied')
+    assert.ok(result instanceof NextResponse)
+    assert.equal((result as NextResponse).status, 403)
+  })
+})
+
 describe('api-helpers — source invariants', () => {
   let source: string
 
@@ -219,6 +299,11 @@ describe('api-helpers — source invariants', () => {
 
   it('exports requireAgentRole', () => {
     assert.match(source, /export async function requireAgentRole/)
+  })
+
+  it('exports requireUploadRole and UPLOAD_ROLES without widening AGENT_PLUS_ROLES', () => {
+    assert.match(source, /export async function requireUploadRole/)
+    assert.match(source, /export const UPLOAD_ROLES = \[\.\.\.AGENT_PLUS_ROLES, 'talent'\]/)
   })
 
   it('preserves allow-on-error (fail-open) behavior as the default posture', () => {

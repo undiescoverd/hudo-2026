@@ -8,7 +8,7 @@ import { MetadataForm } from '@/components/upload/MetadataForm'
 import { createClient } from '@/lib/auth'
 import { MULTIPART_PART_SIZE_BYTES, MULTIPART_THRESHOLD_BYTES } from '@/lib/upload-validation'
 
-async function fetchAgencyId(): Promise<string> {
+async function fetchMembership(): Promise<{ agencyId: string; role: string }> {
   const supabase = createClient()
   const {
     data: { user },
@@ -17,13 +17,13 @@ async function fetchAgencyId(): Promise<string> {
 
   const { data: membership } = await supabase
     .from('memberships')
-    .select('agency_id')
+    .select('agency_id, role')
     .eq('user_id', user.id)
     .limit(1)
     .single()
 
   if (!membership?.agency_id) throw new Error('No agency found for your account')
-  return membership.agency_id as string
+  return { agencyId: membership.agency_id as string, role: membership.role as string }
 }
 
 async function performUpload(
@@ -112,7 +112,10 @@ async function performUpload(
           }),
         })
         if (!urlRes.ok) throw new Error('Failed to get part URL')
-        url = ((await urlRes.json()) as { url: string }).url
+        const urlBody = (await urlRes.json()) as { partUrls: { partNumber: number; url: string }[] }
+        const partUrl = urlBody.partUrls[0]
+        if (!partUrl) throw new Error('Failed to get part URL')
+        url = partUrl.url
       }
 
       const res = await fetch(url, {
@@ -135,6 +138,7 @@ async function performUpload(
         agencyId: aid,
         r2Key: presign.r2Key,
         fileSizeBytes: f.size,
+        multipart: true,
         r2UploadId: presign.r2UploadId,
         parts,
       }),
@@ -157,6 +161,7 @@ export default function UploadPage() {
   const router = useRouter()
   const [file, setFile] = useState<File | null>(null)
   const [agencyId, setAgencyId] = useState('')
+  const [role, setRole] = useState('')
   const [progress, setProgress] = useState(0)
   const [isMultipart, setIsMultipart] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -190,8 +195,10 @@ export default function UploadPage() {
       let aid = agencyId
       if (!aid) {
         try {
-          aid = await fetchAgencyId()
+          const membership = await fetchMembership()
+          aid = membership.agencyId
           setAgencyId(aid)
+          setRole(membership.role)
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Failed to load agency')
           return
@@ -210,8 +217,10 @@ export default function UploadPage() {
     let aid = agencyId
     if (!aid) {
       try {
-        aid = await fetchAgencyId()
+        const membership = await fetchMembership()
+        aid = membership.agencyId
         setAgencyId(aid)
+        setRole(membership.role)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load agency')
         return
@@ -243,12 +252,15 @@ export default function UploadPage() {
           />
 
           {uploadedVideoId ? (
-            <MetadataForm
-              videoId={uploadedVideoId}
-              defaultTitle={fileNameWithoutExtension(uploadedFileName)}
-              onSaved={(videoId) => router.push(`/videos/${videoId}`)}
-              onSkip={(videoId) => router.push(`/videos/${videoId}`)}
-            />
+            <>
+              {role === 'talent' && <p className="text-sm text-gray-500">Submitted for review</p>}
+              <MetadataForm
+                videoId={uploadedVideoId}
+                defaultTitle={fileNameWithoutExtension(uploadedFileName)}
+                onSaved={(videoId) => router.push(`/videos/${videoId}`)}
+                onSkip={(videoId) => router.push(`/videos/${videoId}`)}
+              />
+            </>
           ) : (
             !uploading && (
               <button

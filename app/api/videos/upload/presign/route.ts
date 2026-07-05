@@ -13,7 +13,7 @@ import {
   validateFileSize,
 } from '@/lib/upload-validation'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
-import { checkRateLimit, requireAgentRole } from '@/lib/api-helpers'
+import { checkRateLimit, requireUploadRole } from '@/lib/api-helpers'
 import { isGracePeriodExpired } from '@/lib/plan-gates'
 
 /**
@@ -106,17 +106,33 @@ export async function POST(request: NextRequest) {
   )
   if (rl) return rl
 
-  // --- Membership check (agent+ role required) ---
+  // --- Membership check (agent+ or talent role required) ---
 
   const admin = createAdminClient()
 
-  const membership = await requireAgentRole(
+  const membership = await requireUploadRole(
     admin,
     user.id,
     agencyId,
-    'Only agents and above can upload videos'
+    'You do not have permission to upload videos'
   )
   if (membership instanceof NextResponse) return membership
+
+  const { role } = membership
+
+  // --- Anti-impersonation: talent may only upload for themselves ---
+
+  if (
+    role === 'talent' &&
+    typeof talentId === 'string' &&
+    talentId.trim() &&
+    talentId !== user.id
+  ) {
+    return NextResponse.json(
+      { error: 'Talent can only upload videos for themselves' },
+      { status: 403 }
+    )
+  }
 
   // --- Quota + grace-period check (best-effort; authoritative check in complete route) ---
 
@@ -174,7 +190,14 @@ export async function POST(request: NextRequest) {
         ? title.trim()
         : fileName.replace(/\.[^.]+$/, '').slice(0, 255)
 
-    const resolvedTalentId = typeof talentId === 'string' && talentId.trim() ? talentId : user.id
+    // Talent can never upload on behalf of someone else — always force
+    // resolvedTalentId to the caller, ignoring any body-supplied talentId.
+    const resolvedTalentId =
+      role === 'talent'
+        ? user.id
+        : typeof talentId === 'string' && talentId.trim()
+          ? talentId
+          : user.id
 
     const { data: newVideo, error: videoError } = await admin
       .from('videos')
@@ -197,13 +220,17 @@ export async function POST(request: NextRequest) {
     // Verify video exists and belongs to the agency
     const { data: existingVideo } = await admin
       .from('videos')
-      .select('id, agency_id')
+      .select('id, agency_id, talent_id')
       .eq('id', resolvedVideoId)
       .eq('agency_id', agencyId)
       .single()
 
     if (!existingVideo) {
       return NextResponse.json({ error: 'Video not found in this agency' }, { status: 404 })
+    }
+
+    if (role === 'talent' && existingVideo.talent_id !== user.id) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
   }
 

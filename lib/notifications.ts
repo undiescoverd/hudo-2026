@@ -73,6 +73,68 @@ export async function enqueueCommentNotification({
   }
 }
 
+/**
+ * Inserts one 'status_changed' notification per eligible agency member when a
+ * talent self-upload auto-flips a video to pending_review. Modeled directly on
+ * enqueueCommentNotification above (admin client via createAdminClient inside
+ * try/catch; must never throw — caller uses .catch() anyway).
+ *
+ * Recipients: agency members where role !== 'talent', excluding the uploader.
+ * `deps.admin` mirrors the injectable-client pattern already used by
+ * batchAndSendNotifications below — it exists only so unit tests can stub the
+ * Supabase client (no ESM module-mocking is set up for this test runner); real
+ * call sites never pass it and get createAdminClient() as usual.
+ */
+export async function enqueueUploadNotification(
+  {
+    agencyId,
+    videoId,
+    uploaderId,
+  }: {
+    agencyId: string
+    videoId: string
+    uploaderId: string
+  },
+  deps?: { admin?: SupabaseClient }
+): Promise<void> {
+  let admin: SupabaseClient
+  try {
+    admin = deps?.admin ?? createAdminClient()
+  } catch (err) {
+    console.error('[notifications:enqueueUpload] Config error:', err)
+    return
+  }
+
+  const { data: members, error } = await admin
+    .from('memberships')
+    .select('user_id, role')
+    .eq('agency_id', agencyId)
+    .neq('user_id', uploaderId)
+
+  if (error) {
+    console.error('[notifications:enqueueUpload] Failed to fetch members:', error)
+    return
+  }
+
+  if (!members?.length) return
+
+  const eligible = members.filter((m) => m.role !== 'talent')
+  if (!eligible.length) return
+
+  const rows = eligible.map((m) => ({
+    agency_id: agencyId,
+    recipient_id: m.user_id,
+    type: 'status_changed' as const,
+    video_id: videoId,
+    comment_id: null,
+  }))
+
+  const { error: insertError } = await admin.from('notifications').insert(rows)
+  if (insertError) {
+    console.error('[notifications:enqueueUpload] Insert failed:', insertError)
+  }
+}
+
 export type BatchSendDeps = {
   admin?: SupabaseClient
   emailSender?: typeof defaultSendEmail

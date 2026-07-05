@@ -5,8 +5,9 @@ import type { CompletedPart } from '@/lib/storage'
 import { isQuotaExceededError } from '@/lib/storage-quota'
 import { UPLOAD_RATE_LIMIT, UPLOAD_RATE_WINDOW } from '@/lib/upload-validation'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
-import { checkRateLimit, requireAgentRole } from '@/lib/api-helpers'
+import { checkRateLimit, requireUploadRole } from '@/lib/api-helpers'
 import { logEvent } from '@/lib/audit'
+import { enqueueUploadNotification } from '@/lib/notifications'
 
 /**
  * POST /api/videos/upload/complete
@@ -116,25 +117,40 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient()
 
-  const membership = await requireAgentRole(
+  const membership = await requireUploadRole(
     admin,
     user.id,
     agencyId,
-    'Only agents and above can complete uploads'
+    'You do not have permission to complete uploads'
   )
   if (membership instanceof NextResponse) return membership
+
+  const { role } = membership
 
   // --- Verify video belongs to agency ---
 
   const { data: video } = await admin
     .from('videos')
-    .select('id, agency_id')
+    .select('id, agency_id, talent_id, status')
     .eq('id', videoId)
     .eq('agency_id', agencyId)
     .single()
 
   if (!video) {
     return NextResponse.json({ error: 'Video not found in this agency' }, { status: 404 })
+  }
+
+  if (role === 'talent' && video.talent_id !== user.id) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  }
+
+  // --- Bind the R2 key to this video ---
+  // generateR2Key always produces `${agencyId}/${videoId}/${uploadId}.ext`, so
+  // every legitimate client passes. Rejecting anything else prevents a caller
+  // from completing/attaching an object under another video's (or tenant's)
+  // key space via any of the storage or version-creation calls below.
+  if (!r2Key.startsWith(`${agencyId}/${videoId}/`)) {
+    return NextResponse.json({ error: 'R2 key does not match video' }, { status: 400 })
   }
 
   // --- Complete multipart upload if applicable ---
@@ -242,8 +258,94 @@ export async function POST(request: NextRequest) {
     metadata: { version_id: newVersion, file_size_bytes: actualFileSize },
   }).catch((err) => console.error('[upload/complete] logEvent unhandled rejection:', err))
 
+  // --- Talent self-upload: auto-flip draft/changes_requested -> pending_review ---
+  // Mirrors canTransition() for the 'talent' role in lib/video-status.ts. Agent+
+  // uploads never auto-flip (they use PATCH /status explicitly); a re-upload on
+  // a video already in pending_review/in_review/approved must not regress it.
+  //
+  // TOCTOU guard: `video.status` was read at the top of the route, but multipart
+  // completion + headObject + the quota/version RPCs take seconds — an agent may
+  // have moved the video (e.g. to in_review/approved) in that window. So the
+  // flip (a) re-reads the CURRENT status for both the eligibility check and the
+  // audit metadata, and (b) makes the UPDATE itself conditional on the status
+  // still being flippable, treating 0 matched rows as "someone raced us — don't
+  // flip, don't notify".
+  let flipped = false
+  let currentStatus: string = video.status
+  if (role === 'talent') {
+    const { data: freshVideo, error: freshError } = await admin
+      .from('videos')
+      .select('status')
+      .eq('id', videoId)
+      .single()
+
+    if (freshError || !freshVideo) {
+      // Can't trust the stale status — skip the flip; the upload still succeeded.
+      console.error(
+        '[upload/complete] Status re-read failed — skipping auto-flip:',
+        freshError?.message ?? 'no row'
+      )
+    } else {
+      currentStatus = freshVideo.status
+      if (currentStatus === 'draft' || currentStatus === 'changes_requested') {
+        // Insert audit_log FIRST — if this fails, skip the flip entirely (safe
+        // degradation). The upload itself must still succeed (200) either way.
+        const { error: flipAuditError } = await admin.from('audit_log').insert({
+          agency_id: agencyId,
+          actor_id: user.id,
+          actor_name: actorName,
+          action: 'status_changed',
+          resource_type: 'video',
+          resource_id: videoId,
+          metadata: { old_status: currentStatus, new_status: 'pending_review' },
+        })
+
+        if (flipAuditError) {
+          console.error(
+            '[upload/complete] Status auto-flip audit insert failed — skipping flip:',
+            flipAuditError.message
+          )
+        } else {
+          // Conditional update: only flip if the status is STILL flippable —
+          // a concurrent transition after the audit insert leaves 0 rows matched.
+          const { data: updatedRows, error: flipUpdateError } = await admin
+            .from('videos')
+            .update({ status: 'pending_review', updated_at: new Date().toISOString() })
+            .eq('id', videoId)
+            .in('status', ['draft', 'changes_requested'])
+            .select('id')
+
+          if (flipUpdateError || !updatedRows?.length) {
+            // Audit row already written — log loudly so operators can reconcile.
+            console.error(
+              '[upload/complete] CRITICAL: audit_log written but video status update failed',
+              {
+                videoId,
+                auditOrphan: true,
+                updateError:
+                  flipUpdateError?.message ?? 'status changed concurrently (0 rows matched)',
+              }
+            )
+          } else {
+            flipped = true
+            // Awaited, not fire-and-forget: this is the last async op before the
+            // response, and Vercel freezes the function once the response returns —
+            // an unawaited insert here gets dropped (live-verified on staging).
+            // enqueueUploadNotification never throws, so awaiting cannot fail the upload.
+            await enqueueUploadNotification({
+              agencyId: agencyId as string,
+              videoId,
+              uploaderId: user.id,
+            })
+          }
+        }
+      }
+    }
+  }
+
   return NextResponse.json({
     version: newVersion,
     videoId,
+    status: flipped ? 'pending_review' : currentStatus,
   })
 }
