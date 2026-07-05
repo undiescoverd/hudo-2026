@@ -11,7 +11,7 @@ export default async function RootPage() {
   } = await supabase.auth.getUser()
 
   if (user) {
-    redirect('/videos')
+    redirect('/dashboard')
   } else {
     redirect('/auth/signin')
   }

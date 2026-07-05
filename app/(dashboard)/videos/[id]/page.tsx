@@ -109,10 +109,10 @@ export default function VideoPage({ params }: Props) {
       {agencyId && <VideoStatusLive agencyId={agencyId} onChange={fetchVersions} />}
       <div className="px-4 pt-4 pb-2 flex items-center justify-between">
         <Link
-          href="/videos"
+          href="/dashboard"
           className="text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          ← Back to videos
+          ← Back to dashboard
         </Link>
         <GuestShareButton videoId={params.id} />
       </div>

@@ -15,8 +15,8 @@ export function validatePassword(password: string): string | null {
  * Returns a safe redirect target: the input if it's a valid local path, otherwise '/'.
  */
 export function safeRedirect(target: string | null): string {
-  if (!target) return '/videos'
+  if (!target) return '/dashboard'
   // Must start with / and not // (protocol-relative URL)
   if (target.startsWith('/') && !target.startsWith('//')) return target
-  return '/videos'
+  return '/dashboard'
 }

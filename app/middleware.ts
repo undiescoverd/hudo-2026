@@ -31,9 +31,6 @@ const ADMIN_ROLES = new Set(['owner', 'admin_agent'])
 /** Roles that can access /agent routes. */
 const AGENT_ROLES = new Set(['owner', 'admin_agent', 'agent'])
 
-/** Roles that can access /talent routes. */
-const TALENT_ROLES = new Set(['owner', 'admin_agent', 'agent', 'talent'])
-
 /**
  * Returns the set of roles required for a given pathname, or null if no
  * role restriction applies (authenticated users of any role may access it).
@@ -41,7 +38,6 @@ const TALENT_ROLES = new Set(['owner', 'admin_agent', 'agent', 'talent'])
 function requiredRolesFor(pathname: string): Set<string> | null {
   if (pathname === '/admin' || pathname.startsWith('/admin/')) return ADMIN_ROLES
   if (pathname === '/agent' || pathname.startsWith('/agent/')) return AGENT_ROLES
-  if (pathname === '/talent' || pathname.startsWith('/talent/')) return TALENT_ROLES
   return null
 }
 
@@ -52,7 +48,7 @@ function requiredRolesFor(pathname: string): Set<string> | null {
  *   persists across page reloads without requiring a client-side hydration step.
  * - Redirects unauthenticated users to /auth/signin for protected routes.
  * - Passes through requests to public paths and static assets.
- * - Enforces role-based access on /admin, /agent, and /talent routes by
+ * - Enforces role-based access on /admin and /agent routes by
  *   querying the memberships table. Returns 403 for insufficient role.
  * - /guest/* paths are public — guests are authenticated via signed tokens
  *   in API routes, not via Supabase Auth.
