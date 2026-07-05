@@ -12,8 +12,7 @@
  * The playback-url path is separately rate-limited in its own API route.
  */
 import { redirect } from 'next/navigation'
-import { GuestPlayer } from '@/components/guest/GuestPlayer'
-import { GuestComments } from '@/components/guest/GuestComments'
+import { GuestReview } from '@/components/guest/GuestReview'
 import { getGuestMetadata } from '@/lib/guest/get-guest-metadata'
 
 export default async function GuestPage({ params }: { params: { token: string } }) {
@@ -42,17 +41,7 @@ export default async function GuestPage({ params }: { params: { token: string } 
         <h1 className="mb-4 text-xl font-semibold text-gray-100">{data.video.title}</h1>
 
         {data.version ? (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            {/* Player occupies 2/3 on large screens */}
-            <div className="lg:col-span-2">
-              <GuestPlayer token={token} />
-            </div>
-
-            {/* Comments panel */}
-            <div className="lg:col-span-1">
-              <GuestComments comments={data.comments} />
-            </div>
-          </div>
+          <GuestReview token={token} comments={data.comments} />
         ) : (
           <p className="text-sm text-gray-500">No video version is available yet.</p>
         )}

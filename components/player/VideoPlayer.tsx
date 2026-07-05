@@ -108,7 +108,7 @@ export function VideoPlayer({
       </div>
 
       {/* Comment timeline bar below video */}
-      {showCustomControls && comments && comments.length > 0 && (
+      {showCustomControls && comments && comments.some((c) => c.deletedAt === null) && (
         <CommentTimeline comments={comments} onSeekToComment={onSeekToComment} />
       )}
     </div>

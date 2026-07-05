@@ -12,16 +12,14 @@
  */
 
 import type { GuestComment } from '@/lib/guest/get-guest-metadata'
+import { formatTimecode } from '@/lib/format-time'
 
 interface GuestCommentsProps {
   comments: GuestComment[]
-}
-
-/** Format seconds as m:ss */
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
+  /** When provided, the timestamp badge becomes a click-to-seek button
+   *  driving the sibling GuestPlayer's <video> element. Omit to keep the
+   *  badge a static label (e.g. if GuestComments is ever used standalone). */
+  onSeek?: (t: number) => void
 }
 
 /** Format an ISO date string as a relative or absolute label */
@@ -37,7 +35,13 @@ function formatDate(iso: string): string {
   }
 }
 
-function GuestCommentRow({ comment }: { comment: GuestComment }) {
+function GuestCommentRow({
+  comment,
+  onSeek,
+}: {
+  comment: GuestComment
+  onSeek?: (t: number) => void
+}) {
   const author = comment.display_name ?? 'Anonymous'
 
   return (
@@ -54,11 +58,21 @@ function GuestCommentRow({ comment }: { comment: GuestComment }) {
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs font-medium text-gray-300">{author}</span>
 
-          {comment.timestamp_seconds != null && (
-            <span className="rounded bg-gray-700 px-1.5 py-0.5 font-mono text-xs text-gray-300">
-              {formatTime(comment.timestamp_seconds)}
-            </span>
-          )}
+          {comment.timestamp_seconds != null &&
+            (onSeek ? (
+              <button
+                type="button"
+                onClick={() => onSeek(comment.timestamp_seconds as number)}
+                className="rounded bg-gray-700 px-1.5 py-0.5 font-mono text-xs text-gray-300 hover:bg-blue-900/40 hover:text-blue-300"
+                aria-label={`Seek to ${formatTimecode(comment.timestamp_seconds)}`}
+              >
+                {formatTimecode(comment.timestamp_seconds)}
+              </button>
+            ) : (
+              <span className="rounded bg-gray-700 px-1.5 py-0.5 font-mono text-xs text-gray-300">
+                {formatTimecode(comment.timestamp_seconds)}
+              </span>
+            ))}
 
           <span className="ml-auto text-xs text-gray-500">{formatDate(comment.created_at)}</span>
         </div>
@@ -69,7 +83,7 @@ function GuestCommentRow({ comment }: { comment: GuestComment }) {
   )
 }
 
-export function GuestComments({ comments }: GuestCommentsProps) {
+export function GuestComments({ comments, onSeek }: GuestCommentsProps) {
   return (
     <div className="flex h-full flex-col">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-400">
@@ -81,7 +95,7 @@ export function GuestComments({ comments }: GuestCommentsProps) {
       ) : (
         <div className="space-y-1 overflow-y-auto">
           {comments.map((c) => (
-            <GuestCommentRow key={c.id} comment={c} />
+            <GuestCommentRow key={c.id} comment={c} onSeek={onSeek} />
           ))}
         </div>
       )}

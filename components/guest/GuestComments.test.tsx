@@ -46,12 +46,24 @@ describe('GuestComments — source invariants', () => {
     assert.doesNotMatch(code, /resolve|reply|delete/i)
   })
 
-  it('uses formatTime to display timestamp_seconds', () => {
-    assert.match(source, /formatTime/)
+  it('uses the shared formatTimecode to display timestamp_seconds', () => {
+    assert.match(source, /formatTimecode/)
     assert.match(source, /timestamp_seconds/)
   })
 
   it('handles empty comments list gracefully', () => {
     assert.match(source, /length === 0|\.length === 0/)
+  })
+
+  it('accepts an optional onSeek prop', () => {
+    assert.match(source, /onSeek\?:\s*\(t: number\) => void/)
+  })
+
+  it('renders a seek button when onSeek is provided, falling back to a static span', () => {
+    assert.match(source, /onSeek \?\s*\(/)
+    assert.match(
+      source,
+      /<button[\s\S]*?onClick=\{\(\) => onSeek\(comment\.timestamp_seconds as number\)\}/
+    )
   })
 })

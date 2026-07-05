@@ -2,6 +2,7 @@
 'use client'
 
 import type { Comment } from '@/lib/comments'
+import { formatRelativeTime, formatTimecode } from '@/lib/format-time'
 
 interface CommentItemProps {
   comment: Comment
@@ -24,16 +25,24 @@ function userInitials(userId: string): string {
   return userId.slice(0, 2).toUpperCase()
 }
 
-/** Format seconds as m:ss */
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
+/** Get initials from a display name (first letters of up to 2 words, uppercase). */
+function nameInitials(name: string): string {
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+  return initials.toUpperCase()
 }
 
 export function CommentItem({ comment, onSeek, isReply = false }: CommentItemProps) {
   const isDeleted = comment.deletedAt !== null
   const isResolved = comment.resolved
+  const initials =
+    comment.authorName && comment.authorName.trim().length > 0
+      ? nameInitials(comment.authorName)
+      : userInitials(comment.userId)
 
   if (isDeleted) {
     return (
@@ -59,19 +68,23 @@ export function CommentItem({ comment, onSeek, isReply = false }: CommentItemPro
         style={{ backgroundColor: userColor(comment.userId) }}
         aria-hidden="true"
       >
-        {userInitials(comment.userId)}
+        {initials}
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            {comment.authorName ?? 'Unknown'}
+          </span>
+
           {/* Timestamp badge — click to seek */}
           <button
             type="button"
             onClick={() => onSeek(comment.timestampSeconds)}
             className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-700 hover:bg-blue-100 hover:text-blue-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-blue-900/40 dark:hover:text-blue-400"
-            aria-label={`Seek to ${formatTime(comment.timestampSeconds)}`}
+            aria-label={`Seek to ${formatTimecode(comment.timestampSeconds)}`}
           >
-            {formatTime(comment.timestampSeconds)}
+            {formatTimecode(comment.timestampSeconds)}
           </button>
 
           {isResolved && (
@@ -79,6 +92,10 @@ export function CommentItem({ comment, onSeek, isReply = false }: CommentItemPro
               Resolved
             </span>
           )}
+
+          <span className="ml-auto text-xs text-gray-500 dark:text-gray-400">
+            {formatRelativeTime(comment.createdAt)}
+          </span>
         </div>
 
         <p className="mt-1 text-sm text-gray-800 dark:text-gray-200">{comment.content}</p>

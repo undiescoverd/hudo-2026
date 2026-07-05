@@ -2,6 +2,7 @@
 
 import { useCallback, useState, type KeyboardEvent } from 'react'
 import { COMMENT_BODY_MAX_LENGTH, type Comment } from '@/lib/comments'
+import { formatTimecode } from '@/lib/format-time'
 import { useVideoPlayerContext } from '@/components/player/VideoPlayer'
 
 interface CommentInputProps {
@@ -11,12 +12,11 @@ interface CommentInputProps {
   userId: string
   onOptimisticInsert: (comment: Comment) => void
   onOptimisticRollback: (tempId: string) => void
-}
-
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
+  /** Display name for the optimistic comment's author. The canonical POST
+   *  response (which carries the real name via the users embed) replaces
+   *  the temp row, so this is a purely cosmetic bridge for the brief window
+   *  before that response arrives. */
+  currentUserName?: string | null
 }
 
 export function CommentInput({
@@ -26,6 +26,7 @@ export function CommentInput({
   userId,
   onOptimisticInsert,
   onOptimisticRollback,
+  currentUserName,
 }: CommentInputProps) {
   const player = useVideoPlayerContext()
   const [body, setBody] = useState('')
@@ -64,6 +65,8 @@ export function CommentInput({
       resolvedBy: null,
       deletedAt: null,
       createdAt: nowIso,
+      authorName: currentUserName ?? null,
+      authorAvatarUrl: null,
     }
 
     const originalBody = body
@@ -120,6 +123,7 @@ export function CommentInput({
     videoId,
     agencyId,
     userId,
+    currentUserName,
     onOptimisticInsert,
     onOptimisticRollback,
   ])
@@ -132,8 +136,8 @@ export function CommentInput({
   }
 
   const stamp = hasRange
-    ? `${formatTime(startSec)} – ${formatTime(endSec as number)}`
-    : formatTime(startSec)
+    ? `${formatTimecode(startSec)} – ${formatTimecode(endSec as number)}`
+    : formatTimecode(startSec)
 
   return (
     <div className="border-t border-gray-200 p-3 dark:border-gray-800">

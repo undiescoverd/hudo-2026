@@ -1,7 +1,7 @@
 /**
  * Unit tests for useVideoPlayer pure helper functions.
  *
- * Tests clampSeek, clampVolume, and formatTime — no DOM or React required.
+ * Tests clampSeek and clampVolume — no DOM or React required.
  *
  * Run: npx tsx --test hooks/useVideoPlayer.test.ts
  */
@@ -61,44 +61,13 @@ describe('clampVolume', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Test: formatTime
-// ---------------------------------------------------------------------------
-
-describe('formatTime', () => {
-  it('formats 0 seconds as 00:00', async () => {
-    const { formatTime } = await import('./useVideoPlayer')
-    assert.equal(formatTime(0), '00:00')
-  })
-
-  it('formats 65 seconds as 01:05', async () => {
-    const { formatTime } = await import('./useVideoPlayer')
-    assert.equal(formatTime(65), '01:05')
-  })
-
-  it('formats 3600 seconds as 60:00', async () => {
-    const { formatTime } = await import('./useVideoPlayer')
-    assert.equal(formatTime(3600), '60:00')
-  })
-
-  it('pads single-digit seconds with a leading zero', async () => {
-    const { formatTime } = await import('./useVideoPlayer')
-    assert.equal(formatTime(9), '00:09')
-  })
-
-  it('truncates fractional seconds (floors)', async () => {
-    const { formatTime } = await import('./useVideoPlayer')
-    assert.equal(formatTime(61.9), '01:01')
-  })
-
-  it('treats negative input as 0', async () => {
-    const { formatTime } = await import('./useVideoPlayer')
-    assert.equal(formatTime(-10), '00:00')
-  })
-})
-
-// ---------------------------------------------------------------------------
 // Test: State transition logic (pure mirrors of hook behaviour)
 // ---------------------------------------------------------------------------
+// (formatTime used to live on this hook; it moved to lib/format-time.ts as
+// formatTimecode — see lib/format-time.test.ts for its coverage — because
+// PlayerControls, CommentItem, CommentInput, and GuestComments all need the
+// same timecode formatting and previously carried four slightly different
+// copies.)
 
 describe('player state transitions', () => {
   it('play sets playing to true', () => {

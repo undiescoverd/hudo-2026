@@ -76,14 +76,47 @@ export function useVideoComments(
 
   const handleInsert = useCallback((comment: Comment) => {
     setComments((prev) => {
-      // Avoid duplicates (e.g. an optimistic insert followed by its Realtime echo)
-      if (prev.some((c) => c.id === comment.id)) return prev
+      // De-dupe by id: an optimistic/canonical insert and its Realtime echo can
+      // arrive in EITHER order. The echo carries the raw comments row with no
+      // `users` embed (authorName null); the REST/POST-sourced copy carries the
+      // name. Merge on collision, preferring whichever copy has the author
+      // fields, so a racing echo can't win and leave the author's own comment
+      // showing "Unknown" until refresh.
+      const existing = prev.find((c) => c.id === comment.id)
+      if (existing) {
+        return prev.map((c) =>
+          c.id === comment.id
+            ? {
+                ...c,
+                ...comment,
+                authorName: comment.authorName ?? c.authorName,
+                authorAvatarUrl: comment.authorAvatarUrl ?? c.authorAvatarUrl,
+              }
+            : c
+        )
+      }
       return [...prev, comment]
     })
   }, [])
 
   const handleUpdate = useCallback((updated: Comment) => {
-    setComments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+    // Realtime UPDATE payloads carry only the raw comments row — no `users`
+    // embed — so `updated.authorName`/`authorAvatarUrl` are null. A resolve or
+    // soft-delete broadcasts such an UPDATE to every subscriber; replacing the
+    // whole object would flip an already-named comment to "Unknown" live until
+    // the next GET. Preserve the existing author fields when the incoming
+    // update lacks them.
+    setComments((prev) =>
+      prev.map((c) =>
+        c.id === updated.id
+          ? {
+              ...updated,
+              authorName: updated.authorName ?? c.authorName,
+              authorAvatarUrl: updated.authorAvatarUrl ?? c.authorAvatarUrl,
+            }
+          : c
+      )
+    )
   }, [])
 
   const handleDelete = useCallback((commentId: string) => {

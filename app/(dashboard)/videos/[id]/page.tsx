@@ -22,6 +22,7 @@ interface Props {
 export default function VideoPage({ params }: Props) {
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  const [userName, setUserName] = useState<string | null>(null)
   const [agencyId, setAgencyId] = useState<string | null>(null)
   // null = still loading (or not yet retried); passed straight through to
   // VersionSelector so it doesn't issue its own duplicate GET request.
@@ -53,6 +54,10 @@ export default function VideoPage({ params }: Props) {
       .then(({ data: { user } }) => {
         if (!user) throw new Error('Not signed in')
         setUserId(user.id)
+        // Used only to show the author's name on their own optimistic comment
+        // before the POST response (which carries the canonical name) lands.
+        const metaName = user.user_metadata?.full_name
+        setUserName(typeof metaName === 'string' && metaName.trim() ? metaName.trim() : null)
       })
       .catch((err: unknown) => {
         console.error('[video-page] getUser failed:', err)
@@ -136,6 +141,7 @@ export default function VideoPage({ params }: Props) {
                 versionId={activeVersionId}
                 agencyId={agencyId}
                 userId={userId}
+                currentUserName={userName}
                 comments={comments}
                 loading={commentsLoading}
                 error={commentsError}

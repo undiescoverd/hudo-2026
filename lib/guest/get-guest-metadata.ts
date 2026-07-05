@@ -122,11 +122,9 @@ export async function getGuestMetadata(token: string): Promise<GuestMetadata | n
       .order('timestamp_seconds', { ascending: true })
 
     comments = ((rawComments ?? []) as RawComment[]).map((c) => {
-      const userRel = c.users
-      const displayName =
-        userRel && typeof userRel === 'object' && !Array.isArray(userRel)
-          ? ((userRel as { full_name: string }).full_name ?? null)
-          : null
+      const rel = c.users
+      const u = Array.isArray(rel) ? rel[0] : rel
+      const displayName = u?.full_name ?? null
       return {
         id: c.id,
         content: c.content,

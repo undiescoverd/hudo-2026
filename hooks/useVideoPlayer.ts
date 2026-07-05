@@ -17,13 +17,6 @@ export interface VideoPlayerState {
   toggleFullscreen: () => void
 }
 
-export function formatTime(seconds: number): string {
-  const s = Math.floor(Math.max(0, seconds))
-  const mins = Math.floor(s / 60)
-  const secs = s % 60
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-}
-
 export function clampSeek(t: number, duration: number): number {
   return Math.min(Math.max(0, t), duration)
 }

@@ -8,6 +8,20 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 
 ---
 
+## 2026-07-05 — Comment realtime INSERT-echo self-clobber (follow-up to the display fixes)
+
+- **Task:** Follow-up on the commenting bug-check (commit `6f8eaa6`). The prior fix merged author fields on `handleUpdate` but not `handleInsert`, and the earlier note wrongly concluded the INSERT case was "by design, out of scope."
+- **Models:** planner=opus, fix=opus.
+- **Outcome:** done. `handleInsert` now merges on id collision (same `?? existing` pattern as `handleUpdate`) instead of replace-or-keep. Test added; suite green.
+- **Gotcha (if any):** The Realtime INSERT **echo of your OWN just-posted comment** (raw row → `authorName` null) races the POST response (named). Both share the `id`, so the dedup-by-id guard keeps one — and when the raw echo won, the canonical named copy was dropped and the author saw "Unknown" on their _own_ comment until refresh. This is distinct from another user's INSERT (which legitimately has no prior row to preserve). Rule: the INSERT and UPDATE realtime handlers for an embed-bearing list MUST be **symmetric** — merge preferring the copy that has the embed fields; fixing only UPDATE leaves the self-echo race live. Now distilled in CLAUDE.md → Failure Log and the wiki page `concepts/realtime-payload-missing-embed-fields`.
+
+## 2026-07-05 — Commenting bug-check + display fixes (all user types)
+
+- **Task:** App-wide comment bug-check. Fixed: authed comments showed no author name (only 2-char UUID initials) and no created-at time; four duplicate hour-blind `formatTime` copies (`1:23:45` rendered `83:45`); no per-version count header on the authed panel; guest timecodes non-clickable.
+- **Models:** planner=opus, executor=sonnet, review=hudo-security-reviewer + pr-review-toolkit:code-reviewer, fixes=opus.
+- **Outcome:** done (pending live smoke). Added `lib/format-time.ts` (single source of truth: `formatTimecode` hour-aware + `formatRelativeTime`); joined `users!comments_user_id_fkey(full_name, avatar_url)` into the comments GET+POST selects; added `authorName`/`authorAvatarUrl` to the `Comment` type + `rowToComment` (array-or-object embed safe); deduped the realtime mapper onto the shared `rowToComment`; rendered name + relative time in `CommentItem`; labeled per-version count header in `CommentPanel`; wired guest click-to-seek via a new `GuestReview` client wrapper sharing a `videoRef`. Threaded `currentUserName` (from `user.user_metadata.full_name`) so the author's own optimistic comment shows their name pre-POST. type-check/lint/build clean; full suite 1137/1137; security review clean.
+- **Gotcha (if any):** Code review caught a live-only regression the mocked suite missed — a realtime UPDATE (resolve/soft-delete) broadcasts a bare `comments` row with NO `users` embed, so `rowToComment(payload.new)` yields `authorName: null`; `handleUpdate`'s full-object replace then flipped an already-named comment to "Unknown" for every other subscriber until refresh. Fix: `handleUpdate` now merges `authorName: updated.authorName ?? c.authorName` (same for avatar). Realtime INSERT of another user's comment still shows "Unknown until refresh" by design (no prior row to preserve from; enrichment map is out of scope).
+
 ## 2026-07-02 — Live smoke test PASSED on preview (post-#131 code)
 
 - **Task:** live-smoke-test walkthrough (per `.claude/skills/live-smoke-test/SKILL.md`) on the `chore/audit-run-wrapup` preview, covering all 16 merged audit PRs.

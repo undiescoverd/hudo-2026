@@ -12,6 +12,9 @@ interface CommentPanelProps {
   versionId: string
   agencyId: string
   userId: string
+  /** Current user's display name — forwarded to CommentInput so the author's
+   *  own optimistic comment shows their name before the POST response lands. */
+  currentUserName?: string | null
   // Comments, loading/error state, and mutation handlers are owned by the
   // page-level useVideoComments hook so there is exactly ONE fetch of the
   // comments endpoint — VideoPlayer's CommentTimeline shares the same state.
@@ -27,6 +30,7 @@ export function CommentPanel({
   versionId,
   agencyId,
   userId,
+  currentUserName,
   comments,
   loading,
   error,
@@ -55,8 +59,20 @@ export function CommentPanel({
     return acc
   }, {})
 
+  // Includes replies — matches what's actually rendered below (top-level + threads).
+  const visibleCount = comments.filter((c) => c.deletedAt === null).length
+
   return (
     <div className="flex h-full flex-col">
+      <div
+        className="border-b border-gray-100 px-4 py-3 dark:border-gray-800"
+        title="Comments on this version"
+      >
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          Comments · {visibleCount}
+        </h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400">This version only</p>
+      </div>
       <div className="flex-1 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
         {loading && (
           <div className="flex items-center justify-center py-12">
@@ -94,6 +110,7 @@ export function CommentPanel({
         versionId={versionId}
         agencyId={agencyId}
         userId={userId}
+        currentUserName={currentUserName}
         onOptimisticInsert={onOptimisticInsert}
         onOptimisticRollback={onOptimisticRollback}
       />
