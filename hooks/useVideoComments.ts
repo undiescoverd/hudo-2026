@@ -76,8 +76,25 @@ export function useVideoComments(
 
   const handleInsert = useCallback((comment: Comment) => {
     setComments((prev) => {
-      // Avoid duplicates (e.g. an optimistic insert followed by its Realtime echo)
-      if (prev.some((c) => c.id === comment.id)) return prev
+      // De-dupe by id: an optimistic/canonical insert and its Realtime echo can
+      // arrive in EITHER order. The echo carries the raw comments row with no
+      // `users` embed (authorName null); the REST/POST-sourced copy carries the
+      // name. Merge on collision, preferring whichever copy has the author
+      // fields, so a racing echo can't win and leave the author's own comment
+      // showing "Unknown" until refresh.
+      const existing = prev.find((c) => c.id === comment.id)
+      if (existing) {
+        return prev.map((c) =>
+          c.id === comment.id
+            ? {
+                ...c,
+                ...comment,
+                authorName: comment.authorName ?? c.authorName,
+                authorAvatarUrl: comment.authorAvatarUrl ?? c.authorAvatarUrl,
+              }
+            : c
+        )
+      }
       return [...prev, comment]
     })
   }, [])
