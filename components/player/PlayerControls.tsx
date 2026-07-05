@@ -1,7 +1,7 @@
 'use client'
 
 import { Maximize, Pause, Play, Volume2, VolumeX } from 'lucide-react'
-import { formatTime } from '@/hooks/useVideoPlayer'
+import { formatTimecode } from '@/lib/format-time'
 
 interface PlayerControlsProps {
   currentTime: number
@@ -42,7 +42,7 @@ export function PlayerControls({
         onChange={(e) => onSeek(Number(e.target.value))}
         className="h-1 w-full cursor-pointer accent-white"
         aria-label="Seek"
-        aria-valuetext={`${formatTime(currentTime)} / ${formatTime(duration)}`}
+        aria-valuetext={`${formatTimecode(currentTime)} / ${formatTimecode(duration)}`}
       />
 
       <div className="flex items-center gap-3">
@@ -58,7 +58,7 @@ export function PlayerControls({
 
         {/* Time display */}
         <span className="font-mono text-xs tabular-nums">
-          {formatTime(currentTime)} / {formatTime(duration)}
+          {formatTimecode(currentTime)} / {formatTimecode(duration)}
         </span>
 
         <div className="ml-auto flex items-center gap-2">

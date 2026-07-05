@@ -53,4 +53,10 @@ describe('CommentPanel — source invariants', () => {
     assert.match(source, /onOptimisticInsert=\{onOptimisticInsert\}/)
     assert.match(source, /onOptimisticRollback=\{onOptimisticRollback\}/)
   })
+
+  it('renders a version-scoped comment count header, excluding soft-deleted comments', () => {
+    assert.match(source, /title="Comments on this version"/)
+    assert.match(source, /c\.deletedAt === null/)
+    assert.match(source, /Comments · \{visibleCount\}/)
+  })
 })

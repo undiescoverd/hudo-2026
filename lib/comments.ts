@@ -20,6 +20,8 @@ export interface Comment {
   resolvedBy: string | null
   deletedAt: string | null
   createdAt: string
+  authorName: string | null
+  authorAvatarUrl: string | null
 }
 
 export interface CreateCommentInput {
@@ -42,6 +44,14 @@ export interface CreateCommentInput {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase row shape
 export function rowToComment(row: Record<string, any>): Comment {
+  // The `users` embed is present on REST responses (hinted via
+  // users!comments_user_id_fkey) but absent on Realtime payloads, which only
+  // carry the raw comments row — so authorName/authorAvatarUrl are null there.
+  // PostgREST returns an embedded to-one relationship as either an object or
+  // a single-element array depending on the query shape, so normalize both.
+  const rel = row.users
+  const u = Array.isArray(rel) ? rel[0] : rel
+
   return {
     id: row.id as string,
     videoVersionId: row.video_version_id as string,
@@ -57,6 +67,8 @@ export function rowToComment(row: Record<string, any>): Comment {
     resolvedBy: row.resolved_by as string | null,
     deletedAt: row.deleted_at as string | null,
     createdAt: row.created_at as string,
+    authorName: u?.full_name ?? null,
+    authorAvatarUrl: u?.avatar_url ?? null,
   }
 }
 

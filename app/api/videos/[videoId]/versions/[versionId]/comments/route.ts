@@ -77,7 +77,7 @@ export async function GET(
   const { data: comments, error: commentsError } = await admin
     .from('comments')
     .select(
-      'id, video_version_id, agency_id, user_id, content, comment_type, timestamp_seconds, end_timestamp_seconds, parent_id, resolved, resolved_at, resolved_by, deleted_at, created_at'
+      'id, video_version_id, agency_id, user_id, content, comment_type, timestamp_seconds, end_timestamp_seconds, parent_id, resolved, resolved_at, resolved_by, deleted_at, created_at, users!comments_user_id_fkey(full_name, avatar_url)'
     )
     .eq('video_version_id', versionId)
     .is('deleted_at', null)
@@ -208,7 +208,7 @@ export async function POST(
       end_timestamp_seconds: input.end_timestamp_seconds ?? null,
       parent_id: input.parent_id ?? null,
     })
-    .select()
+    .select('*, users!comments_user_id_fkey(full_name, avatar_url)')
     .single()
 
   if (insertError || !comment) {

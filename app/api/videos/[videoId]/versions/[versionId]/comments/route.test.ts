@@ -212,6 +212,14 @@ describe('comments collection route — source invariants', () => {
     assert.match(source, /\.is\('deleted_at',\s*null\)/)
   })
 
+  it('embeds the comment author via the disambiguated users FK hint', () => {
+    // comments has TWO FKs to users (user_id, resolved_by), so an unhinted
+    // `users(...)` embed would error with "more than one relationship was
+    // found" — see CLAUDE.md's videos<->video_versions two-FK failure-log
+    // entry for the same class of bug.
+    assert.match(source, /users!comments_user_id_fkey\(full_name,\s*avatar_url\)/)
+  })
+
   it('orders comments by timestamp_seconds ascending', () => {
     assert.match(source, /order\('timestamp_seconds',\s*\{\s*ascending:\s*true\s*\}/)
   })

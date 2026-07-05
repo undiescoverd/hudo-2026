@@ -54,6 +54,14 @@ describe('useVideoComments — source invariants', () => {
     assert.match(source, /prev\.some\(\(c\) => c\.id === comment\.id\)/)
   })
 
+  it('preserves author fields on a realtime UPDATE that lacks the users embed', () => {
+    // Realtime UPDATE payloads carry no `users` join, so authorName/
+    // authorAvatarUrl arrive null; handleUpdate must fall back to the existing
+    // row's values rather than clobbering an already-named comment to "Unknown".
+    assert.match(source, /authorName: updated\.authorName \?\? c\.authorName/)
+    assert.match(source, /authorAvatarUrl: updated\.authorAvatarUrl \?\? c\.authorAvatarUrl/)
+  })
+
   it('exposes comments, loading, error, and mutation handlers for callers to share', () => {
     assert.match(
       source,

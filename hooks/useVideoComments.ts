@@ -83,7 +83,23 @@ export function useVideoComments(
   }, [])
 
   const handleUpdate = useCallback((updated: Comment) => {
-    setComments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+    // Realtime UPDATE payloads carry only the raw comments row — no `users`
+    // embed — so `updated.authorName`/`authorAvatarUrl` are null. A resolve or
+    // soft-delete broadcasts such an UPDATE to every subscriber; replacing the
+    // whole object would flip an already-named comment to "Unknown" live until
+    // the next GET. Preserve the existing author fields when the incoming
+    // update lacks them.
+    setComments((prev) =>
+      prev.map((c) =>
+        c.id === updated.id
+          ? {
+              ...updated,
+              authorName: updated.authorName ?? c.authorName,
+              authorAvatarUrl: updated.authorAvatarUrl ?? c.authorAvatarUrl,
+            }
+          : c
+      )
+    )
   }, [])
 
   const handleDelete = useCallback((commentId: string) => {
