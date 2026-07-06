@@ -5,6 +5,9 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { safeRedirect } from '@/lib/auth-validation'
 import { cn } from '@/lib/utils'
+import DevQuickSignIn from '@/components/auth/DevQuickSignIn'
+
+const isDev = process.env.NODE_ENV === 'development'
 
 type FieldError = { email?: string; password?: string }
 
@@ -139,6 +142,8 @@ export default function SignInForm() {
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
+
+        {isDev && <DevQuickSignIn redirect={redirect} />}
       </div>
     </main>
   )
