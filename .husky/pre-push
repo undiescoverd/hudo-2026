@@ -19,8 +19,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     git fetch -q origin main 2>/dev/null || true
     fetched=1
     if ! git rev-parse -q --verify "$base" >/dev/null 2>&1; then
-      echo "pre-push: $base not found, skipping secret/foreign-commit checks" >&2
-      break
+      # Fail CLOSED: a guard that silently skips is worse than none.
+      echo "pre-push: $base not found, so the secret/foreign-commit checks can't run. Push refused." >&2
+      echo "  Fix: git fetch origin main   (or push with --no-verify if you are sure; CI still scans)" >&2
+      exit 1
     fi
   fi
 
@@ -41,7 +43,12 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     fi
     others=$(git for-each-ref refs/heads --format='%(refname:short)' | { grep -vxF -- "$pushed_branch" || true; })
     foreign=""
-    for c in $(git rev-list "$base..$local_sha"); do
+    # Fail CLOSED if the commit list can't be computed (otherwise the loop runs 0 times).
+    if ! commits=$(git rev-list "$base..$local_sha"); then
+      echo "pre-push: couldn't list commits for $local_ref. Push refused." >&2
+      exit 1
+    fi
+    for c in $commits; do
       # Already on some remote branch = already public, not a new leak.
       [ -z "$(git branch -r --contains "$c" 2>/dev/null)" ] || continue
       owners=""

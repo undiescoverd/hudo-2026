@@ -27,10 +27,11 @@ jobs:
         # Backstop for `git push --no-verify`, which skips the local hooks.
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
+          # Exact base commit from the event payload (unambiguous, unlike origin/<base_ref>).
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            sh scripts/check-secrets.sh --range "origin/${BASE_REF}...HEAD"
+            sh scripts/check-secrets.sh --range "${BASE_SHA}...HEAD"
           elif git rev-parse -q --verify HEAD~1 >/dev/null; then
             sh scripts/check-secrets.sh --range "HEAD~1..HEAD"
           else
