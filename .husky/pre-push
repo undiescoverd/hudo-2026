@@ -41,6 +41,11 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     if [ "$local_ref" = "HEAD" ]; then
       pushed_branch=$(git symbolic-ref -q --short HEAD || true)
     fi
+    if [ -z "$pushed_branch" ]; then
+      # Detached HEAD: no branch name to exclude, so the check can't tell "own" from "foreign".
+      echo "pre-push: pushing from a detached HEAD. Check out a branch first (or set ALLOW_FOREIGN_COMMITS=1). Push refused." >&2
+      exit 1
+    fi
     others=$(git for-each-ref refs/heads --format='%(refname:short)' | { grep -vxF -- "$pushed_branch" || true; })
     foreign=""
     # Fail CLOSED if the commit list can't be computed (otherwise the loop runs 0 times).
