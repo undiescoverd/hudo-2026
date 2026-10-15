@@ -22,7 +22,7 @@
 ## Status board
 | Phase | Sprint | Status | Branch / PR | Tracker |
 |---|---|---|---|---|
-| 0 · Tracking (issues + sprint rows) | S4 | 🔵 PR open | `chore/archive-deletion-plan` | umbrella #143; sub-issues #144–#148; bugs #149–#151 |
+| 0 · Tracking (issues + sprint rows) | S4 | 🟡 branch pushed, PR not opened | `chore/archive-deletion-plan` | umbrella #143; sub-issues #144–#148; bugs #149–#151 |
 | 1 · Upload bugs B1–B3 | S4 | ⬜ | — | S4-UPLOADFIX-001 · RES-200 · #149 #150 #151 |
 | 2 · Delete path foundation | S4 | ⬜ | — | S4-DELETE-001 · RES-201 · #144 |
 | 3 · GDPR erasure | S4 | ⬜ | — | S4-ERASE-001 · RES-202 · #145 |
@@ -82,7 +82,7 @@ Edge cases the spec implies that are most likely to bite. Each line has a test i
   ```
 - [x] **Step 3:** Create the 5 sub-issues: "Delete path foundation", "GDPR erasure: talent videos + agency-scoped removal", "Space savers: R2 lifecycle + empty drafts", "Archive & restore UI/API", "Agency closure". Each body is "Part of #<umbrella>" plus the phase's task list from this file. Create the 3 bug issues with `--label bug`, bodies from the spec's "Bugs found" section.
 - [x] **Step 4:** Add S4 task rows to `tasks/sprint-4.md` for Phases 1–4, in that file's existing format. For each row, create its Linear issue in the same step; the title must start with the exact TASK_ID (Failure Log: "a markdown task with no Linear issue"). Then run `node orchestrate.js sync-check`.
-- [ ] **Step 5:** Fill in the Tracker column of the Status board with the issue numbers and task IDs. Commit on a `chore/archive-deletion-plan` branch together with the spec and plan files.
+- [x] **Step 5:** Fill in the Tracker column of the Status board with the issue numbers and task IDs. Commit on a `chore/archive-deletion-plan` branch together with the spec and plan files.
 
 ---
 
