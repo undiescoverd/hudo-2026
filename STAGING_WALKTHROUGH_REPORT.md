@@ -140,7 +140,7 @@ No unexpected JavaScript errors across the whole walk. Recurring console errors,
 ## Setup performed (for reproducibility)
 
 - **Deployment Protection:** disabled via Vercel API (`PATCH …/v9/projects/{id}` `{ssoProtection:null}`). This makes all preview URLs public and enables real guest links. **Re-enable before any public exposure.**
-- **Seed:** `scripts/seed-staging.mjs` → agency `hudo-staging-test`, users `owner@/agent@/talent@hudo.test` (pw `HudoStaging2026!`), seeded reel + 2 comments.
+- **Seed:** `scripts/seed-staging.mjs` → agency `hudo-staging-test`, users `owner@/agent@/talent@hudo.test` (pw `(see STAGING_SEED_PASSWORD in .env.staging)`), seeded reel + 2 comments.
 - **Seat-gate fixtures:** 3 filler agents added (agency at 5/5 agent cap), plus spare `gate-agent6@` (used for the 402) and `gate-talent@` (added as talent during the test). These remain as test data.
 - **Cleanup done:** `/tmp/stg.env` and temp scripts deleted. No secrets printed.
 
