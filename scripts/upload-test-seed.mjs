@@ -3,6 +3,7 @@
  * Run: node --env-file=.env.local scripts/upload-test-seed.mjs
  * Outputs: TEST_EMAIL TEST_PASSWORD TEST_AGENCY_ID WRONG_AGENCY_ID (for use with upload-manual-check.sh)
  */
+import { randomBytes } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -17,7 +18,8 @@ const admin = createClient(supabaseUrl, serviceRoleKey, {
 })
 
 const TEST_EMAIL = `upload-test-${Date.now()}@hudo-dev.local`
-const TEST_PASSWORD = 'TestPassword123!'
+// Random per run: never hardcode a credential, this repo is public.
+const TEST_PASSWORD = randomBytes(18).toString('base64url')
 
 // Create auth user (auto-confirmed)
 const { data: authData, error: authErr } = await admin.auth.admin.createUser({

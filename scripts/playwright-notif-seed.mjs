@@ -5,12 +5,14 @@
  * Run: node --env-file=.env.local scripts/playwright-notif-seed.mjs
  *
  * Outputs (paste into .env.local for Playwright use):
- *   PW_AGENT_EMAIL / PW_AGENT_PASSWORD  — signs in via browser
+ *   PW_AGENT_EMAIL                      — signs in via browser
+ *   PW_AGENT_PASSWORD                   — random per run, printed ONCE on stderr (not stdout)
  *   PW_RECIPIENT_EMAIL                  — passive member who receives notifications
  *   PW_AGENCY_ID
  *   PW_VIDEO_ID
  *   PW_VERSION_ID
  */
+import { randomBytes } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -27,7 +29,8 @@ const admin = createClient(supabaseUrl, serviceRoleKey, {
 const ts = Date.now()
 const AGENT_EMAIL = `pw-agent-${ts}@hudo-dev.local`
 const RECIPIENT_EMAIL = `pw-recipient-${ts}@hudo-dev.local`
-const PASSWORD = 'TestPassword123!'
+// Random per run: never hardcode a credential, this repo is public.
+const PASSWORD = randomBytes(18).toString('base64url')
 
 // ── 1. Create auth users ──────────────────────────────────────────────────────
 for (const [email, name] of [
@@ -43,6 +46,8 @@ for (const [email, name] of [
   await admin.from('users').insert({ id: data.user.id, email, full_name: name })
   console.error(`created user ${email} → ${data.user.id}`)
 }
+
+console.error(`PW_AGENT_PASSWORD=${PASSWORD}  (random per run, shown once: add it to .env.local)`)
 
 // ── 2. Look up user IDs ───────────────────────────────────────────────────────
 const { data: users } = await admin
@@ -106,7 +111,6 @@ await admin.from('videos').update({ active_version_id: versionId }).eq('id', vid
 console.log('')
 console.log('# Paste into .env.local:')
 console.log(`PW_AGENT_EMAIL=${AGENT_EMAIL}`)
-console.log(`PW_AGENT_PASSWORD=${PASSWORD}`)
 console.log(`PW_RECIPIENT_EMAIL=${RECIPIENT_EMAIL}`)
 console.log(`PW_AGENCY_ID=${agency.id}`)
 console.log(`PW_VIDEO_ID=${video.id}`)
