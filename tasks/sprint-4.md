@@ -112,7 +112,7 @@ MODEL: sonnet
 STATUS: not_started
 BLOCKED_BY: S4-DELETE-001
 ACCEPTANCE_CRITERIA:
-  - Self-erasure and owner erasure of a talent permanently delete their videos (D12), keeping their comments on others' videos as "Deleted User"
+  - Self-erasure permanently deletes the person's videos in every agency they belong to (D12, D13 self); their comments on others' videos keep their text and show "Deleted User"
   - Agency removal deletes the person's videos in that agency only and their membership; account erased only if left in no agency (D13); a talent in two agencies keeps the other
   - Erased person gets a confirmation email; the agency owner gets a receipt; an email failure never fails the erasure (D15)
   - Tests for each criterion; reviewers (code, security, RLS) run and logged
@@ -129,7 +129,7 @@ NOTES: M — GitHub #145; plan Phase 3. Security surface (app/api/). Needs S4-DE
 TASK_ID: S4-SAVER-001
 TITLE: Space savers (R2 multipart-abort lifecycle rule, purge empty drafts)
 BRANCH: feat/s4-S4-SAVER-001-space-savers
-MODEL: haiku
+MODEL: sonnet
 STATUS: not_started
 BLOCKED_BY: S4-DELETE-001
 ACCEPTANCE_CRITERIA:
