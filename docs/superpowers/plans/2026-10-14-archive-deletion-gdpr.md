@@ -22,7 +22,7 @@
 ## Status board
 | Phase | Sprint | Status | Branch / PR | Tracker |
 |---|---|---|---|---|
-| 0 · Tracking (issues + sprint rows) | S4 | 🟡 branch pushed, PR not opened | `chore/archive-deletion-plan` | umbrella #143; sub-issues #144–#148; bugs #149–#151 |
+| 0 · Tracking (issues + sprint rows) | S4 | 🔵 PR #153 open | `chore/archive-deletion-plan-v2` | umbrella #143; sub-issues #144–#148; bugs #149–#151 |
 | 1 · Upload bugs B1–B3 | S4 | ⬜ | — | S4-UPLOADFIX-001 · RES-200 · #149 #150 #151 |
 | 2 · Delete path foundation | S4 | ⬜ | — | S4-DELETE-001 · RES-201 · #144 |
 | 3 · GDPR erasure | S4 | ⬜ | — | S4-ERASE-001 · RES-202 · #145 |
@@ -37,6 +37,7 @@ Legend: ⬜ not started · 🟡 in progress · 🔵 PR open · ✅ merged to `ma
 <!-- Append: `- YYYY-MM-DD · agent/model · phase.task · what happened · next step` -->
 - 2026-10-14 · opus · planning · Spec + plan written from the grilling session (Q1–Q20). Waiting on the user to review the plan before Phase 0. Plan display names (Phase 7) still open.
 - 2026-10-15 · sonnet · 0.1 · User approved the spec + plan. Filed umbrella #143, sub-issues #144–#148, bugs #149–#151; added S4-UPLOADFIX-001, S4-DELETE-001, S4-ERASE-001, S4-SAVER-001 to tasks/sprint-4.md with Linear RES-200..203. Next: merge this branch, then start Phase 1 (S4-UPLOADFIX-001).
+- 2026-10-16 · opus · 0.1 · First PR #152 was closed: its branch had been cut from `chore/unify-dashboard-routes` and carried two unrelated commits, one with a hardcoded dev password (since rotated; see CLAUDE.md Failure Log). Re-opened as PR #153 from `chore/archive-deletion-plan-v2`, which has only the plan commits. Next: merge #153, then Phase 1.
 
 ## Global Constraints
 - **Every agent rule in CLAUDE.md applies:**
