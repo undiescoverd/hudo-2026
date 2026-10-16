@@ -173,6 +173,14 @@ The staging seed creates a walkable video (`videos` + `video_versions` rows) **a
 backfills its R2 bytes so the seeded video actually plays. It does this without any
 committed binary by copying, server-side, from a stable seed-owned asset.
 
+**Prerequisite (since 2026-10-16):** `STAGING_SEED_PASSWORD` (16+ characters) must be
+set in `.env.staging`. It is the shared password for the staging test accounts
+(`owner@` / `agent@` / `talent@hudo.test`). Never hardcode it: this repo is public. Generate
+one with `openssl rand -base64 32 | tr -d '/+=' | cut -c1-32` and keep a copy in a password
+manager, because `vercel env pull` drops local-only keys. Re-running the seed resets the
+existing test accounts to the current value, which is also how the password is rotated. The
+seed refuses to run against anything except hudo-staging and hudo-dev.
+
 **One-time bootstrap** of that stable asset (a copy of a known-good upload). Run once
 per bucket before the first seed:
 

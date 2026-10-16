@@ -28,10 +28,16 @@ if (!url || !serviceRoleKey) {
   process.exit(1)
 }
 
-// Safety: refuse to run against the (paused) production project.
-const PROD_REF = 'ljesrugaovuoyqhitlsj'
-if (url.includes(PROD_REF)) {
-  console.error('✗ Refusing to seed: URL points at hudo-prod. Seed is for dev/staging only.')
+// Safety: ALLOWLIST hudo-staging and hudo-dev by exact hostname. This seeds
+// shared-password test accounts, so refuse everything else (including the
+// paused hudo-prod, ljesrugaovuoyqhitlsj). Never loosen this to "not prod".
+const ALLOWED_HOSTS = ['egabjtxrrcuzooyclwgw.supabase.co', 'xyeqnjboqimvhdwnyqbt.supabase.co']
+let host = ''
+try {
+  host = new URL(url).hostname
+} catch {}
+if (!ALLOWED_HOSTS.includes(host)) {
+  console.error('✗ Refusing to seed: URL is not hudo-staging or hudo-dev. Seed is for dev/staging only.')
   process.exit(1)
 }
 console.log(`→ Seeding project: ${url.replace(/^https?:\/\//, '').split('.')[0]}`)
@@ -76,7 +82,18 @@ async function headObject(client, bucket, key) {
   }
 }
 
-const PASSWORD = 'HudoStaging2026!'
+// Read from the gitignored env file only (STAGING_SEED_PASSWORD in .env.staging).
+// Never hardcode it: this repo is public. No fallback, so a missing value can
+// never silently reuse the old (leaked) password. Re-running the seed resets
+// existing users to the current value, which is how the password is rotated.
+const PASSWORD = process.env.STAGING_SEED_PASSWORD
+if (!PASSWORD || PASSWORD.length < 16) {
+  console.error(
+    '✗ Set STAGING_SEED_PASSWORD (16+ characters) in .env.staging. Generate one with:\n' +
+      "    openssl rand -base64 32 | tr -d '/+=' | cut -c1-32"
+  )
+  process.exit(1)
+}
 const USERS = [
   { key: 'owner', email: 'owner@hudo.test', full_name: 'Olivia Owner', role: 'owner' },
   { key: 'agent', email: 'agent@hudo.test', full_name: 'Aaron Agent', role: 'agent' },
@@ -110,7 +127,11 @@ async function ensureUser({ email, full_name }) {
       page += 1
     }
     if (!userId) throw new Error(`could not create or find user ${email}`)
-    console.log(`  • user ${email} already existed (${userId})`)
+    console.log(`  • user ${email} already existed (${userId}) — resetting password`)
+    const { error: updateErr } = await admin.auth.admin.updateUserById(userId, {
+      password: PASSWORD,
+    })
+    if (updateErr) throw updateErr
   } else {
     userId = created.user.id
     console.log(`  • created user ${email} (${userId})`)
@@ -235,7 +256,7 @@ async function main() {
   await backfillVideoBytes(video.id)
 
   console.log('\n✓ Seed complete. Test logins (password for all):')
-  console.log(`    password: ${PASSWORD}`)
+  console.log('    password: STAGING_SEED_PASSWORD from .env.staging (not printed)')
   for (const u of USERS) console.log(`    ${u.role.padEnd(7)} ${u.email}`)
   console.log('\nWalk: sign in as agent (sees agency dashboard + the seeded video/comments),')
   console.log('post a comment as the agent → sign in as talent → notification bell should light up.')
