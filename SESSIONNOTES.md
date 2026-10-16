@@ -510,3 +510,59 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Outcome:** done
 - **Notes:** No local script writes env files. Corrupt file header "# Created by Vercel CLI" → produced by `vercel env pull`. Real source: values historically piped into `vercel env add` via `echo` (zsh history), which appends a newline that Vercel stores inside the value; every pull then serializes it as literal \n. Vercel-side values were re-added clean 2026-06-16 (all vars "created 19d ago"); today's corrupt .env.local was a stale pre-Jun-16 pull, not active regeneration. Verified all 3 Vercel envs 0-tainted (pulled each to scratchpad + grepped) and all local .env\* clean. Added guard `scripts/check-env-artifacts.sh` (fails on the archived corrupt copy, passes clean files). CLAUDE.md Failure Log entry added; memory corrected (was misattributed to "bad paste").
 - **Gotcha (if any):** `vercel env pull` drops keys that don't exist in that Vercel env — .env.local's local-only Stripe test keys vanish on every pull and must be re-appended; STRIPE_WEBHOOK_SECRET intentionally absent (comes from `stripe listen`).
+
+## 2026-10-14 — Player page design exploration (redesign v3)
+
+- **Task:** Player-page design + palette/type options, handed off to Claude Design
+- **Models:** planner=opus, executor=opus (throwaway HTML prototype, no app code)
+- **Outcome:** done
+- **Notes:** `.figma-prototype/redesign-v3/player.html`: 4 palettes × 4 type pairings × dark/light, switchable via URL hash (`#p=coral&f=geist&t=dark`, `ui=off` hides the panel). Bundle for claude.ai/design is in `redesign-v3/claude-design-bundle/` (PROMPT.txt, BRIEF.md built from current code, 13 screenshots). The June "Hybrid" lime direction was deliberately dropped at the user's request.
+- **Gotcha:** Playwright's bundled browsers aren't installed locally. Use `chromium.launch({ channel: 'chrome' })` with `@playwright/test` for ad-hoc screenshots.
+
+## 2026-10-14 — Dashboard layout exploration (redesign v3)
+
+- **Task:** 4 owner/agent dashboard layouts in the locked v3 direction (Graphite & Coral, Space Grotesk, light)
+- **Models:** planner=opus, executor=opus (throwaway HTML prototype, no app code)
+- **Outcome:** done
+- **Notes:** `.figma-prototype/redesign-v3/dashboard.html` (`#l=table|grid|board|focus&t=light|dark`). Claude Design bundle: `redesign-v3/claude-design-bundle-dashboard/`. Several mock-up features need data that doesn't exist yet: agent-side "new comments since last seen", the activity feed, and "approved this month". These are flagged in BRIEF.md.
+- **Gotcha:** a `<span class="thumb">` with `aspect-ratio` collapses unless it's `display:block`. Sticky headers also break Playwright `fullPage` captures.
+
+## 2026-10-14 — Upload-flow design (layout A locked) + archive/deletion/GDPR spec & plan
+
+- **Task:** design upload flow; grill + spec + plan archive, deletion & GDPR erasure
+- **Models:** planner=opus, executor=none yet (planning only)
+- **Outcome:** partial — spec + phased plan written, awaiting user review before filing issues
+- **Notes:** Spec `docs/superpowers/specs/2026-10-14-archive-deletion-gdpr-design.md`, living plan `docs/superpowers/plans/2026-10-14-archive-deletion-gdpr.md` (status board + session log; agents tick boxes). Found 3 upload bugs (agent uploads owned by agent; retry creates empty drafts; every 402 shown as quota) — Phase 1 of the plan.
+- **Gotcha (if any):** deleting a video/version currently FAILS — `notifications.video_id/comment_id`, `guest_links.video_version_id`, `videos.active_version_id` have no ON DELETE; and nothing deletes R2 objects or decrements storage. Fixed by plan Phase 2.
+
+## 2026-10-15 — Archive/deletion/GDPR plan approved + Phase 0 tracking filed
+
+- **Task:** plan Phase 0 (docs/superpowers/plans/2026-10-14-archive-deletion-gdpr.md)
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done
+- **Notes:** User approved spec + plan. Filed umbrella #143, sub-issues #144–#148, bugs #149–#151. Added S4-UPLOADFIX-001, S4-DELETE-001, S4-ERASE-001, S4-SAVER-001 to tasks/sprint-4.md with Linear RES-200..203 (created via Linear API; the Linear MCP failed to connect this session). Branch `chore/archive-deletion-plan` carries spec, plan and the sprint rows.
+- **Gotcha:** `sync-check` returned `? (error)` on a few old tasks on a re-run (transient Linear API errors); the first run showed all 31 in sync.
+
+## 2026-10-16 — Dev password leaked via PR #152; rotated, removed, PR replaced by #153
+
+- **Task:** chore/archive-deletion-plan PR cleanup + dev quick sign-in security fix
+- **Models:** planner=opus, executor=opus (small security fix), reviewer=hudo-security-reviewer (sonnet)
+- **Outcome:** done
+- **Notes:** `chore/archive-deletion-plan` was branched from `chore/unify-dashboard-routes`, so it carried that branch's two unpushed commits (4462eca dashboard route merge, df8cb8a dev quick sign-in). Pushing it published df8cb8a to the PUBLIC repo, including the hardcoded hudo-dev test password; GitGuardian flagged it. Fix: rotated the password on hudo-dev via `scripts/seed-dev.mjs` (new value only in the gitignored `.env.local` as DEV_QUICK_PASSWORD), verified the old password is rejected for all 4 accounts, removed the password from `DevQuickSignIn.tsx` (now only prefills the email) and from the seed (reads the env var, no fallback, never printed, exact hostname allowlist). Commit b0a77cd on `chore/unify-dashboard-routes` (local, not pushed). Force-push to clean #152 was blocked by permissions, so #152 was closed and the plan re-opened as #153 from `chore/archive-deletion-plan-v2` (plan commits only).
+- **Gotcha:** branch new work from `origin/main` (`git checkout -b x origin/main`), never from whatever branch you're on: unpushed commits ride along and get published on push.
+
+## 2026-10-16 — Staging seed password leak (GitGuardian Jun 16 incident) rotated; PR #154
+
+- **Task:** security fix, scripts/seed-staging.mjs
+- **Models:** planner=opus, executor=opus, reviewer=hudo-security-reviewer (sonnet)
+- **Outcome:** done (PR #154 open)
+- **Notes:** The seed hardcoded the staging test-account password (public since #94). Rotated all 8 staging test accounts to STAGING_SEED_PASSWORD (in the gitignored .env.staging; the owner keeps a copy in a password manager because `vercel env pull` drops local-only keys). Scanned all staging (9) and dev (11) accounts against both leaked passwords: 0 left. Seed now reads the env var, uses an exact-hostname allowlist, and resets passwords for existing users.
+- **Gotcha:** the staging seed's `ensureUser` silently skipped existing users, so "re-run the seed" did NOT rotate anything; the first verification caught it (old password still worked). Always verify a rotation by signing in with the old password, never trust the script's success message.
+
+## 2026-10-16 — Secret-scan guardrails (pre-commit, pre-push foreign-commit check, CI)
+
+- **Task:** chore/secret-guardrails: stop secrets being committed or pushed (follow-up to the two password leaks above)
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done
+- **Notes:** `scripts/check-secrets.sh` scans added lines only (`--staged` / `--range A..B`): credential assignments, provider tokens, `.env*` files; masks values; exit 1 on findings, exit 2 if git diff fails (fails closed). Wired into `.husky/pre-commit`, `.husky/pre-push` (secret scan on `origin/main...<sha>` + foreign-commit check, both before `pnpm build`) and the first step of the CI job (`fetch-depth: 0`). Tuned away false positives: bare `sk_live_` in docs/`startsWith('sk_live_')` (live keys now need a 16+ char body), `LINEAR_API_KEY="$LINEAR_API_KEY"` (values starting with `$` are skipped). Replaced the hardcoded `TestPassword123!` in `playwright-notif-seed.mjs` and `upload-test-seed.mjs` with a per-run random value. Tests: `scripts/check-secrets.test.ts`.
+- **Gotcha (if any):** `scripts/seed-staging.mjs` on main still hardcodes the staging password until PR #154 merges, so a full-history scan reports exactly that one hit. The scan only sees the net diff of a range, so a secret added then removed within the same push is not caught; `git push --no-verify` skips the local hooks (CI is the backstop).
