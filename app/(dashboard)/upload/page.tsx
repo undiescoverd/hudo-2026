@@ -1,12 +1,14 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { UploadZone } from '@/components/upload/UploadZone'
 import { UploadProgress } from '@/components/upload/UploadProgress'
 import { MetadataForm } from '@/components/upload/MetadataForm'
 import { createClient } from '@/lib/auth'
-import { MULTIPART_PART_SIZE_BYTES, MULTIPART_THRESHOLD_BYTES } from '@/lib/upload-validation'
+import { MULTIPART_THRESHOLD_BYTES } from '@/lib/upload-validation'
+import { performUpload } from '@/lib/upload-client'
+import { fetchTalentRoster, isAgentClassRole, type TalentRosterEntry } from '@/lib/talent-roster'
 
 async function fetchMembership(): Promise<{ agencyId: string; role: string }> {
   const supabase = createClient()
@@ -26,131 +28,6 @@ async function fetchMembership(): Promise<{ agencyId: string; role: string }> {
   return { agencyId: membership.agency_id as string, role: membership.role as string }
 }
 
-async function performUpload(
-  f: File,
-  aid: string,
-  onProgress: (p: number) => void
-): Promise<string> {
-  const presignRes = await fetch('/api/videos/upload/presign', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      agencyId: aid,
-      fileName: f.name,
-      contentType: f.type,
-      fileSizeBytes: f.size,
-    }),
-  })
-
-  if (presignRes.status === 402) throw new Error('Storage quota exceeded')
-  if (!presignRes.ok) {
-    const body = (await presignRes.json().catch(() => ({}))) as { error?: string }
-    throw new Error(body.error ?? `Presign failed: ${presignRes.status}`)
-  }
-
-  const presign = await presignRes.json()
-
-  if (!presign.multipart) {
-    // Standard single-PUT upload with XHR for progress tracking
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open('PUT', presign.uploadUrl as string)
-      xhr.setRequestHeader('Content-Type', f.type)
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
-      }
-      xhr.onload = () => {
-        xhr.status >= 200 && xhr.status < 300
-          ? resolve()
-          : reject(new Error(`Upload failed: ${xhr.status}`))
-      }
-      xhr.onerror = () => reject(new Error('Network error during upload'))
-      xhr.send(f)
-    })
-    onProgress(100)
-
-    const completeRes = await fetch('/api/videos/upload/complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        videoId: presign.videoId,
-        agencyId: aid,
-        r2Key: presign.r2Key,
-        fileSizeBytes: f.size,
-      }),
-    })
-    if (!completeRes.ok) {
-      const body = (await completeRes.json().catch(() => ({}))) as { error?: string }
-      throw new Error(body.error ?? 'Failed to complete upload')
-    }
-    return ((await completeRes.json()) as { videoId: string }).videoId
-  } else {
-    // Multipart upload
-    const partUrls = presign.partUrls as { partNumber: number; url: string }[]
-    const partCount = presign.partCount as number
-    const parts: { PartNumber: number; ETag: string }[] = []
-
-    for (let i = 0; i < partCount; i++) {
-      const partNumber = i + 1
-      const start = i * MULTIPART_PART_SIZE_BYTES
-      const end = Math.min(start + MULTIPART_PART_SIZE_BYTES, f.size)
-      const chunk = f.slice(start, end)
-
-      let url: string
-      const existing = partUrls.find((p) => p.partNumber === partNumber)
-      if (existing) {
-        url = existing.url
-      } else {
-        const urlRes = await fetch('/api/videos/upload/multipart-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            r2Key: presign.r2Key,
-            r2UploadId: presign.r2UploadId,
-            partNumber,
-            agencyId: aid,
-          }),
-        })
-        if (!urlRes.ok) throw new Error('Failed to get part URL')
-        const urlBody = (await urlRes.json()) as { partUrls: { partNumber: number; url: string }[] }
-        const partUrl = urlBody.partUrls[0]
-        if (!partUrl) throw new Error('Failed to get part URL')
-        url = partUrl.url
-      }
-
-      const res = await fetch(url, {
-        method: 'PUT',
-        body: chunk,
-        headers: { 'Content-Type': 'application/octet-stream' },
-      })
-      if (!res.ok) throw new Error(`Part upload failed: ${res.status}`)
-      const rawEtag = res.headers.get('ETag') ?? res.headers.get('etag')
-      if (!rawEtag) throw new Error(`Part upload succeeded but ETag header was missing`)
-      parts.push({ PartNumber: partNumber, ETag: rawEtag.replace(/"/g, '') })
-      onProgress(Math.round(((i + 1) / partCount) * 100))
-    }
-
-    const completeRes = await fetch('/api/videos/upload/complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        videoId: presign.videoId,
-        agencyId: aid,
-        r2Key: presign.r2Key,
-        fileSizeBytes: f.size,
-        multipart: true,
-        r2UploadId: presign.r2UploadId,
-        parts,
-      }),
-    })
-    if (!completeRes.ok) {
-      const body = (await completeRes.json().catch(() => ({}))) as { error?: string }
-      throw new Error(body.error ?? 'Failed to complete multipart upload')
-    }
-    return ((await completeRes.json()) as { videoId: string }).videoId
-  }
-}
-
 /** Strip file extension to use as default title */
 function fileNameWithoutExtension(name: string): string {
   const lastDot = name.lastIndexOf('.')
@@ -162,73 +39,89 @@ export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
   const [agencyId, setAgencyId] = useState('')
   const [role, setRole] = useState('')
+  const [ready, setReady] = useState(false)
+  const [setupError, setSetupError] = useState<string | null>(null)
+  const [roster, setRoster] = useState<TalentRosterEntry[]>([])
+  const [talentId, setTalentId] = useState('')
   const [progress, setProgress] = useState(0)
   const [isMultipart, setIsMultipart] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploadedVideoId, setUploadedVideoId] = useState<string | null>(null)
   const [uploadedFileName, setUploadedFileName] = useState<string>('')
+  // The draft video created by the first presign. Retries reuse it so a failed
+  // upload never leaves a new empty draft behind per attempt.
+  const draftVideoIdRef = useRef<string | undefined>(undefined)
 
-  const runUpload = useCallback(async (f: File, aid: string) => {
-    setUploading(true)
-    setError(null)
-    setProgress(0)
+  const needsTalent = isAgentClassRole(role)
+
+  const loadContext = useCallback(async () => {
+    setSetupError(null)
     try {
-      const videoId = await performUpload(f, aid, setProgress)
-      setUploadedVideoId(videoId)
-      setUploadedFileName(f.name)
+      const membership = await fetchMembership()
+      if (isAgentClassRole(membership.role)) {
+        setRoster(await fetchTalentRoster(createClient(), membership.agencyId))
+      }
+      setAgencyId(membership.agencyId)
+      setRole(membership.role)
+      setReady(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed')
-    } finally {
-      setUploading(false)
+      setSetupError(err instanceof Error ? err.message : 'Failed to load agency')
     }
   }, [])
 
+  useEffect(() => {
+    void loadContext()
+  }, [loadContext])
+
+  const runUpload = useCallback(
+    async (f: File) => {
+      setUploading(true)
+      setError(null)
+      setProgress(0)
+      try {
+        const videoId = await performUpload(f, {
+          agencyId,
+          onProgress: setProgress,
+          videoId: draftVideoIdRef.current,
+          // Talent role: never send talentId (the server forces it to the caller).
+          talentId: needsTalent ? talentId : undefined,
+          onVideoId: (id) => {
+            draftVideoIdRef.current = id
+          },
+        })
+        setUploadedVideoId(videoId)
+        setUploadedFileName(f.name)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Upload failed')
+      } finally {
+        setUploading(false)
+      }
+    },
+    [agencyId, needsTalent, talentId]
+  )
+
   const handleFileSelected = useCallback(
     async (f: File) => {
+      if (!ready || (needsTalent && !talentId)) return
       setFile(f)
       setIsMultipart(f.size > MULTIPART_THRESHOLD_BYTES)
       setError(null)
       setProgress(0)
       setUploadedVideoId(null)
-
-      let aid = agencyId
-      if (!aid) {
-        try {
-          const membership = await fetchMembership()
-          aid = membership.agencyId
-          setAgencyId(aid)
-          setRole(membership.role)
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to load agency')
-          return
-        }
-      }
-
-      await runUpload(f, aid)
+      draftVideoIdRef.current = undefined
+      await runUpload(f)
     },
-    [agencyId, runUpload]
+    [ready, needsTalent, talentId, runUpload]
   )
 
   const handleRetry = useCallback(async () => {
     if (!file) return
-    setError(null)
+    await runUpload(file)
+  }, [file, runUpload])
 
-    let aid = agencyId
-    if (!aid) {
-      try {
-        const membership = await fetchMembership()
-        aid = membership.agencyId
-        setAgencyId(aid)
-        setRole(membership.role)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load agency')
-        return
-      }
-    }
-
-    await runUpload(file, aid)
-  }, [file, agencyId, runUpload])
+  const noTalent = ready && needsTalent && roster.length === 0
+  const zoneDisabled = uploading || !ready || (needsTalent && !talentId)
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-12">
@@ -239,8 +132,54 @@ export default function UploadPage() {
         </p>
       </div>
 
+      {setupError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-red-50 p-3 dark:bg-red-950/40">
+          <p className="text-sm text-red-700 dark:text-red-400">{setupError}</p>
+          <button
+            type="button"
+            onClick={() => void loadContext()}
+            className="shrink-0 rounded-md bg-red-100 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-200"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {!file ? (
-        <UploadZone onFileSelected={handleFileSelected} disabled={uploading} />
+        <div className="space-y-4">
+          {ready && needsTalent && (
+            <div>
+              {noTalent ? (
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  Invite a talent to this agency before uploading
+                </p>
+              ) : (
+                <>
+                  <label
+                    htmlFor="upload-talent"
+                    className="mb-1 block text-sm font-medium text-gray-900 dark:text-gray-100"
+                  >
+                    Talent
+                  </label>
+                  <select
+                    id="upload-talent"
+                    value={talentId}
+                    onChange={(e) => setTalentId(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+                  >
+                    <option value="">Select a talent…</option>
+                    {roster.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.fullName} ({t.email})
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </div>
+          )}
+          <UploadZone onFileSelected={handleFileSelected} disabled={zoneDisabled || noTalent} />
+        </div>
       ) : (
         <div className="space-y-4">
           <UploadProgress
@@ -270,6 +209,7 @@ export default function UploadPage() {
                   setError(null)
                   setProgress(0)
                   setUploadedVideoId(null)
+                  draftVideoIdRef.current = undefined
                 }}
                 className="w-full rounded-lg border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
               >
