@@ -17,6 +17,9 @@ interface RosterRow {
  * hint `memberships_user_id_fkey` is unambiguous. RLS `users_select_agency`
  * lets agency members read co-members. Errors are thrown, never swallowed into
  * an empty list (an empty roster means "no talent", a different thing).
+ *
+ * No role guard here: RLS lets any agency member (including talent) read
+ * co-members' name and email, so callers MUST gate on `isAgentClassRole`.
  */
 export async function fetchTalentRoster(
   supabase: SupabaseClient,
