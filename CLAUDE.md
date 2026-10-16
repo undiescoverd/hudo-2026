@@ -28,9 +28,10 @@ pnpm test                     # node:test unit suite via tsx (app/, lib/, compon
 pnpm test:e2e                 # Playwright e2e (tests/e2e)
 supabase test db tests/rls    # RLS pgTAP suite (CI: "RLS Policy Tests")
 node orchestrate.js status    # live sprint/task state
+sh scripts/check-secrets.sh   # secret scan of staged changes (also runs in pre-commit, pre-push, CI)
 ```
 
-> **Unit tests now in CI:** `pnpm test` (`tsx --test`, 63 files / 943 cases across `app/`, `lib/`, `components/`, `hooks/`, root) is **fully green** and wired into CI as a step in the main job — runs after build (needs Node 21+ for the test-script globs; CI runs Node 22). CI covers Lint/Type-check/Build/Unit-tests + RLS pgTAP (12/12 tables).
+> **Unit tests now in CI:** `pnpm test` (`tsx --test`, 73 files / 1148 cases across `app/`, `lib/`, `components/`, `hooks/`, `scripts/`, root) is **fully green** and wired into CI as a step in the main job — runs after build (needs Node 21+ for the test-script globs; CI runs Node 22). CI covers Lint/Type-check/Build/Unit-tests + RLS pgTAP (12/12 tables).
 
 ## Critical Architecture Rules
 
