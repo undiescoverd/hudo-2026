@@ -156,10 +156,43 @@ describe('guest playback-url — 404 for all invalid states', () => {
 // ---------------------------------------------------------------------------
 
 describe('guest playback-url — view_count increment', () => {
-  it('view_count is incremented by 1 per request', () => {
-    const current = 17
-    const next = current + 1
-    assert.equal(next, 18)
+  it('view_count is incremented only for non-renewal requests', async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+
+    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
+    const source = fs.readFileSync(routePath, 'utf8')
+
+    assert.match(
+      source,
+      /import \{ isGuestPlaybackRenewal \} from '@\/lib\/guest-playback'/,
+      'Route must use the shared renewal contract'
+    )
+    // The RPC must sit inside the renewal guard, so a renewal (?renew=1) of an
+    // in-progress watch never increments view_count.
+    assert.match(
+      source,
+      /if \(!isGuestPlaybackRenewal\(request\.nextUrl\.searchParams\)\) \{\s*const \{ error: rpcError \} = await admin\.rpc\('increment_guest_link_view'/,
+      'increment_guest_link_view must be guarded by !isGuestPlaybackRenewal(...)'
+    )
+    // Exactly one RPC call site — no unguarded duplicate.
+    assert.equal([...source.matchAll(/rpc\('increment_guest_link_view'/g)].length, 1)
+  })
+
+  it('renewal guard sits after token validation + signing (renewals still validated & rate-limited)', async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+
+    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
+    const source = fs.readFileSync(routePath, 'utf8')
+
+    const guardIdx = source.indexOf('isGuestPlaybackRenewal(request')
+    assert.ok(source.indexOf('checkRateLimit(') < guardIdx, 'rate limit must run before the guard')
+    assert.ok(
+      source.indexOf('verifyGuestToken(') < guardIdx,
+      'token check must run before the guard'
+    )
+    assert.ok(source.indexOf('generateSignedUrl(') < guardIdx, 'signing must run before the guard')
   })
 
   it('route uses atomic RPC for view increment (not read-modify-write)', async () => {

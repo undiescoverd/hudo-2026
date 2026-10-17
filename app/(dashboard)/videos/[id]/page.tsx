@@ -12,6 +12,7 @@ import { CommentPanel } from '@/components/comments/CommentPanel'
 import { VideoStatusLive } from '@/components/dashboard/VideoStatusLive'
 import { useVideoComments } from '@/hooks/useVideoComments'
 import { createClient } from '@/lib/auth'
+import { isAgentPlusRole } from '@/lib/roles'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -24,6 +25,9 @@ export default function VideoPage({ params }: Props) {
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [agencyId, setAgencyId] = useState<string | null>(null)
+  // Caller's role in this video's agency (from the versions endpoint). null
+  // until loaded, so agent-only controls never flash for talent.
+  const [role, setRole] = useState<string | null>(null)
   // null = still loading (or not yet retried); passed straight through to
   // VersionSelector so it doesn't issue its own duplicate GET request.
   const [versions, setVersions] = useState<Version[] | null>(null)
@@ -71,8 +75,13 @@ export default function VideoPage({ params }: Props) {
     return fetch(`/api/videos/${params.id}/versions`)
       .then(async (res) => {
         if (!res.ok) throw new Error(`versions fetch failed (${res.status})`)
-        const data = (await res.json()) as { agencyId: string; versions: Version[] }
+        const data = (await res.json()) as {
+          agencyId: string
+          role: string
+          versions: Version[]
+        }
         if (data.agencyId) setAgencyId(data.agencyId)
+        if (data.role) setRole(data.role)
         setVersions(data.versions ?? [])
       })
       .catch((err: unknown) => {
@@ -114,7 +123,8 @@ export default function VideoPage({ params }: Props) {
         >
           ← Back to videos
         </Link>
-        <GuestShareButton videoId={params.id} />
+        {/* Guest-link API is agent+ only (requireAgentRole) — talent would get a 403. */}
+        {isAgentPlusRole(role) && <GuestShareButton videoId={params.id} />}
       </div>
       <div className="px-4 pt-2">
         <VersionSelector

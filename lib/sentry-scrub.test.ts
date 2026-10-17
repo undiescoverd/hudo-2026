@@ -19,6 +19,13 @@ describe('lib/sentry-scrub — redactSecretUrl', () => {
     )
   })
 
+  it('redacts the token segment in a renewal URL (/playback-url?renew=1)', () => {
+    assert.equal(
+      redactSecretUrl(`https://hudo.app/api/guest/${GUEST_TOKEN}/playback-url?renew=1`),
+      'https://hudo.app/api/guest/[redacted]/playback-url?renew=1'
+    )
+  })
+
   it('redacts the /guest/<token> page URL', () => {
     assert.equal(
       redactSecretUrl(`https://hudo.app/guest/${GUEST_TOKEN}`),

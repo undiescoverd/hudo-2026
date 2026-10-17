@@ -85,6 +85,21 @@ describe('VideoPage — source invariants', () => {
     assert.match(source, /activeVersionId && userId && agencyId \? \(/)
   })
 
+  it('only renders GuestShareButton for agent+ roles (talent would get a 403)', () => {
+    assert.match(source, /import \{ isAgentPlusRole \} from '@\/lib\/roles'/)
+    assert.match(
+      source,
+      /\{isAgentPlusRole\(role\) && <GuestShareButton videoId=\{params\.id\} \/>\}/
+    )
+    // Exactly one mount, and it is the gated one.
+    assert.equal([...source.matchAll(/<GuestShareButton/g)].length, 1)
+  })
+
+  it('reads role from the versions response and starts it null (no flash for talent)', () => {
+    assert.match(source, /const \[role, setRole\] = useState<string \| null>\(null\)/)
+    assert.match(source, /if \(data\.role\) setRole\(data\.role\)/)
+  })
+
   it('passes comments to VideoPlayer so CommentTimeline markers render', () => {
     assert.match(source, /<VideoPlayer[\s\S]*?comments=\{comments\}/)
   })

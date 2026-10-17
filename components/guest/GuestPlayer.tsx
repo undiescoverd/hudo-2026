@@ -6,6 +6,8 @@
  * Fetches a signed playback URL from /api/guest/[token]/playback-url (public
  * endpoint — no Supabase auth required). Refreshes the URL ~3 min before the
  * 15-min expiry using the same pending-swap pattern as useSignedUrl.
+ * Renewals send `?renew=1` (see lib/guest-playback) so they don't count as a
+ * new view; only the initial load and the error-state Retry do.
  *
  * Security:
  * - The signed URL lives only in React state and the <video src> attribute.
@@ -15,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { guestPlaybackUrlPath } from '@/lib/guest-playback'
 
 interface GuestPlayerProps {
   token: string
@@ -43,7 +46,8 @@ function useGuestSignedUrl(token: string) {
       abortRef.current = controller
 
       try {
-        const res = await fetch(`/api/guest/${token}/playback-url`, {
+        // isPending = background renewal → flagged so it isn't counted as a view
+        const res = await fetch(guestPlaybackUrlPath(token, isPending), {
           signal: controller.signal,
           credentials: 'omit', // API ignores cookies; be explicit about intent
         })
