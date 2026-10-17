@@ -10,6 +10,9 @@ type FieldError = { email?: string; password?: string }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+// Carries the typed email to /auth/forgot-password without putting it in the URL.
+const PREFILL_EMAIL_KEY = 'hudo:prefill-email'
+
 function validate(email: string, password: string): FieldError {
   const errors: FieldError = {}
   if (!email) {
@@ -30,6 +33,16 @@ export default function SignInForm() {
   const [fieldErrors, setFieldErrors] = useState<FieldError>({})
   const [serverError, setServerError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  function handleForgotPasswordClick() {
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail) return
+    try {
+      sessionStorage.setItem(PREFILL_EMAIL_KEY, trimmedEmail)
+    } catch {
+      // storage unavailable (private mode / quota) — navigate without prefill
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -123,6 +136,15 @@ export default function SignInForm() {
                 {fieldErrors.password}
               </p>
             )}
+            <p className="text-right">
+              <Link
+                href="/auth/forgot-password"
+                onClick={handleForgotPasswordClick}
+                className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+              >
+                Forgot password?
+              </Link>
+            </p>
           </div>
 
           {serverError && (
