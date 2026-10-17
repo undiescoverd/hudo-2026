@@ -12,7 +12,6 @@ import { CommentPanel } from '@/components/comments/CommentPanel'
 import { VideoStatusLive } from '@/components/dashboard/VideoStatusLive'
 import { useVideoComments } from '@/hooks/useVideoComments'
 import { createClient } from '@/lib/auth'
-import { isAgentPlusRole } from '@/lib/roles'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -77,11 +76,13 @@ export default function VideoPage({ params }: Props) {
         if (!res.ok) throw new Error(`versions fetch failed (${res.status})`)
         const data = (await res.json()) as {
           agencyId: string
-          role: string
+          role?: string
           versions: Version[]
         }
         if (data.agencyId) setAgencyId(data.agencyId)
         if (data.role) setRole(data.role)
+        // Share stays hidden without a role — make that contract break visible.
+        else console.warn('[video-page] versions response missing role; hiding Share')
         setVersions(data.versions ?? [])
       })
       .catch((err: unknown) => {
@@ -123,8 +124,7 @@ export default function VideoPage({ params }: Props) {
         >
           ← Back to videos
         </Link>
-        {/* Guest-link API is agent+ only (requireAgentRole) — talent would get a 403. */}
-        {isAgentPlusRole(role) && <GuestShareButton videoId={params.id} />}
+        <GuestShareButton videoId={params.id} role={role} />
       </div>
       <div className="px-4 pt-2">
         <VersionSelector

@@ -3,12 +3,22 @@
 import { useState } from 'react'
 import { GuestLinkModal } from './GuestLinkModal'
 import { GuestLinkList } from './GuestLinkList'
+import { isAgentPlusRole } from '@/lib/roles'
 
 interface GuestShareButtonProps {
   videoId: string
+  /** Caller's role in the video's agency; null while unknown. Required so
+   *  every mount is gated: the guest-links API is agent+ only (requireAgentRole)
+   *  and would 403 talent, so they never see the button at all. */
+  role: string | null
 }
 
-export function GuestShareButton({ videoId }: GuestShareButtonProps) {
+export function GuestShareButton({ videoId, role }: GuestShareButtonProps) {
+  if (!isAgentPlusRole(role)) return null
+  return <GuestShareControls videoId={videoId} />
+}
+
+function GuestShareControls({ videoId }: { videoId: string }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
