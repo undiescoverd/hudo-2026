@@ -24,6 +24,9 @@ export default function VideoPage({ params }: Props) {
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [agencyId, setAgencyId] = useState<string | null>(null)
+  // Caller's role in this video's agency (from the versions endpoint). null
+  // until loaded, so agent-only controls never flash for talent.
+  const [role, setRole] = useState<string | null>(null)
   // null = still loading (or not yet retried); passed straight through to
   // VersionSelector so it doesn't issue its own duplicate GET request.
   const [versions, setVersions] = useState<Version[] | null>(null)
@@ -71,8 +74,15 @@ export default function VideoPage({ params }: Props) {
     return fetch(`/api/videos/${params.id}/versions`)
       .then(async (res) => {
         if (!res.ok) throw new Error(`versions fetch failed (${res.status})`)
-        const data = (await res.json()) as { agencyId: string; versions: Version[] }
+        const data = (await res.json()) as {
+          agencyId: string
+          role?: string
+          versions: Version[]
+        }
         if (data.agencyId) setAgencyId(data.agencyId)
+        if (data.role) setRole(data.role)
+        // Share stays hidden without a role — make that contract break visible.
+        else console.warn('[video-page] versions response missing role; hiding Share')
         setVersions(data.versions ?? [])
       })
       .catch((err: unknown) => {
@@ -114,7 +124,7 @@ export default function VideoPage({ params }: Props) {
         >
           ← Back to videos
         </Link>
-        <GuestShareButton videoId={params.id} />
+        <GuestShareButton videoId={params.id} role={role} />
       </div>
       <div className="px-4 pt-2">
         <VersionSelector
