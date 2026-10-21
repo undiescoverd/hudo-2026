@@ -48,7 +48,7 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 | F8 | Role dashboards | Flow 01 (dashboards, Needs you strip); Flow 06, step 06 | Partial | — | Partial | Not checked |
 | F9 | Talent uploads media | Flow 01, steps 01–04; Flow 06, steps 01–04, 11–12 | Partial | #149, #150, #151, #164 | Partial | Not checked |
 | F10 | Agency review queue and claiming | Flow 01 Needs you strip (no queue) | Conflict | — | No | Not checked |
-| F11 | Agent reviews with voice feedback | Flow 01, steps 05–07 (typed comments only) | Conflict | #169 | Partial (voice playback broken) | Not checked |
+| F11 | Agent reviews with voice feedback | Flow 01, steps 05–07 (typed comments only) | Conflict | #169 | Partial (typed comments work; no voice recording code found) | Not checked |
 | F12 | Complete review and export edit list | Flow 01, steps 09–11; Flow 06, steps 09–10 | Conflict | #159, #160, #161 | Partial (PDF is HTML, no export) | Not checked |
 | F13 | Talent receives and views feedback | Flow 01, steps 06–07 | Partial | #168, #163 | Partial | Not checked |
 | F14 | Notifications | Flow 01, step 08; Flow 02, step 08 | Partial | #170 | Partial | Not checked |
@@ -75,7 +75,7 @@ These came from reading the boards. The list is not exhaustive.
 
 - **Flow 06, step 11:** a talent cannot resubmit after changes are requested, so the video stays stuck. No issue.
 - **Flow 06, step 09:** comments cannot be resolved, edited, deleted or replied to from the UI. Partly covered by F20.
-- **Flow 04:** no lockout or rate limit on sign-in; owners hit a redirect loop; session refresh doesn't retry; the password-changed email is never sent. No issue.
+- **Flow 04:** no account lockout after failed sign-ins (auth routes are rate-limited, so the board's "no lockout or rate limit" is only half right); owners hit a redirect loop; session refresh doesn't retry; the password-changed email is never sent. No issue.
 - **Flow 03:** the "invite agent" link goes to a page that doesn't exist; a pending invite can't be listed, resent or revoked; duplicate pending invites are allowed. No issue.
 - **Flow 05:** the sign-up wizard isn't wired to a page; email verification is never sent; the welcome email is a TODO. No issue.
 
@@ -83,5 +83,6 @@ These came from reading the boards. The list is not exhaustive.
 
 - **Paper coverage map is out of date for F1–F7.** It says "Not drawn" for sign-in, verification and invites, but Flows 03–05 are now on the board. The table above uses the boards.
 - **F24, F25 and G3 read as not built on the coverage map, but S3 billing and compliance shipped to main** (see `CLAUDE.md` Sprints and the billing memory). The table uses the shipped state. The coverage map needs the same correction.
+- **Built checks so far (2026-10-22):** F10 (no review session code), F25 (erasure route exists, no video delete route), F12 (PDF export code exists, output is HTML), F11 (no voice recording code) and G3 (cookie banner and legal entity present) were checked against code. The other Built values are still from the coverage map.
 - **F10–F12 are Conflict** because the build plan and Paper describe the review loop differently. This is still the open decision, and it blocks the Phase 2–4 redraws.
 - **The original F0–F27 plan document can't be found.** The Paper coverage map is the only place these IDs are defined, so this table takes its IDs from there.
