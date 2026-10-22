@@ -61,7 +61,7 @@ TASK_ID: S4-UPLOADFIX-001
 TITLE: Upload bugs B1-B3 (retry reuses video, real error messages, agent picks talent)
 BRANCH: feat/s4-S4-UPLOADFIX-001-upload-bugs
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - B2: retry reuses the first presign's videoId; no new empty draft per retry
