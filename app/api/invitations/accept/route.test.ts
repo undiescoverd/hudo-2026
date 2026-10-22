@@ -11,10 +11,12 @@
 import assert from 'node:assert/strict'
 import { describe, it, before, beforeEach, after } from 'node:test'
 import { createRequire } from 'node:module'
+import { randomBytes } from 'node:crypto'
 import { NextRequest } from 'next/server'
 
 const TOKEN = 'ab'.repeat(32)
-const GOOD_PASSWORD = 'Str0ng!Passw0rd#2026'
+// Generated per run: no credential literal in source (repo is public; see secret-scan guard).
+const GOOD_PASSWORD = `Aa1!${randomBytes(12).toString('hex')}`
 
 interface State {
   invitation: { id: string; accepted_at: string | null; expires_at: string }
