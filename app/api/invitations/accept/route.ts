@@ -54,6 +54,46 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient()
 
+  // Read-only lookup first: a failed attempt must not burn the token.
+  const { data: found, error: lookupError } = await admin
+    .from('invitations')
+    .select('id, email, role, agency_id, accepted_at, expires_at')
+    .eq('token_hash', tokenHash)
+    .limit(1)
+
+  if (lookupError) {
+    console.error('[invitations/accept] lookup failed:', lookupError.message)
+    return NextResponse.json({ error: 'Failed to process invitation' }, { status: 500 })
+  }
+
+  const candidate = found?.[0]
+  if (!candidate || candidate.accepted_at || new Date(candidate.expires_at) < new Date()) {
+    return NextResponse.json({ error: 'Invalid or expired invitation' }, { status: 410 })
+  }
+
+  // Check if user already exists
+  const { data: existingUsers } = await admin
+    .from('users')
+    .select('id')
+    .eq('email', candidate.email)
+    .limit(1)
+
+  const userExists = (existingUsers?.length ?? 0) > 0
+
+  if (!userExists) {
+    // New user — require password and fullName (validated before the claim)
+    if (typeof password !== 'string' || !password) {
+      return NextResponse.json({ error: 'Password is required for new users' }, { status: 400 })
+    }
+    const passwordError = validatePassword(password)
+    if (passwordError) {
+      return NextResponse.json({ error: passwordError }, { status: 400 })
+    }
+    if (typeof fullName !== 'string' || !fullName.trim()) {
+      return NextResponse.json({ error: 'Full name is required for new users' }, { status: 400 })
+    }
+  }
+
   // Atomically claim the invitation: UPDATE only if not already accepted and not expired.
   // This prevents TOCTOU race conditions where two concurrent requests could both
   // read accepted_at IS NULL, then both proceed to create memberships.
@@ -78,38 +118,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid or expired invitation' }, { status: 410 })
   }
 
-  // Check if user already exists
-  const { data: existingUsers } = await admin
-    .from('users')
-    .select('id')
-    .eq('email', invitation.email)
-    .limit(1)
+  // Any failure after the claim releases it so the same token can be retried.
+  const releaseClaim = async () => {
+    const { error } = await admin
+      .from('invitations')
+      .update({ accepted_at: null })
+      .eq('id', invitation.id)
+      .eq('accepted_at', now)
+    if (error) {
+      console.error('[invitations/accept] claim release failed:', error.message)
+    }
+  }
 
-  const userExists = (existingUsers?.length ?? 0) > 0
   let userId: string
 
   if (!userExists) {
-    // New user — require password and fullName
-    if (typeof password !== 'string' || !password) {
-      return NextResponse.json({ error: 'Password is required for new users' }, { status: 400 })
-    }
-    const passwordError = validatePassword(password)
-    if (passwordError) {
-      return NextResponse.json({ error: passwordError }, { status: 400 })
-    }
-    if (typeof fullName !== 'string' || !fullName.trim()) {
-      return NextResponse.json({ error: 'Full name is required for new users' }, { status: 400 })
-    }
-
-    // Create auth user via admin
+    // Create auth user via admin (password/fullName already validated above)
     const { data: authData, error: authError } = await admin.auth.admin.createUser({
       email: invitation.email,
-      password,
+      password: password as string,
       email_confirm: true, // Auto-confirm since they were invited
     })
 
     if (authError) {
       console.error('[invitations/accept] createUser failed:', authError.message)
+      await releaseClaim()
       return NextResponse.json({ error: 'Failed to create account' }, { status: 500 })
     }
 
@@ -119,13 +152,19 @@ export async function POST(request: NextRequest) {
     const { error: insertError } = await admin.from('users').insert({
       id: userId,
       email: invitation.email,
-      full_name: fullName.trim(),
+      full_name: (fullName as string).trim(),
     })
 
     if (insertError) {
       console.error('[invitations/accept] users insert failed:', insertError.message)
-      // Auth user exists, proceed with membership — reconciliation can fix missing users record
       Sentry.captureException(insertError)
+      // Remove the orphan auth user so a retry doesn't hit "already registered"
+      const { error: deleteError } = await admin.auth.admin.deleteUser(userId)
+      if (deleteError) {
+        console.error('[invitations/accept] orphan auth user cleanup failed:', deleteError.message)
+      }
+      await releaseClaim()
+      return NextResponse.json({ error: 'Failed to create account' }, { status: 500 })
     }
   } else {
     userId = existingUsers![0].id
@@ -141,12 +180,14 @@ export async function POST(request: NextRequest) {
   if (membershipError) {
     // Could be duplicate membership (UNIQUE constraint)
     if (membershipError.code === '23505') {
+      await releaseClaim()
       return NextResponse.json(
         { error: 'You are already a member of this agency' },
         { status: 409 }
       )
     }
     console.error('[invitations/accept] membership insert failed:', membershipError.message)
+    await releaseClaim()
     return NextResponse.json({ error: 'Failed to add to agency' }, { status: 500 })
   }
 
