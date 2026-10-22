@@ -6,6 +6,22 @@ import { getClientIp } from '@/lib/rate-limit'
 import { checkRateLimit } from '@/lib/api-helpers'
 import { createAdminClient } from '@/lib/supabase-admin'
 
+// auth-js has no getUserByEmail: page through listUsers for an exact (case-insensitive) match.
+async function findAuthUserByEmail(
+  admin: ReturnType<typeof createAdminClient>,
+  email: string
+): Promise<{ id: string } | null> {
+  const perPage = 200
+  for (let page = 1; page <= 50; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage })
+    if (error) return null
+    const match = data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase())
+    if (match) return { id: match.id }
+    if (data.users.length < perPage) return null
+  }
+  return null
+}
+
 /**
  * POST /api/invitations/accept
  *
@@ -140,13 +156,25 @@ export async function POST(request: NextRequest) {
       email_confirm: true, // Auto-confirm since they were invited
     })
 
-    if (authError) {
-      console.error('[invitations/accept] createUser failed:', authError.message)
-      await releaseClaim()
-      return NextResponse.json({ error: 'Failed to create account' }, { status: 500 })
-    }
+    // Only a freshly created auth user is deleted on a later failure; a reconciled
+    // orphan (auth user with no public.users row) is left in place for the next retry.
+    let createdAuthUser = true
 
-    userId = authData.user.id
+    if (authError) {
+      const alreadyRegistered =
+        authError.code === 'email_exists' || /already (been )?registered/i.test(authError.message)
+      // Orphaned auth user (earlier cleanup failed): reuse it, but only on an exact email match.
+      const orphan = alreadyRegistered ? await findAuthUserByEmail(admin, invitation.email) : null
+      if (!orphan) {
+        console.error('[invitations/accept] createUser failed:', authError.message)
+        await releaseClaim()
+        return NextResponse.json({ error: 'Failed to create account' }, { status: 500 })
+      }
+      userId = orphan.id
+      createdAuthUser = false
+    } else {
+      userId = authData.user.id
+    }
 
     // Create public.users record
     const { error: insertError } = await admin.from('users').insert({
@@ -158,10 +186,15 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       console.error('[invitations/accept] users insert failed:', insertError.message)
       Sentry.captureException(insertError)
-      // Remove the orphan auth user so a retry doesn't hit "already registered"
-      const { error: deleteError } = await admin.auth.admin.deleteUser(userId)
-      if (deleteError) {
-        console.error('[invitations/accept] orphan auth user cleanup failed:', deleteError.message)
+      if (createdAuthUser) {
+        // Remove the orphan auth user so a retry doesn't hit "already registered"
+        const { error: deleteError } = await admin.auth.admin.deleteUser(userId)
+        if (deleteError) {
+          console.error(
+            '[invitations/accept] orphan auth user cleanup failed:',
+            deleteError.message
+          )
+        }
       }
       await releaseClaim()
       return NextResponse.json({ error: 'Failed to create account' }, { status: 500 })

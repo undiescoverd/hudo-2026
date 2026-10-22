@@ -24,6 +24,7 @@ interface State {
   failUsersInsert: boolean
   duplicateMembership: boolean
   deletedAuthUsers: string[]
+  authUsers: Array<{ id: string; email: string }>
 }
 
 let state: State
@@ -41,6 +42,7 @@ function freshState(): State {
     failUsersInsert: false,
     duplicateMembership: false,
     deletedAuthUsers: [],
+    authUsers: [],
   }
 }
 
@@ -119,10 +121,19 @@ const fakeClient = {
   from: fakeFrom,
   auth: {
     admin: {
-      createUser: async () =>
-        state.failCreateUser
-          ? { data: { user: null }, error: { message: 'createUser boom' } }
-          : { data: { user: { id: 'auth-1' } }, error: null },
+      createUser: async ({ email }: { email: string }) => {
+        if (state.failCreateUser) {
+          return { data: { user: null }, error: { message: 'createUser boom' } }
+        }
+        if (state.authUsers.some((u) => u.email === email)) {
+          return {
+            data: { user: null },
+            error: { message: 'A user with this email address has already been registered' },
+          }
+        }
+        return { data: { user: { id: 'auth-1' } }, error: null }
+      },
+      listUsers: async () => ({ data: { users: state.authUsers }, error: null }),
       deleteUser: async (id: string) => {
         state.deletedAuthUsers.push(id)
         return { error: null }
@@ -240,6 +251,37 @@ describe('POST /api/invitations/accept — retry after failure', () => {
     const retry = await call({ token: TOKEN })
     assert.equal(retry.status, 200)
     assert.equal(state.memberships, 1)
+  })
+
+  it('orphaned auth user (no public.users row) is reconciled on accept', async () => {
+    state.authUsers.push({ id: 'orphan-1', email: 'new@example.com' })
+    const res = await call({ token: TOKEN, password: GOOD_PASSWORD, fullName: 'New User' })
+    assert.equal(res.status, 200)
+    assert.deepEqual(state.users, [{ id: 'orphan-1', email: 'new@example.com' }])
+    assert.equal(state.memberships, 1)
+    assert.deepEqual(state.deletedAuthUsers, [])
+  })
+
+  it('orphaned auth user with missing password returns 400; retry with password succeeds', async () => {
+    state.authUsers.push({ id: 'orphan-1', email: 'new@example.com' })
+    const first = await call({ token: TOKEN, fullName: 'New User' })
+    assert.equal(first.status, 400)
+    assert.equal(state.invitation.accepted_at, null)
+
+    const retry = await call({ token: TOKEN, password: GOOD_PASSWORD, fullName: 'New User' })
+    assert.equal(retry.status, 200)
+    assert.equal(state.users[0]?.id, 'orphan-1')
+    assert.equal(state.memberships, 1)
+  })
+
+  it('already-registered error for a different auth email is not linked (500, claim released)', async () => {
+    state.authUsers.push({ id: 'other-1', email: 'someone-else@example.com' })
+    // createUser reports "already registered" only for a matching email, so force it
+    state.failCreateUser = true
+    const res = await call({ token: TOKEN, password: GOOD_PASSWORD, fullName: 'New User' })
+    assert.equal(res.status, 500)
+    assert.equal(state.users.length, 0)
+    assert.equal(state.invitation.accepted_at, null)
   })
 
   it('an already-accepted invitation still returns 410', async () => {
