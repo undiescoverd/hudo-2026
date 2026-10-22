@@ -47,7 +47,7 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 | F7 | First-run onboarding | Flow 03, steps 12–13; Flow 05, steps 15–16 | Partial | — | Partial | Not checked |
 | F8 | Role dashboards | Flow 01 (dashboards, Needs you strip); Flow 06, step 06 | Partial | — | Partial | Not checked |
 | F9 | Talent uploads media | Flow 01, steps 01–04; Flow 06, steps 01–04, 11–12 | Partial | #149, #150, #151, #164 | Partial | Not checked |
-| F10 | Agency review queue and claiming | Flow 01 Needs you strip (no queue) | Conflict | — | No | Not checked |
+| F10 | Review attention list: seen-by now, owner later | Flow 01 "Needs you" strip (rename to "Needs attention" pending) | Decided (Paper update pending) | spec pending (see Decisions) | No | Not checked |
 | F11 | Agent reviews with voice feedback | Flow 01, steps 05–07 (typed comments only) | Conflict | #169 | Partial (typed comments work; no voice recording code found) | Not checked |
 | F12 | Complete review and export edit list | Flow 01, steps 09–11; Flow 06, steps 09–10 | Conflict | #159, #160, #161 | Partial (PDF is HTML, no export) | Not checked |
 | F13 | Talent receives and views feedback | Flow 01, steps 06–07 | Partial | #168, #163 | Partial | Not checked |
@@ -68,6 +68,12 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 | G1 | Guest review link (extra) | Flow 02, all steps and edge cases | Drawn | #165, #166, #167, #170 | Yes | Not checked |
 | G2 | Versions and status pipeline (extra) | Flow 01, steps 03–04, 09–10; Flow 06 | Drawn | #159, #160, #161, #162 | Partial | Not checked |
 | G3 | Legal entity, DPA and cookie consent (extra) | Billing & Settings page; Flow 05, step 06 | Partial | — | Yes (BILLING-004, BILLING-006, COMPLY-003) | Not checked |
+
+## Decisions
+
+- **2026-10-22, review model (F10):** agents see a shared "Needs attention" list, with no claim or assignment for now. Each video shows who has seen it ("seen by"). Anyone in the agency can comment, so outside input is always open. Ownership (`owner_id`, claim and assign) is deferred until an agency asks for it. Reasons: it needs atomic claims and realtime ownership changes, and "seen by" reuses the `comment_reads` work already tracked in #168.
+- **Open:** the list name. "Needs attention" is proposed; the Paper boards still say "Needs you". Not renamed yet.
+- **Open:** whether talent see who has viewed their video. Default: no, until decided.
 
 ## Gaps on the boards with no issue yet
 
