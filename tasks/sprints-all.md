@@ -616,9 +616,9 @@ Automated smoke tests against staging covering the full user journey; run in CI 
 
 ---
 
-#### S4-LAUNCH-003 — Production environment validation
-**Size:** M | **Status:** not_started | **Blocked by:** S4-LAUNCH-002
-Run smoke test suite against production with a test agency; verify Sentry, PostHog, Stripe webhooks, and R2 all work in production; delete test agency after validation.
+#### S4-LAUNCH-003 — Production environment validation (post-alpha; moved out of Sprint 4 on 2026-10-22)
+**Size:** M | **Status:** not_started | **Blocked by:** S4-LAUNCH-002 and the post-alpha go decision
+Production is not validated in Sprint 4; staging remains the working production (2026-06-16 decision). Checklist for when it is scheduled: unpause hudo-prod, apply 0001–0028, live Stripe catalogue and webhook, R2 CORS `ExposeHeaders: ETag` with exact origin, r2.dev sign-off, Resend domain, Upstash prod, Sentry/PostHog, branch protection.
 
 ---
 
