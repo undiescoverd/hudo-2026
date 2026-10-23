@@ -186,12 +186,14 @@ Example output:
    Run: node orchestrate.js sync-fix to repair drift
 ```
 
-Only checks tasks with a trackable status (`in_progress`, `in_review`, `done`, `blocked`). Tasks that are `not_started` are skipped.
+Checks every task. A `not_started` task counts as drifted only if Linear shows it Done. In Progress and In Review are normal while its feature branch is open: the status bump lives on the branch, and `linear-update.yml` moves Linear on push and PR open. Every other status must match its Linear state exactly.
+
+It also lists tasks that look merged into a release ref (`main`, `production`, `preview/wave-*`) but are not marked done. The branch-ancestor check is the strongest evidence. The fallback only counts a task ID that appears in a commit *subject*, and ignores `chore` commits: bodies of plan/spec commits list future task IDs, and chore commits add sprint rows or bump status without building anything.
 
 ---
 
 ### `sync-fix`
-Pushes markdown statuses to Linear for any drifted tasks. Runs `sync-check` internally first to identify drift, then fixes each drifted task. Idempotent — safe to run repeatedly.
+Pushes markdown statuses to Linear for any drifted tasks (a drifted `not_started` task is moved back to Backlog), and marks tasks flagged as merged into a release ref done. A merged task skips the push and goes straight to done. Runs `sync-check` internally first to identify drift, then fixes each drifted task. Idempotent — safe to run repeatedly.
 
 ```
 node orchestrate.js sync-fix
