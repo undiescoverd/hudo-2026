@@ -703,3 +703,29 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - Project statuses were corrected, and not-started tasks sit in Backlog.
     - The daily cron probably re-marked the four false positives Done since then; Fix 2 undoes that.
 - **Gotcha (if any):** on `main`, an in-flight task's markdown is usually still `not_started`, because the `review` bump lives on the feature branch, while Linear says In Progress or In Review. Any markdown-vs-Linear rule for `not_started` must allow that.
+
+## 2026-10-23 20:00 — Open-redirect fix (sign-in + email callback); #189 merged; step 3 specs filed
+
+- **Task:** fix the open redirect noted in PR #188 (`safeRedirect`); handoff step 3 (spec the S4 gate gaps)
+- **Models:** planner=opus, executor=sonnet; security review=hudo-security-reviewer
+- **Outcome:** partial. The fix is done: the security review found it fit to merge, and PR #193 waits on Ian's merge. The step 3 GitHub issues are filed; the sprint rows and Linear issues are not done yet.
+- **Notes:**
+  - **#189 (sync-check fix)** was squash-merged as `6000ff1` on Ian's go-ahead. Its branch was restarted from `origin/main` for this work.
+  - **The open redirect was in two places:**
+    - `safeRedirect` (sign-in, `window.location.href`) accepted `/\evil.com`.
+    - `app/auth/callback/route.ts` had its own guard that blocked `/\` but not control characters. `searchParams.get` decodes `%09`/`%0A`, and the URL parser strips them, so `?next=/%09/evil.com` led to `new URL(next, origin)` = `https://evil.com`, an open redirect after email confirmation or recovery.
+  - **Fix:** one hardened `safeRedirect(target, fallback = '/videos')`.
+    - It rejects `//`, backslashes, whitespace and C0/DEL control characters.
+    - It then requires the WHATWG-parsed origin to equal the base, and the parsed pathname not to start with `//`.
+    - It returns the **raw** target: `/..//evil.com` normalises to `//evil.com`, so returning the normalised URL would itself be an open redirect.
+    - The callback now uses `safeRedirect(next, '/')`.
+  - **Tests:** 48 redirect tests (signin `safeRedirect` cases plus a new behavioural `app/auth/callback/route.test.ts` with Supabase stubbed at `fetch`). 17 of them fail against the old code. The full suite has 1286 passing.
+  - **Container restart mid-run:** the Sonnet executor's edits survived, but its final report and validation were lost, so Opus re-ran all the checks.
+  - **Step 3:** Ian accepted all of round 1 (Q1–Q9) and all of round 2 (resolve agent+ only; current edit/delete rules; nested reply mapped to 400; no notification for agent new-version uploads).
+    - Filed #190 (new version upload), #191 (comment actions) and #192 (talent resubmit), and recorded option (b) plus its trade-off on #187.
+    - The sprint rows `S4-REVIEW-001`–`004` are drafted but not committed. They need their own branch, and this session can only push one.
+    - Their Linear issues can't be created here: there's no `LINEAR_API_KEY` and the Linear connector failed to connect.
+  - **Security review:** no blocker, high or medium issue in the diff. A fuzz run (every Unicode scalar in four positions, behind 12 path prefixes, resolved against two bases; about 45.6M accepted values) found 0 cross-origin results.
+    - Lows L1 (wording around the `/..//` check, which is defence in depth) and L2 (note that the result must never be percent-decoded again) are fixed in the follow-up commit.
+    - The medium, already on main: `/auth/callback` has no Upstash rate limiter. It's queued as a separate task card.
+- **Gotcha (if any):** a redirect guard that checks string prefixes (`startsWith('/') && !startsWith('//')`) is bypassable. Browsers treat `\` as `/` and drop tab/CR/LF, and `searchParams.get` decodes `%09` first. Validate with `new URL(t, base).origin` and return the raw target, never the normalised one.

@@ -44,6 +44,57 @@ describe('safeRedirect', () => {
   it('accepts a deep local path (/foo/bar/baz)', () => {
     assert.equal(safeRedirect('/foo/bar/baz'), '/foo/bar/baz')
   })
+
+  // Browsers treat `\` as `/` and drop tab/newline, so these resolve cross-origin
+  // (e.g. `new URL('/\t/evil.com', origin).origin === 'https://evil.com'`).
+  for (const [label, target] of [
+    ['backslash host (/\\evil.com)', '/\\evil.com'],
+    ['slash + backslash (/\\/evil.com)', '/\\/evil.com'],
+    ['tab between slashes', '/\t/evil.com'],
+    ['newline between slashes', '/\n/evil.com'],
+    ['carriage return between slashes', '/\r/evil.com'],
+    ['leading space before //', ' //evil.com'],
+    ['whitespace inside the path', '/videos x'],
+    ['NUL control char', '/vid\u0000eos'],
+    ['DEL control char', '/vid\u007feos'],
+    // Same-origin as given, but the path normalises to protocol-relative '//evil.com' (defence in depth)
+    ['dot-dot whose path normalises to //evil.com (/..//evil.com)', '/..//evil.com'],
+    ['nested dot-dot whose path normalises to //evil.com', '/x/..//evil.com'],
+    ['bare // (URL parser throws on it)', '//'],
+    ['// followed by an invalid host', '//['],
+  ] as const) {
+    it(`returns /videos for ${label}`, () => {
+      assert.equal(safeRedirect(target), '/videos')
+    })
+  }
+
+  it('keeps an encoded backslash (/%5Cevil.com) — it stays a path, not a host', () => {
+    assert.equal(safeRedirect('/%5Cevil.com'), '/%5Cevil.com')
+  })
+
+  it('accepts a path with query and hash (/videos?t=30#c) unchanged', () => {
+    assert.equal(safeRedirect('/videos?t=30#c'), '/videos?t=30#c')
+  })
+
+  it('accepts a path with a query (/videos/abc?x=1) unchanged', () => {
+    assert.equal(safeRedirect('/videos/abc?x=1'), '/videos/abc?x=1')
+  })
+
+  it('returns the raw target, never the normalised URL', () => {
+    assert.equal(safeRedirect('/a/../b'), '/a/../b')
+  })
+
+  it('uses a custom fallback for null', () => {
+    assert.equal(safeRedirect(null, '/'), '/')
+  })
+
+  it('uses a custom fallback for protocol-relative URLs', () => {
+    assert.equal(safeRedirect('//evil.com', '/'), '/')
+  })
+
+  it('uses a custom fallback for backslash hosts', () => {
+    assert.equal(safeRedirect('/\\evil.com', '/'), '/')
+  })
 })
 
 describe('signin rate limiting — key format', () => {
