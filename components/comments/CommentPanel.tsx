@@ -6,6 +6,7 @@ import type { Comment } from '@/lib/comments'
 import { useVideoPlayerContext } from '@/components/player/VideoPlayer'
 import { CommentThread } from './CommentThread'
 import { CommentInput } from './CommentInput'
+import { buildThreads, isThreadVisible } from './comment-threads'
 
 interface CommentPanelProps {
   videoId: string
@@ -15,6 +16,9 @@ interface CommentPanelProps {
   /** Current user's display name — forwarded to CommentInput so the author's
    *  own optimistic comment shows their name before the POST response lands. */
   currentUserName?: string | null
+  /** The viewer's agency role. Gates which actions each comment offers (the API
+   *  re-checks all of them); with no role the panel is read-only plus the input. */
+  viewerRole?: string | null
   // Comments, loading/error state, and mutation handlers are owned by the
   // page-level useVideoComments hook so there is exactly ONE fetch of the
   // comments endpoint — VideoPlayer's CommentTimeline shares the same state.
@@ -23,6 +27,11 @@ interface CommentPanelProps {
   error: string | null
   onOptimisticInsert: (comment: Comment) => void
   onOptimisticRollback: (tempId: string) => void
+  /** Comment actions from useVideoComments. Each rejects with a user-facing
+   *  message after rolling the list back; CommentItem shows it inline. */
+  onResolveComment?: (commentId: string, resolved: boolean) => Promise<void>
+  onEditComment?: (commentId: string, content: string) => Promise<void>
+  onDeleteComment?: (commentId: string) => Promise<void>
 }
 
 export function CommentPanel({
@@ -31,11 +40,15 @@ export function CommentPanel({
   agencyId,
   userId,
   currentUserName,
+  viewerRole,
   comments,
   loading,
   error,
   onOptimisticInsert,
   onOptimisticRollback,
+  onResolveComment,
+  onEditComment,
+  onDeleteComment,
 }: CommentPanelProps) {
   const player = useVideoPlayerContext()
 
@@ -46,21 +59,22 @@ export function CommentPanel({
     [player]
   )
 
-  // Separate top-level and replies
-  const topLevel = comments
-    .filter((c) => c.parentId === null)
-    .sort((a, b) => a.timestampSeconds - b.timestampSeconds)
-
-  const repliesByParent = comments.reduce<Record<string, Comment[]>>((acc, c) => {
-    if (c.parentId !== null) {
-      const existing = acc[c.parentId] ?? []
-      acc[c.parentId] = [...existing, c].sort((a, b) => a.timestampSeconds - b.timestampSeconds)
-    }
-    return acc
-  }, {})
+  // Only threads that actually render count towards the empty state: a soft-deleted
+  // comment stays in state (flagged by Realtime), so `comments.length` would lie.
+  const threads = buildThreads(comments).filter((t) => isThreadVisible(t.parent, t.replies))
 
   // Includes replies — matches what's actually rendered below (top-level + threads).
   const visibleCount = comments.filter((c) => c.deletedAt === null).length
+
+  const replyInput = {
+    videoId,
+    versionId,
+    agencyId,
+    userId,
+    currentUserName,
+    onOptimisticInsert,
+    onOptimisticRollback,
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -86,7 +100,7 @@ export function CommentPanel({
           </div>
         )}
 
-        {!loading && !error && topLevel.length === 0 && (
+        {!loading && !error && threads.length === 0 && (
           <div className="px-4 py-12 text-center">
             <p className="text-sm text-gray-500 dark:text-gray-400">No comments yet.</p>
           </div>
@@ -94,13 +108,18 @@ export function CommentPanel({
 
         {!loading &&
           !error &&
-          topLevel.length > 0 &&
-          topLevel.map((comment) => (
-            <div key={comment.id} className="py-1">
+          threads.map(({ parent, replies }) => (
+            <div key={parent.id} className="py-1">
               <CommentThread
-                parent={comment}
-                replies={repliesByParent[comment.id] ?? []}
+                parent={parent}
+                replies={replies}
                 onSeek={handleSeek}
+                viewerRole={viewerRole}
+                viewerUserId={userId}
+                onResolve={onResolveComment}
+                onEdit={onEditComment}
+                onDelete={onDeleteComment}
+                replyInput={replyInput}
               />
             </div>
           ))}
