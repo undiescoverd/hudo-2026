@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 import { isBillingEnabled } from '@/lib/feature-flags'
+import { canInvite } from '@/lib/invite-permissions'
 
 type Props = {
   displayName: string
@@ -50,6 +51,11 @@ export function AppHeader({ displayName, role }: Props) {
           {isBillingEnabled() && (
             <Link href="/settings/billing" className={navClass('/settings/billing')}>
               Billing
+            </Link>
+          )}
+          {canInvite(role) && (
+            <Link href="/settings/team" className={navClass('/settings/team')}>
+              Team
             </Link>
           )}
           <Link href="/settings/notifications" className={navClass('/settings/notifications')}>

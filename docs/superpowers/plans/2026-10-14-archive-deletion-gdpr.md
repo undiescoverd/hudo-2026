@@ -22,12 +22,12 @@
 ## Status board
 | Phase | Sprint | Status | Branch / PR | Tracker |
 |---|---|---|---|---|
-| 0 · Tracking (issues + sprint rows) | S4 | 🔵 PR #153 open | `chore/archive-deletion-plan-v2` | umbrella #143; sub-issues #144–#148; bugs #149–#151 |
-| 1 · Upload bugs B1–B3 | S4 | ⬜ | — | S4-UPLOADFIX-001 · RES-200 · #149 #150 #151 |
-| 2 · Delete path foundation | S4 | ⬜ | — | S4-DELETE-001 · RES-201 · #144 |
+| 0 · Tracking (issues + sprint rows) | S4 | ✅ merged (#153) | `chore/archive-deletion-plan-v2` | umbrella #143; sub-issues #144–#148; bugs #149–#151 |
+| 1 · Upload bugs B1–B3 | S4 | ✅ merged (#156; server-side talentId gate in #182) | `feat/s4-S4-UPLOADFIX-001-upload-bugs` | S4-UPLOADFIX-001 · RES-200 · #149 #150 #151 |
+| 2 · Delete path foundation | S4 | ⬜ | — | S4-DELETE-001 · RES-201 · #144 · migrations 0024–0025 |
 | 3 · GDPR erasure | S4 | ⬜ | — | S4-ERASE-001 · RES-202 · #145 |
-| 4 · Space savers | S4 | ⬜ | — | S4-SAVER-001 · RES-203 · #146 |
-| 5 · Archive & restore | post-launch | ⬜ | — | #147 (no sprint row yet) |
+| 4 · Space savers | S4 | ⬜ | — | S4-SAVER-001 · RES-203 · #146 · migration 0026 |
+| 5 · Archive & restore | post-launch | ⬜ | — | #147 · migration 0028 (no sprint row yet) |
 | 6 · Agency closure | post-launch | ⬜ | — | #148 (no sprint row yet) |
 | 7 · Later (plan names, agency selector) | backlog | ⬜ | — | — |
 
@@ -45,7 +45,7 @@ Legend: ⬜ not started · 🟡 in progress · 🔵 PR open · ✅ merged to `ma
   - Run `pnpm format:check && pnpm type-check && pnpm lint && pnpm build` before every push.
   - Worktree agents symlink `node_modules` and `git add` specific paths only.
 - **Migrations:**
-  - Next free number is **0024**.
+  - Repo runs 0001–0023. Phases 2–4 use **0024–0026**. S4-JOURNEY-001 takes **0027** (`create_agency_with_owner`). This phase's migration is therefore **0028**.
   - Apply with the `/apply-migration` skill (MCP `apply_migration`) to **both** hudo-dev (`xyeqnjboqimvhdwnyqbt`) and hudo-staging (`egabjtxrrcuzooyclwgw`). Never use the SQL editor.
   - Every new table gets RLS enabled.
 - **Purge functions:**
@@ -489,7 +489,7 @@ Edge cases the spec implies that are most likely to bite. Each line has a test i
 > Expand into step-level TDD tasks (superpowers:writing-plans) when this phase starts. Design the UI first: a prototype in `.figma-prototype/redesign-v3/` (archive action in the player + dashboard row menu, the "Archived · N" chip, the Archived list with "Deleted in N days"), following the design workflow in `HANDOFF.md`.
 
 - [ ] **5.0 Expand this phase into step-level TDD tasks** in this file, after the UI prototype is locked.
-- [ ] **5.1 Migration 0027:**
+- [ ] **5.1 Migration 0028:**
   - columns `archived_at timestamptz`, `archived_by uuid REFERENCES users(id) ON DELETE SET NULL`, `purge_after timestamptz` on `videos` and `video_versions`;
   - `agencies.keep_archived boolean NOT NULL DEFAULT false`;
   - partial indexes `WHERE archived_at IS NOT NULL`.

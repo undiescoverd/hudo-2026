@@ -1,5 +1,7 @@
 'use client'
 
+import { isQuotaMessage } from '@/lib/upload-client'
+
 interface UploadProgressProps {
   fileName: string
   percent: number
@@ -16,7 +18,7 @@ export function UploadProgress({
   onRetry,
 }: UploadProgressProps) {
   const isComplete = percent === 100 && !error
-  const isQuotaError = error?.toLowerCase().includes('quota')
+  const isQuotaError = isQuotaMessage(error)
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
