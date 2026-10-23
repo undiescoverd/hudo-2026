@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage: ./scripts/update-linear-task.sh <TASK_ID> <status>
 #        ./scripts/update-linear-task.sh --status <TASK_ID>
-# Status values: "In Progress" | "In Review" | "Done" | "Blocked"
+# Status values: "Backlog" | "In Progress" | "In Review" | "Done" | "Blocked"
 #
 # Example: ./scripts/update-linear-task.sh S0-INFRA-001 "In Progress"
 # Query:   ./scripts/update-linear-task.sh --status S0-INFRA-001
@@ -24,7 +24,7 @@ else
   if [[ -z "$TASK_ID" || -z "$NEW_STATUS" ]]; then
     echo "Usage: $0 <TASK_ID> <status>"
     echo "       $0 --status <TASK_ID>"
-    echo "  Status values: 'In Progress' | 'In Review' | 'Done' | 'Blocked'"
+    echo "  Status values: 'Backlog' | 'In Progress' | 'In Review' | 'Done' | 'Blocked'"
     exit 1
   fi
 fi
@@ -57,6 +57,7 @@ mode       = os.environ["MODE"]
 
 # Validate status (only in update mode)
 status_name_map = {
+    "Backlog":     "Backlog",
     "In Progress": "In Progress",
     "In Review":   "In Review",
     "Done":        "Done",
@@ -66,7 +67,7 @@ status_name_map = {
 if mode == "update":
     status_name = status_name_map.get(new_status)
     if not status_name:
-        print(f"Error: Unknown status '{new_status}'. Use: 'In Progress', 'In Review', 'Done', 'Blocked'")
+        print(f"Error: Unknown status '{new_status}'. Use: 'Backlog', 'In Progress', 'In Review', 'Done', 'Blocked'")
         sys.exit(1)
 
 headers = {
