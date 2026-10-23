@@ -55,13 +55,13 @@ NOTES: L — Linear RES-199. Storage counts against agency shared quota (talent 
 
 ---
 
-- [ ] **S4-UPLOADFIX-001** — Upload bugs B1–B3
+- [x] **S4-UPLOADFIX-001** — Upload bugs B1–B3
 
 TASK_ID: S4-UPLOADFIX-001
 TITLE: Upload bugs B1-B3 (retry reuses video, real error messages, agent picks talent)
 BRANCH: feat/s4-S4-UPLOADFIX-001-upload-bugs
 MODEL: sonnet
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - B2: retry reuses the first presign's videoId; no new empty draft per retry
@@ -154,7 +154,7 @@ TASK_ID: S4-JOURNEY-001
 TITLE: Minimal agency creation at sign-up (agency-name field, atomic RPC, owner lands on /dashboard)
 BRANCH: feat/s4-S4-JOURNEY-001-owner-signup
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Register page has an agency-name field; register route rejects a missing name with 400
@@ -171,13 +171,13 @@ NOTES: S — Mandatory security review (auth, app/api/) and rls-tenancy-auditor 
 
 ---
 
-- [ ] **S4-JOURNEY-002** — Team page with invite form
+- [x] **S4-JOURNEY-002** — Team page with invite form
 
 TASK_ID: S4-JOURNEY-002
 TITLE: Team page with invite form (settings/team, pending list, bounded roles)
 BRANCH: feat/s4-S4-JOURNEY-002-team-invites
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - app/(dashboard)/settings/team exists; the form POSTs /api/invitations/send
@@ -199,7 +199,7 @@ TASK_ID: S4-JOURNEY-003
 TITLE: Invite accept retry (validate before claim, release claim on failure)
 BRANCH: feat/s4-S4-JOURNEY-003-accept-retry
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - A 400 (missing password or name) does not consume the token; the retry with the same token succeeds
