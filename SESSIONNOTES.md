@@ -614,3 +614,18 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Outcome:** done
 - **Notes:** Linear had S4-DELETE-001/ERASE-001/SAVER-001 (RES-201..203) as Done though nothing is built → set to Todo; S4-UPLOADFIX-001 (RES-200) → In Review, and `tasks/sprint-4.md` STATUS → in_review (PR #156 open, CI green). Removed the stale `linear-server` MCP entry (retired `/sse` endpoint, 404); the user-scoped `linear` server (`/mcp`) works. CLAUDE.md: S4 marker → in progress; "Comment UI never mounted" marked RESOLVED (#95). GitHub issues left untouched.
 - **Gotcha (if any):** `orchestrate.js sync-check` "merged into release but not done" matches a task ID anywhere in a main commit message — plan PR #153 (which only adds task rows) false-flags all four Wave 1 tasks. Do NOT run `sync-fix` on that output; it would mark unbuilt tasks done.
+
+## 2026-10-23 — JOURNEY-003 review fixes + JOURNEY-001 owner sign-up
+
+- **Task:** S4-JOURNEY-003 (PR #179) review + fixes; S4-JOURNEY-001 build (PR #180)
+- **Models:** planner=opus, executor=sonnet (worktrees), reviewers=hudo-security-reviewer, rls-tenancy-auditor, sonnet code review
+- **Outcome:** partial — both PRs pushed and reviewed; merges, GitGuardian triage and migration 0027 apply left to Ian
+- **Notes:**
+  - **#179:** GitGuardian's 2 hits are a fake test-fixture password from an earlier commit, already replaced at HEAD by a runtime-generated one. It is not used anywhere real, so nothing needs rotating; mark both as false positive.
+  - Review found two real bugs in #179, fixed in 443f24c:
+    - The orphan-reconcile path ignored the supplied password (pre-hijack risk). It now calls `updateUserById(password, email_confirm)`.
+    - A throw after the claim burned the token. It is now wrapped in try/catch with a release.
+  - **#180:** the first commit could delete a pending, _unconfirmed_ account via an unauthenticated re-submit. Fixed in 1713568: an existing `public.users` row returns generic success, the delete is guarded by `created_at`, and the 409 now fires only on `agencies_slug_key`.
+  - The pgTAP for 0027 is unrun locally (no Docker). The migration is not applied.
+  - The Pullfrog/AI Code Review checks fail on every PR because the DeepSeek account is out of credit; this is not a code issue.
+- **Gotcha (if any):** Supabase `signUp` with confirmation ON returns an empty-`identities` user only for an already-_confirmed_ email. An _unconfirmed_ email returns the real existing user, so any "delete the auth user on failure" cleanup must prove this request created it.
