@@ -12,6 +12,12 @@ const PUBLIC_PATHS = [
   '/auth/reset-password',
   '/auth/callback',
   '/guest',
+  // Legal and offline pages — the pages themselves land with LAUNCH-001 / PWA-001
+  // (until then they 404, which is harmless).
+  '/terms',
+  '/privacy',
+  '/dpa',
+  '/offline',
 ]
 
 // Validate at module load time so a missing env var surfaces immediately
@@ -34,11 +40,38 @@ const AGENT_ROLES = new Set(['owner', 'admin_agent', 'agent'])
 /** Roles that can access /talent routes. */
 const TALENT_ROLES = new Set(['owner', 'admin_agent', 'agent', 'talent'])
 
+/** True when the pathname is public (exact match or a sub-path of a public entry). */
+export function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))
+}
+
+export type AccessDecision = 'allow' | 'signin' | 'forbidden'
+
+/**
+ * Pure access decision for a request. `roles` are the user's membership roles
+ * across all agencies (only consulted for role-restricted paths).
+ */
+export function decideAccess({
+  pathname,
+  userPresent,
+  roles,
+}: {
+  pathname: string
+  userPresent: boolean
+  roles: string[]
+}): AccessDecision {
+  if (isPublicPath(pathname)) return 'allow'
+  if (!userPresent) return 'signin'
+  const required = requiredRolesFor(pathname)
+  if (required !== null && !roles.some((role) => required.has(role))) return 'forbidden'
+  return 'allow'
+}
+
 /**
  * Returns the set of roles required for a given pathname, or null if no
  * role restriction applies (authenticated users of any role may access it).
  */
-function requiredRolesFor(pathname: string): Set<string> | null {
+export function requiredRolesFor(pathname: string): Set<string> | null {
   if (pathname === '/admin' || pathname.startsWith('/admin/')) return ADMIN_ROLES
   if (pathname === '/agent' || pathname.startsWith('/agent/')) return AGENT_ROLES
   if (pathname === '/talent' || pathname.startsWith('/talent/')) return TALENT_ROLES
@@ -90,7 +123,7 @@ export async function middleware(request: NextRequest) {
   // TODO: PR-REVIEW: Rate limiting on auth endpoints is handled in S0-AUTH-004
   // via Upstash Redis; not implemented here to avoid Edge Runtime Redis dependency.
   const { pathname } = request.nextUrl
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))
+  const isPublic = isPublicPath(pathname)
 
   // Guest paths (/guest/*) are entirely public — bypass auth middleware.
   // Guest access is validated via signed tokens in the API routes.
@@ -145,8 +178,7 @@ export async function middleware(request: NextRequest) {
       return new NextResponse('Forbidden', { status: 403 })
     }
 
-    const hasRequiredRole = userRoles.some((role) => required.has(role))
-    if (!hasRequiredRole) {
+    if (decideAccess({ pathname, userPresent: true, roles: userRoles }) === 'forbidden') {
       return new NextResponse('Forbidden', { status: 403 })
     }
   }
@@ -162,7 +194,9 @@ export const config = {
      * - _next/image (image optimisation)
      * - favicon.ico
      * - api routes (handled individually)
+     * - common static files, matched by extension anchored to the end of the
+     *   path (robots.txt, sitemap.xml, /sw.js, /manifest.webmanifest, icons...)
      */
-    '/((?!_next/static|_next/image|favicon.ico|api/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest|js|json|woff|woff2|map)$).*)',
   ],
 }
