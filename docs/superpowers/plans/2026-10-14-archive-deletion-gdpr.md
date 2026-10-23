@@ -23,7 +23,7 @@
 | Phase | Sprint | Status | Branch / PR | Tracker |
 |---|---|---|---|---|
 | 0 · Tracking (issues + sprint rows) | S4 | ✅ merged (#153) | `chore/archive-deletion-plan-v2` | umbrella #143; sub-issues #144–#148; bugs #149–#151 |
-| 1 · Upload bugs B1–B3 | S4 | 🔵 PR #156 open, conflicts with main after #172 | `feat/s4-S4-UPLOADFIX-001-upload-bugs` | S4-UPLOADFIX-001 · RES-200 · #149 #150 #151 |
+| 1 · Upload bugs B1–B3 | S4 | ✅ merged (#156; server-side talentId gate in #182) | `feat/s4-S4-UPLOADFIX-001-upload-bugs` | S4-UPLOADFIX-001 · RES-200 · #149 #150 #151 |
 | 2 · Delete path foundation | S4 | ⬜ | — | S4-DELETE-001 · RES-201 · #144 · migrations 0024–0025 |
 | 3 · GDPR erasure | S4 | ⬜ | — | S4-ERASE-001 · RES-202 · #145 |
 | 4 · Space savers | S4 | ⬜ | — | S4-SAVER-001 · RES-203 · #146 · migration 0026 |
