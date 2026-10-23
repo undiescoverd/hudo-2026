@@ -17,11 +17,16 @@ import fs from 'node:fs'
 import type { Comment } from '@/lib/comments'
 import { makeComment } from '../components/comments/comment-fixtures'
 import {
+  COMMENT_GONE_MESSAGE,
+  CommentGoneError,
+  handleCommentGone,
+  markDeleted,
   mergeInsert,
   mergeUpdate,
   patchCommentFields,
   requestDeleteComment,
   requestPatchComment,
+  runCommentDelete,
   runCommentMutation,
 } from './useVideoComments'
 
@@ -91,6 +96,20 @@ describe('mergeUpdate — merge, never replace (a Realtime UPDATE has no users e
     const other = makeComment()
     assert.deepEqual(mergeUpdate([named], { ...other }), [named])
   })
+
+  it('a delete never reverses: a stale UPDATE cannot bring a deleted comment back', () => {
+    const deleted = { ...named, deletedAt: '2026-10-23T12:00:00Z' }
+    // e.g. a resolve that raced the delete arrives afterwards, still saying deletedAt: null
+    const [result] = mergeUpdate([deleted], echo({ resolved: true, deletedAt: null }))
+    assert.equal(result.deletedAt, '2026-10-23T12:00:00Z')
+    assert.equal(result.resolved, true) // its other fields still apply
+  })
+
+  it('keeps the first deletion time when a second delete update arrives', () => {
+    const deleted = { ...named, deletedAt: '2026-10-23T12:00:00Z' }
+    const [result] = mergeUpdate([deleted], echo({ deletedAt: '2026-10-23T13:00:00Z' }))
+    assert.equal(result.deletedAt, '2026-10-23T12:00:00Z')
+  })
 })
 
 describe('mergeInsert — symmetric with mergeUpdate', () => {
@@ -115,6 +134,13 @@ describe('mergeInsert — symmetric with mergeUpdate', () => {
     assert.equal(result[0].authorName, 'Alex Author')
   })
 
+  it('an insert echo arriving after a delete does not resurrect the comment', () => {
+    const deleted = { ...canonical, deletedAt: '2026-10-23T12:00:00Z' }
+    const result = mergeInsert([deleted], rawEcho)
+    assert.equal(result.length, 1)
+    assert.equal(result[0].deletedAt, '2026-10-23T12:00:00Z')
+  })
+
   it('a reply insert (parentId set) dedupes the same way', () => {
     const reply = makeComment({ parentId: canonical.id, authorName: 'Rae Reply' })
     const result = mergeInsert(mergeInsert([canonical], reply), { ...reply, authorName: null })
@@ -133,6 +159,29 @@ describe('patchCommentFields', () => {
     assert.equal(result[0].authorName, 'A')
     assert.equal(result[0].resolved, false)
     assert.equal(result[1], b)
+  })
+})
+
+describe('markDeleted', () => {
+  it('sets deletedAt on the matching comment only', () => {
+    const a = makeComment()
+    const b = makeComment()
+    const result = markDeleted([a, b], a.id, '2026-10-23T12:00:00Z')
+    assert.equal(result[0].deletedAt, '2026-10-23T12:00:00Z')
+    assert.equal(result[1], b)
+  })
+
+  it('keeps an existing deletedAt', () => {
+    const a = makeComment({ deletedAt: '2026-10-23T11:00:00Z' })
+    assert.equal(
+      markDeleted([a], a.id, '2026-10-23T12:00:00Z')[0].deletedAt,
+      '2026-10-23T11:00:00Z'
+    )
+  })
+
+  it('defaults to now', () => {
+    const a = makeComment()
+    assert.notEqual(markDeleted([a], a.id)[0].deletedAt, null)
   })
 })
 
@@ -209,16 +258,23 @@ describe('comment requests', () => {
     assert.equal(seen[0].init.body, undefined)
   })
 
-  it("surfaces the API's own error message (403, 404, 429)", async () => {
+  it("surfaces the API's own error message (403, 429, 500)", async () => {
     for (const [status, error] of [
       [403, 'Access denied'],
-      [404, 'Comment not found'],
       [429, 'Too many requests. Please try again later.'],
+      [500, 'Failed to update comment'],
     ] as const) {
       stubFetch(() => Response.json({ error }, { status }))
       await assert.rejects(requestPatchComment(ID, { resolved: true }), { message: error })
       await assert.rejects(requestDeleteComment(ID), { message: error })
     }
+  })
+
+  it('a 404 is a CommentGoneError (already deleted), for PATCH and DELETE', async () => {
+    stubFetch(() => Response.json({ error: 'Comment not found' }, { status: 404 }))
+    await assert.rejects(requestPatchComment(ID, { resolved: true }), CommentGoneError)
+    await assert.rejects(requestDeleteComment(ID), CommentGoneError)
+    await assert.rejects(requestDeleteComment(ID), { message: COMMENT_GONE_MESSAGE })
   })
 
   it('falls back to the status when the error body is not JSON', async () => {
@@ -241,18 +297,29 @@ describe('comment requests', () => {
 // Optimistic update + rollback
 // ---------------------------------------------------------------------------
 
-describe('runCommentMutation', () => {
-  /** A tiny stand-in for the hook's setComments. */
-  function store(initial: Comment[]) {
-    let state = initial
-    return {
-      get: () => state,
-      apply: (update: (prev: Comment[]) => Comment[]) => {
-        state = update(state)
-      },
-    }
+/** A tiny stand-in for the hook's setComments. */
+function store(initial: Comment[]) {
+  let state = initial
+  return {
+    get: () => state,
+    apply: (update: (prev: Comment[]) => Comment[]) => {
+      state = update(state)
+    },
   }
+}
 
+const RESOLVE = ['resolved', 'resolvedAt', 'resolvedBy'] as const
+const EDIT = ['content'] as const
+
+/** What a raw Realtime row looks like after rowToComment: no users embed. */
+const raw = (c: Comment, over: Partial<Comment>): Comment => ({
+  ...c,
+  authorName: null,
+  authorAvatarUrl: null,
+  ...over,
+})
+
+describe('runCommentMutation', () => {
   const base = makeComment({ authorName: 'Alex Author', authorAvatarUrl: 'https://img/a.png' })
   const other = makeComment({ authorName: 'Other Person' })
 
@@ -263,39 +330,36 @@ describe('runCommentMutation', () => {
       apply: s.apply,
       commentId: base.id,
       previous: base,
+      owned: RESOLVE,
       optimistic: { resolved: true },
       request: async () => {
         seenDuring = s.get().find((c) => c.id === base.id)
-        return { ...base, resolved: true, authorName: null, authorAvatarUrl: null }
+        return raw(base, { resolved: true, resolvedAt: 't1', resolvedBy: 'agent-1' })
       },
     })
     assert.equal(seenDuring?.resolved, true)
   })
 
-  it("on success takes the server's copy but keeps the author fields (merge, not replace)", async () => {
+  it('on success takes only the owned fields from the response and keeps the author fields', async () => {
     const s = store([base, other])
     await runCommentMutation({
       apply: s.apply,
       commentId: base.id,
       previous: base,
-      optimistic: { content: 'edited' },
-      request: async () => ({
-        ...base,
-        content: 'edited',
-        resolvedBy: 'agent-1',
-        authorName: null,
-        authorAvatarUrl: null,
-      }),
+      owned: RESOLVE,
+      optimistic: { resolved: true },
+      request: async () => raw(base, { resolved: true, resolvedAt: 't1', resolvedBy: 'agent-1' }),
     })
     const [result, untouched] = s.get()
-    assert.equal(result.content, 'edited')
-    assert.equal(result.resolvedBy, 'agent-1') // from the server copy
+    assert.equal(result.resolved, true)
+    assert.equal(result.resolvedAt, 't1')
+    assert.equal(result.resolvedBy, 'agent-1')
     assert.equal(result.authorName, 'Alex Author')
     assert.equal(result.authorAvatarUrl, 'https://img/a.png')
     assert.equal(untouched, other)
   })
 
-  it('on failure rolls back exactly the optimistic fields and rethrows the error', async () => {
+  it('on failure restores every owned field and rethrows the error', async () => {
     const resolved = { ...base, resolved: true, resolvedAt: 't0', resolvedBy: 'agent-0' }
     const s = store([resolved, other])
     await assert.rejects(
@@ -303,8 +367,8 @@ describe('runCommentMutation', () => {
         apply: s.apply,
         commentId: resolved.id,
         previous: resolved,
-        // unresolve
-        optimistic: { resolved: false, resolvedAt: null, resolvedBy: null },
+        owned: RESOLVE,
+        optimistic: { resolved: false }, // unresolve
         request: async () => {
           assert.equal(s.get()[0].resolved, false) // optimistic state is visible meanwhile
           throw new Error('Access denied')
@@ -322,6 +386,7 @@ describe('runCommentMutation', () => {
         apply: s.apply,
         commentId: base.id,
         previous: base,
+        owned: EDIT,
         optimistic: { content: 'my new text' },
         request: async () => {
           throw new Error('Too many requests. Please try again later.')
@@ -332,32 +397,235 @@ describe('runCommentMutation', () => {
     assert.equal(s.get()[0].content, base.content)
   })
 
-  it('rollback keeps a Realtime change to a field it did not touch', async () => {
+  it('(a) A resolves, B resolves first via Realtime, A fails: B wins, no mixed state', async () => {
     const s = store([base])
     await assert.rejects(
       runCommentMutation({
         apply: s.apply,
         commentId: base.id,
         previous: base,
+        owned: RESOLVE,
         optimistic: { resolved: true },
         request: async () => {
-          // while in flight, someone else edits the content (arrives via Realtime)
+          // B's resolve is broadcast while A's request is in flight...
           s.apply((prev) =>
-            mergeUpdate(prev, {
-              ...base,
-              content: 'edited by someone else',
-              authorName: null,
-              authorAvatarUrl: null,
-            })
+            mergeUpdate(prev, raw(base, { resolved: true, resolvedAt: 'tB', resolvedBy: 'B' }))
+          )
+          // ...and then A's request fails (say, rate limited).
+          throw new Error('Too many requests. Please try again later.')
+        },
+      })
+    )
+    const [result] = s.get()
+    assert.equal(result.resolved, true)
+    assert.equal(result.resolvedBy, 'B')
+    assert.equal(result.resolvedAt, 'tB')
+    assert.equal(result.authorName, 'Alex Author')
+  })
+
+  it('(a, unresolve) A unresolves, B unresolves first, A fails: stays unresolved', async () => {
+    const resolved = { ...base, resolved: true, resolvedAt: 't0', resolvedBy: 'agent-0' }
+    const s = store([resolved])
+    await assert.rejects(
+      runCommentMutation({
+        apply: s.apply,
+        commentId: resolved.id,
+        previous: resolved,
+        owned: RESOLVE,
+        optimistic: { resolved: false },
+        request: async () => {
+          s.apply((prev) =>
+            mergeUpdate(prev, raw(base, { resolved: false, resolvedAt: null, resolvedBy: null }))
           )
           throw new Error('boom')
         },
       })
     )
     const [result] = s.get()
-    assert.equal(result.resolved, false) // rolled back
-    assert.equal(result.content, 'edited by someone else') // kept
-    assert.equal(result.authorName, 'Alex Author')
+    assert.equal(result.resolved, false)
+    assert.equal(result.resolvedBy, null)
+  })
+
+  it('(b) A edits, B resolves via Realtime before A responds: the confirm does not reset resolved', async () => {
+    const s = store([base])
+    await runCommentMutation({
+      apply: s.apply,
+      commentId: base.id,
+      previous: base,
+      owned: EDIT,
+      optimistic: { content: 'edited' },
+      request: async () => {
+        s.apply((prev) =>
+          mergeUpdate(prev, raw(base, { resolved: true, resolvedAt: 'tB', resolvedBy: 'B' }))
+        )
+        // The PATCH response was read before B's write landed, so it still says unresolved.
+        return raw(base, { content: 'edited', resolved: false, resolvedAt: null, resolvedBy: null })
+      },
+    })
+    const [result] = s.get()
+    assert.equal(result.content, 'edited')
+    assert.equal(result.resolved, true)
+    assert.equal(result.resolvedBy, 'B')
+  })
+
+  it('a failed edit does not undo a resolve that arrived meanwhile', async () => {
+    const s = store([base])
+    await assert.rejects(
+      runCommentMutation({
+        apply: s.apply,
+        commentId: base.id,
+        previous: base,
+        owned: EDIT,
+        optimistic: { content: 'edited' },
+        request: async () => {
+          s.apply((prev) => mergeUpdate(prev, raw(base, { resolved: true, resolvedBy: 'B' })))
+          throw new Error('boom')
+        },
+      })
+    )
+    const [result] = s.get()
+    assert.equal(result.content, base.content) // rolled back
+    assert.equal(result.resolved, true) // kept
+  })
+
+  it("a failed edit keeps someone else's newer edit of the same comment", async () => {
+    const s = store([base])
+    await assert.rejects(
+      runCommentMutation({
+        apply: s.apply,
+        commentId: base.id,
+        previous: base,
+        owned: EDIT,
+        optimistic: { content: 'mine' },
+        request: async () => {
+          s.apply((prev) => mergeUpdate(prev, raw(base, { content: 'theirs' })))
+          throw new Error('boom')
+        },
+      })
+    )
+    assert.equal(s.get()[0].content, 'theirs')
+  })
+
+  it('a 404 marks the comment deleted instead of rolling back, and rethrows', async () => {
+    const s = store([base, other])
+    await assert.rejects(
+      runCommentMutation({
+        apply: s.apply,
+        commentId: base.id,
+        previous: base,
+        owned: EDIT,
+        optimistic: { content: 'edited' },
+        request: async () => {
+          throw new CommentGoneError()
+        },
+      }),
+      CommentGoneError
+    )
+    const [gone, untouched] = s.get()
+    assert.notEqual(gone.deletedAt, null)
+    assert.equal(untouched, other)
+  })
+})
+
+describe('runCommentDelete', () => {
+  const base = makeComment({ authorName: 'Alex Author' })
+  const other = makeComment()
+
+  it('sets deletedAt once the request resolves', async () => {
+    const s = store([base, other])
+    await runCommentDelete({ apply: s.apply, commentId: base.id, request: async () => {} })
+    const [deleted, untouched] = s.get()
+    assert.notEqual(deleted.deletedAt, null)
+    assert.equal(deleted.authorName, 'Alex Author')
+    assert.equal(untouched, other)
+  })
+
+  it('is not optimistic: the list is untouched while the request is in flight', async () => {
+    const s = store([base])
+    let during: string | null | undefined
+    await runCommentDelete({
+      apply: s.apply,
+      commentId: base.id,
+      request: async () => {
+        during = s.get()[0].deletedAt
+      },
+    })
+    assert.equal(during, null)
+  })
+
+  it('leaves the list untouched, and rethrows, when the request rejects', async () => {
+    const s = store([base, other])
+    await assert.rejects(
+      runCommentDelete({
+        apply: s.apply,
+        commentId: base.id,
+        request: async () => {
+          throw new Error('Access denied')
+        },
+      }),
+      { message: 'Access denied' }
+    )
+    assert.deepEqual(s.get(), [base, other])
+  })
+
+  it('a 404 (already deleted) heals the list locally and rethrows the CommentGoneError', async () => {
+    const s = store([base])
+    await assert.rejects(
+      runCommentDelete({
+        apply: s.apply,
+        commentId: base.id,
+        request: async () => {
+          throw new CommentGoneError()
+        },
+      }),
+      CommentGoneError
+    )
+    assert.notEqual(s.get()[0].deletedAt, null)
+  })
+})
+
+describe('handleCommentGone', () => {
+  it('turns a CommentGoneError into a notice and resolves', async () => {
+    const notices: string[] = []
+    const wrapped = handleCommentGone(
+      async () => {
+        throw new CommentGoneError()
+      },
+      (m) => notices.push(m)
+    )
+    await wrapped?.()
+    assert.deepEqual(notices, [COMMENT_GONE_MESSAGE])
+  })
+
+  it('rethrows any other error and shows no notice', async () => {
+    const notices: string[] = []
+    const wrapped = handleCommentGone(
+      async () => {
+        throw new Error('Access denied')
+      },
+      (m) => notices.push(m)
+    )
+    await assert.rejects(wrapped!(), { message: 'Access denied' })
+    assert.deepEqual(notices, [])
+  })
+
+  it('passes arguments through and resolves normally on success', async () => {
+    const calls: unknown[][] = []
+    const wrapped = handleCommentGone(
+      async (...args: unknown[]) => {
+        calls.push(args)
+      },
+      () => assert.fail('no notice expected')
+    )
+    await wrapped?.('id-1', true)
+    assert.deepEqual(calls, [['id-1', true]])
+  })
+
+  it('no action in, none out (so no button is offered without a handler)', () => {
+    assert.equal(
+      handleCommentGone(undefined, () => {}),
+      undefined
+    )
   })
 })
 
@@ -422,19 +690,16 @@ describe('useVideoComments — source invariants', () => {
     }
   })
 
-  it('resolve and edit are optimistic and go through PATCH', () => {
+  it('resolve and edit go through PATCH and runCommentMutation with their owned fields', () => {
     assert.match(source, /requestPatchComment\(commentId, \{ resolved \}\)/)
     assert.match(source, /requestPatchComment\(commentId, \{ content \}\)/)
-    assert.match(source, /runCommentMutation\(\{ apply: setComments/)
+    assert.match(source, /RESOLVE_FIELDS = \['resolved', 'resolvedAt', 'resolvedBy'\]/)
+    assert.match(source, /EDIT_FIELDS = \['content'\]/)
   })
 
-  it('delete waits for the server before changing the list, and never hard-deletes', () => {
-    const body = source.slice(source.indexOf('const deleteComment'))
-    assert.ok(
-      body.indexOf('await requestDeleteComment(commentId)') <
-        body.indexOf('handleDelete(commentId)'),
-      'the list may only change after the DELETE succeeds'
-    )
+  it('delete goes through DELETE and runCommentDelete, and never hard-deletes', () => {
+    assert.match(source, /runCommentDelete\(\{/)
+    assert.match(source, /requestDeleteComment\(commentId\)/)
     assert.doesNotMatch(source, /\.delete\(\)/)
   })
 })
