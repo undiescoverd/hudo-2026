@@ -304,7 +304,7 @@ TASK_ID: S4-REVIEW-001
 TITLE: Upload a new version from the video page (GitHub #190)
 BRANCH: feat/s4-S4-REVIEW-001-new-version
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_progress
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - "Upload new version" on the video page for the owning talent and agent+ in the video's agency; hidden from other talent and guests
