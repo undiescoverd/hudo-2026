@@ -20,9 +20,9 @@ const PUBLIC_PATHS = [
   '/offline',
 ]
 
-// Validate at module load time so a missing env var surfaces immediately
-// rather than silently on the first request. Next.js Edge Runtime loads the
-// middleware module once per worker, so this acts as a startup check.
+// Validate at module load time so a missing env var surfaces on the first
+// request with a clear message. Note this fails EVERY matched request
+// (including public /guest and /auth pages), not just protected ones.
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
@@ -45,28 +45,6 @@ export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))
 }
 
-export type AccessDecision = 'allow' | 'signin' | 'forbidden'
-
-/**
- * Pure access decision for a request. `roles` are the user's membership roles
- * across all agencies (only consulted for role-restricted paths).
- */
-export function decideAccess({
-  pathname,
-  userPresent,
-  roles,
-}: {
-  pathname: string
-  userPresent: boolean
-  roles: string[]
-}): AccessDecision {
-  if (isPublicPath(pathname)) return 'allow'
-  if (!userPresent) return 'signin'
-  const required = requiredRolesFor(pathname)
-  if (required !== null && !roles.some((role) => required.has(role))) return 'forbidden'
-  return 'allow'
-}
-
 /**
  * Returns the set of roles required for a given pathname, or null if no
  * role restriction applies (authenticated users of any role may access it).
@@ -79,18 +57,34 @@ export function requiredRolesFor(pathname: string): Set<string> | null {
 }
 
 /**
- * Next.js middleware for route protection.
+ * True when a signed-in user holding `roles` (across all their agencies) may
+ * not open `pathname`. We do not enforce a specific agency context here.
+ */
+export function isForbidden(pathname: string, roles: string[]): boolean {
+  const required = requiredRolesFor(pathname)
+  return required !== null && !roles.some((role) => required.has(role))
+}
+
+/**
+ * Next.js middleware for route protection (static files and /api are excluded
+ * by the matcher below; API routes do their own auth).
  *
- * - Refreshes the Supabase session cookie on every request so auth state
- *   persists across page reloads without requiring a client-side hydration step.
- * - Redirects unauthenticated users to /auth/signin for protected routes.
- * - Passes through requests to public paths and static assets.
- * - Enforces role-based access on /admin, /agent, and /talent routes by
- *   querying the memberships table. Returns 403 for insufficient role.
- * - /guest/* paths are public — guests are authenticated via signed tokens
- *   in API routes, not via Supabase Auth.
+ * - Public paths pass straight through. /guest/* is public because guests are
+ *   authenticated via signed tokens in API routes, not via Supabase Auth.
+ * - Otherwise refreshes the Supabase session cookie, so Server Components see
+ *   the session without a client-side hydration step.
+ * - Redirects unauthenticated users to /auth/signin?redirect=<path>.
+ * - Enforces role-based access on /admin, /agent and /talent by querying the
+ *   memberships table. Returns 403 for insufficient role.
+ * - Fails closed: a getUser failure redirects to sign-in, a memberships failure
+ *   returns 403.
  */
 export async function middleware(request: NextRequest) {
+  const { pathname, search } = request.nextUrl
+  if (isPublicPath(pathname)) {
+    return NextResponse.next()
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -117,18 +111,21 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  // Refresh session — required for Server Components to pick up the session.
-  // On Supabase failure, fail closed: protected routes redirect to sign-in
-  // (user does not receive the protected content — this IS fail-closed behaviour).
-  // TODO: PR-REVIEW: Rate limiting on auth endpoints is handled in S0-AUTH-004
-  // via Upstash Redis; not implemented here to avoid Edge Runtime Redis dependency.
-  const { pathname } = request.nextUrl
-  const isPublic = isPublicPath(pathname)
-
-  // Guest paths (/guest/*) are entirely public — bypass auth middleware.
-  // Guest access is validated via signed tokens in the API routes.
-  if (isPublic) {
-    return response
+  // getUser() may refresh and rotate the session tokens via setAll above. Any
+  // response other than `response` must carry those cookies too, or the browser
+  // keeps a stale refresh token and the session can be revoked as reused.
+  const withSessionCookies = (res: NextResponse) => {
+    response.cookies.getAll().forEach((cookie) => res.cookies.set(cookie))
+    return res
+  }
+  const forbidden = () => withSessionCookies(new NextResponse('Forbidden', { status: 403 }))
+  const toSignIn = (withRedirect: boolean) => {
+    const signInUrl = request.nextUrl.clone()
+    signInUrl.pathname = '/auth/signin'
+    signInUrl.search = ''
+    // Preserve the intended destination, query included (e.g. a ?t= deep link).
+    if (withRedirect) signInUrl.searchParams.set('redirect', pathname + search)
+    return withSessionCookies(NextResponse.redirect(signInUrl))
   }
 
   let user = null
@@ -138,26 +135,14 @@ export async function middleware(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[middleware] supabase.auth.getUser() failed:', message)
-    const signInUrl = request.nextUrl.clone()
-    signInUrl.pathname = '/auth/signin'
-    return NextResponse.redirect(signInUrl)
+    return toSignIn(false)
   }
 
-  // Redirect unauthenticated users to the sign-in page, preserving the intended destination.
   if (!user) {
-    const signInUrl = request.nextUrl.clone()
-    signInUrl.pathname = '/auth/signin'
-    signInUrl.searchParams.set('redirect', pathname)
-    return NextResponse.redirect(signInUrl)
+    return toSignIn(true)
   }
 
-  // Role-based access check for role-restricted routes.
-  const required = requiredRolesFor(pathname)
-  if (required !== null) {
-    // Fetch the user's roles across all their agency memberships.
-    // We only need to know if they hold at least one role from the required set —
-    // we do not enforce a specific agency context at the middleware layer.
-    let userRoles: string[] = []
+  if (requiredRolesFor(pathname) !== null) {
     try {
       const { data, error } = await supabase
         .from('memberships')
@@ -165,21 +150,18 @@ export async function middleware(request: NextRequest) {
         .eq('user_id', user.id)
 
       if (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        console.error('[middleware] memberships query failed:', message)
-        // Fail closed: treat as unauthorised
-        return new NextResponse('Forbidden', { status: 403 })
+        console.error('[middleware] memberships query failed:', error.message)
+        return forbidden()
       }
 
-      userRoles = (data ?? []).map((m: { role: string }) => m.role)
+      const roles = (data ?? []).map((m: { role: string }) => m.role)
+      if (isForbidden(pathname, roles)) {
+        return forbidden()
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       console.error('[middleware] memberships query threw:', message)
-      return new NextResponse('Forbidden', { status: 403 })
-    }
-
-    if (decideAccess({ pathname, userPresent: true, roles: userRoles }) === 'forbidden') {
-      return new NextResponse('Forbidden', { status: 403 })
+      return forbidden()
     }
   }
 

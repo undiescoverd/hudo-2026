@@ -10,14 +10,17 @@ type Mw = typeof MiddlewareModule
 let config: Mw['config']
 let isPublicPath: Mw['isPublicPath']
 let requiredRolesFor: Mw['requiredRolesFor']
-let decideAccess: Mw['decideAccess']
+let isForbidden: Mw['isForbidden']
 let middleware: Mw['middleware']
 let matcher: RegExp
 
 // Dynamic import so the env vars above are set before the module-level check runs.
 before(async () => {
-  ;({ config, isPublicPath, requiredRolesFor, decideAccess, middleware } =
+  ;({ config, isPublicPath, requiredRolesFor, isForbidden, middleware } =
     await import('./middleware'))
+  // Approximation of Next's compiled matcher (it also allows an optional
+  // /_next/data/<build> prefix, .json suffix and trailing slash). Verified to
+  // agree with getMiddlewareMatchers() on every path tested below.
   matcher = new RegExp('^' + config.matcher[0] + '$')
 })
 
@@ -103,23 +106,19 @@ test('requiredRolesFor', () => {
   assert.equal(requiredRolesFor('/administrator'), null)
 })
 
-test('decideAccess role rules', () => {
-  const d = (pathname: string, roles: string[], userPresent = true) =>
-    decideAccess({ pathname, userPresent, roles })
-  assert.equal(d('/admin', ['owner']), 'allow')
-  assert.equal(d('/admin/x', ['admin_agent']), 'allow')
-  assert.equal(d('/admin', ['agent']), 'forbidden')
-  assert.equal(d('/admin', ['talent']), 'forbidden')
-  assert.equal(d('/agent', ['agent']), 'allow')
-  assert.equal(d('/agent', ['talent']), 'forbidden')
-  assert.equal(d('/talent', ['talent']), 'allow')
-  assert.equal(d('/talent', ['agent']), 'allow')
-  assert.equal(d('/talent', []), 'forbidden')
-  assert.equal(d('/dashboard', []), 'allow')
-  assert.equal(d('/videos', ['talent']), 'allow')
-  assert.equal(d('/dashboard', [], false), 'signin')
-  assert.equal(d('/talent', [], false), 'signin')
-  assert.equal(d('/guest/abc', [], false), 'allow')
+test('isForbidden role rules', () => {
+  assert.equal(isForbidden('/admin', ['owner']), false)
+  assert.equal(isForbidden('/admin/x', ['admin_agent']), false)
+  assert.equal(isForbidden('/admin', ['agent']), true)
+  assert.equal(isForbidden('/admin', ['talent']), true)
+  assert.equal(isForbidden('/agent', ['agent']), false)
+  assert.equal(isForbidden('/agent', ['talent']), true)
+  assert.equal(isForbidden('/talent', ['talent']), false)
+  assert.equal(isForbidden('/talent', ['agent']), false)
+  assert.equal(isForbidden('/talent', []), true)
+  assert.equal(isForbidden('/agent', ['talent', 'agent']), false)
+  assert.equal(isForbidden('/dashboard', []), false)
+  assert.equal(isForbidden('/videos', ['talent']), false)
 })
 
 test('middleware redirects signed-out request to sign-in', async () => {
@@ -128,6 +127,21 @@ test('middleware redirects signed-out request to sign-in', async () => {
   const loc = new URL(res.headers.get('location')!)
   assert.equal(loc.pathname, '/auth/signin')
   assert.equal(loc.searchParams.get('redirect'), '/dashboard')
+})
+
+test('middleware keeps the query string in redirect, not on the sign-in URL', async () => {
+  const res = await middleware(new NextRequest('http://localhost/videos/abc?t=30'))
+  const loc = new URL(res.headers.get('location')!)
+  assert.equal(loc.pathname, '/auth/signin')
+  assert.equal(loc.searchParams.get('redirect'), '/videos/abc?t=30')
+  assert.equal(loc.searchParams.get('t'), null)
+})
+
+test('middleware redirects signed-out request on a role-gated path', async () => {
+  const res = await middleware(new NextRequest('http://localhost/talent'))
+  const loc = new URL(res.headers.get('location')!)
+  assert.equal(loc.pathname, '/auth/signin')
+  assert.equal(loc.searchParams.get('redirect'), '/talent')
 })
 
 test('middleware lets public paths through', async () => {
