@@ -650,3 +650,23 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - JOURNEY-001's CI RLS job applied 0027 and its pgTAP passed.
   - **Held back:** LAUNCH-001 (it edits the register page, which conflicts with #180) and DELETE-001 (the archive plan orders Phase 1 #156 first).
 - **Gotcha (if any):** a route handler can get behavioural tests without `mock.module`. Stub global `fetch` for Supabase and Upstash, and wrap the call in `requestAsyncStorage.run` so `cookies()` works. See the #180 and #182 route tests. Prefer this over regex-on-source tests for auth gates. Also, in zsh `"$B:lib/x"` applies the `:l` lowercase modifier; write `"${B}:lib/x"`.
+
+## 2026-10-23 02:14 — Migration 0027 applied to hudo-dev + hudo-staging (psql via pooler)
+
+- **Task:** apply `0027_create_agency_with_owner` (S4-JOURNEY-001) to the live projects
+- **Models:** planner=opus
+- **Outcome:** done (tracking superseded by the repair entry below)
+- **Notes:** applied with psql through the IPv4 session pooler, in one transaction per DB (`\i` the file, then insert the tracking row with the file contents as `statements`), followed by `NOTIFY pgrst, 'reload schema'`. Tracked as name `0027_create_agency_with_owner` under MCP-style timestamp versions: dev `20261023021347`, staging `20261023021359`. Verified on both: SECURITY DEFINER, `search_path=''`, EXECUTE for service_role only.
+- **Gotcha (if any):** the direct host `db.<ref>.supabase.co` is IPv6-only (ECONNREFUSED here). Use `aws-1-eu-west-2.pooler.supabase.com:5432` with user `postgres.<ref>`; `aws-0-…` returns "tenant not found". Percent-encode the password.
+
+## 2026-10-23 — Migration-tracking repair (`db push` usable) + per-migration effect probe
+
+- **Task:** chore/migration-tracking-repair. Make `schema_migrations` on dev and staging track the repo versions `0001`… so `supabase db push` works
+- **Models:** planner=opus, executor=sonnet (`scripts/db-push.sh` + test)
+- **Outcome:** partial. The script, skill, hook and docs are done. The DB repair is waiting on approval for writes to the shared DBs.
+- **Notes:**
+  - A read-only effect probe of all 24 files (on both DBs) showed that **0004, 0006, 0008 and 0010 were never applied on either DB**, despite the 2026-06-16 "functionally complete" claim. Staging also lacks 0013's two `guest_links` indexes. Everything else is present, and dev matches staging apart from whitespace in function bodies.
+  - 0015's `REVOKE ALL … FROM PUBLIC` leaves `anon` and `authenticated` able to EXECUTE `increment_guest_link_view` (Supabase grants them directly). Separate follow-up.
+  - Plan (Ian's choice b): repair the verified versions with `migration repair`, apply 0006/0008/0010 (+0013 on staging), and decide 0004 separately. 0004's `deleted_at IS NULL` on `comments_select` likely stops Realtime from delivering soft-delete UPDATEs to other viewers, but CI's pgTAP asserts that filter (`tests/rls/comments.test.sql`).
+  - The process now goes through `scripts/db-push.sh`. MCP `apply_migration` is banned in the skill, the hook text and CLAUDE.md.
+- **Gotcha (if any):** "untracked but idempotent ⇒ effectively applied" was false for 4 of 7 untracked files. Probe each migration's effect before `migration repair --status applied`.
