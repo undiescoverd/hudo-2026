@@ -9,6 +9,8 @@ import { validateCreateInput } from '@/lib/comments'
 import type {
   CommentInput as CommentInputType,
   buildCommentPayload as BuildPayload,
+  buildOptimisticComment as BuildOptimistic,
+  resolveCommentTarget as ResolveTarget,
 } from './CommentInput'
 import { makeComment } from './comment-fixtures'
 
@@ -37,9 +39,8 @@ describe('CommentInput — source invariants', () => {
     assert.match(source, /COMMENT_BODY_MAX_LENGTH|2000/)
   })
 
-  it('handles Enter to submit and Shift+Enter for newline', () => {
-    assert.match(source, /Shift/)
-    assert.match(source, /'Enter'|"Enter"/)
+  it('uses the shared key handling (Enter sends, Shift+Enter newline, Escape cancels a reply)', () => {
+    assert.match(source, /editKeyAction\(e\.key, e\.shiftKey\)/)
   })
 
   it('posts to the comments collection endpoint', () => {
@@ -70,26 +71,6 @@ describe('CommentInput — source invariants', () => {
 
   it('disables submit when body is empty after trim', () => {
     assert.match(source, /\.trim\(\)/)
-  })
-})
-
-describe('CommentInput — comment_type derivation invariants', () => {
-  let source: string
-
-  before(() => {
-    const currentDir = path.dirname(fileURLToPath(import.meta.url))
-    const filePath = path.resolve(currentDir, 'CommentInput.tsx')
-    source = fs.readFileSync(filePath, 'utf8')
-  })
-
-  it('emits range when both rangeIn and rangeOut are set', () => {
-    assert.match(source, /'range'|"range"/)
-    assert.match(source, /rangeIn/)
-    assert.match(source, /rangeOut/)
-  })
-
-  it('emits point otherwise', () => {
-    assert.match(source, /'point'|"point"/)
   })
 })
 
@@ -154,6 +135,128 @@ describe('buildCommentPayload', () => {
   })
 })
 
+describe('resolveCommentTarget', () => {
+  let resolveCommentTarget: typeof ResolveTarget
+
+  before(async () => {
+    ;(globalThis as { React?: unknown }).React = React
+    ;({ resolveCommentTarget } = await import('./CommentInput'))
+  })
+
+  const player = { rangeIn: null, rangeOut: null, currentTime: 42.5 }
+
+  it('a plain comment is a point at the current time', () => {
+    assert.deepEqual(resolveCommentTarget({ replyTo: null, ...player }), {
+      commentType: 'point',
+      startSec: 42.5,
+      endSec: null,
+      parentId: null,
+    })
+  })
+
+  it('a comment with both range marks set in order is a range', () => {
+    assert.deepEqual(
+      resolveCommentTarget({ replyTo: null, rangeIn: 10, rangeOut: 20, currentTime: 42.5 }),
+      { commentType: 'range', startSec: 10, endSec: 20, parentId: null }
+    )
+  })
+
+  it('a missing or out-of-order range falls back to a point at the current time', () => {
+    for (const [rangeIn, rangeOut] of [
+      [10, null],
+      [null, 20],
+      [20, 10],
+      [15, 15],
+    ] as const) {
+      const target = resolveCommentTarget({ replyTo: null, rangeIn, rangeOut, currentTime: 42.5 })
+      assert.equal(target.commentType, 'point', `${rangeIn}-${rangeOut}`)
+      assert.equal(target.startSec, 42.5)
+      assert.equal(target.endSec, null)
+    }
+  })
+
+  it("a reply is a point at its parent's timestamp, with the parent id", () => {
+    const parent = makeComment({ timestampSeconds: 83 })
+    assert.deepEqual(resolveCommentTarget({ replyTo: parent, ...player }), {
+      commentType: 'point',
+      startSec: 83,
+      endSec: null,
+      parentId: parent.id,
+    })
+  })
+
+  it("a reply ignores the player's range and current time", () => {
+    const parent = makeComment({ timestampSeconds: 83 })
+    const target = resolveCommentTarget({
+      replyTo: parent,
+      rangeIn: 10,
+      rangeOut: 20,
+      currentTime: 42.5,
+    })
+    assert.equal(target.commentType, 'point')
+    assert.equal(target.startSec, 83)
+    assert.equal(target.endSec, null)
+  })
+
+  it('a reply to a range comment still uses only its start', () => {
+    const parent = makeComment({
+      commentType: 'range',
+      timestampSeconds: 5,
+      endTimestampSeconds: 9,
+    })
+    const target = resolveCommentTarget({ replyTo: parent, ...player })
+    assert.deepEqual([target.commentType, target.startSec, target.endSec], ['point', 5, null])
+  })
+})
+
+describe('buildOptimisticComment', () => {
+  let buildOptimisticComment: typeof BuildOptimistic
+
+  before(async () => {
+    ;(globalThis as { React?: unknown }).React = React
+    ;({ buildOptimisticComment } = await import('./CommentInput'))
+  })
+
+  const common = {
+    tempId: 'temp-1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed',
+    nowIso: '2026-10-23T12:00:00.000Z',
+    versionId: 'ver',
+    agencyId: 'agency',
+    userId: 'me',
+    content: 'Agreed',
+    authorName: 'Me Myself',
+  }
+
+  it('a reply carries its parent id and the parent timestamp, so it nests at once', () => {
+    const comment = buildOptimisticComment({
+      ...common,
+      commentType: 'point',
+      startSec: 83,
+      endSec: null,
+      parentId: 'parent-1',
+    })
+    assert.equal(comment.parentId, 'parent-1')
+    assert.equal(comment.timestampSeconds, 83)
+    assert.equal(comment.id, common.tempId)
+    assert.equal(comment.authorName, 'Me Myself')
+  })
+
+  it('a top-level comment has no parent and starts unresolved and undeleted', () => {
+    const comment = buildOptimisticComment({
+      ...common,
+      commentType: 'range',
+      startSec: 5,
+      endSec: 9,
+      parentId: null,
+    })
+    assert.equal(comment.parentId, null)
+    assert.equal(comment.endTimestampSeconds, 9)
+    assert.equal(comment.resolved, false)
+    assert.equal(comment.deletedAt, null)
+    assert.equal(comment.createdAt, common.nowIso)
+  })
+})
+
 describe('CommentInput — reply composer (rendered)', () => {
   let CommentInput: typeof CommentInputType
   let VideoPlayerProvider: React.ComponentType<{ children: React.ReactNode }>
@@ -198,37 +301,5 @@ describe('CommentInput — reply composer (rendered)', () => {
     assert.match(html, />Reply</)
     assert.match(html, />Cancel</)
     assert.doesNotMatch(html, />point<|>range<|>Post</)
-  })
-})
-
-describe('CommentInput — reply wiring (source invariants)', () => {
-  let source: string
-
-  before(() => {
-    const currentDir = path.dirname(fileURLToPath(import.meta.url))
-    source = fs.readFileSync(path.resolve(currentDir, 'CommentInput.tsx'), 'utf8')
-  })
-
-  it('posts through buildCommentPayload with the parent id', () => {
-    assert.match(
-      source,
-      /buildCommentPayload\(\{ content: trimmed, commentType, startSec, endSec, parentId \}\)/
-    )
-    assert.match(source, /const parentId = replyTo\?\.id \?\? null/)
-  })
-
-  it('the optimistic reply carries the parent id so it nests immediately', () => {
-    assert.match(source, /endTimestampSeconds: endSec,\s*parentId,/)
-    assert.doesNotMatch(source, /parentId: null,/)
-  })
-
-  it('a reply takes the parent timestamp as a point comment, ignoring the player range', () => {
-    assert.match(source, /replyTo\.timestampSeconds/)
-    assert.match(source, /const hasRange =\s*!isReply &&/)
-  })
-
-  it('tells the thread when the reply posted, and cancels on Escape', () => {
-    assert.match(source, /onPosted\?\.\(\)/)
-    assert.match(source, /e\.key === 'Escape' && onCancel/)
   })
 })

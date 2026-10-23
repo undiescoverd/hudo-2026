@@ -9,7 +9,11 @@ import assert from 'node:assert/strict'
 import { before, describe, it } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { CommentItem as CommentItemType } from './CommentItem'
+import type {
+  CommentItem as CommentItemType,
+  INITIAL_ITEM_STATE as Initial,
+  itemReducer as ItemReducer,
+} from './CommentItem'
 import { AUTHOR_ID, OTHER_ID, makeComment } from './comment-fixtures'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -255,41 +259,87 @@ describe('CommentItem — rendered actions (permission matrix)', () => {
   })
 })
 
-describe('CommentItem — action wiring (source invariants)', () => {
-  let source: string
+describe('itemReducer — edit / delete-confirm / busy / error states', () => {
+  let itemReducer: typeof ItemReducer
+  let INITIAL_ITEM_STATE: typeof Initial
 
-  before(() => {
-    const currentDir = path.dirname(fileURLToPath(import.meta.url))
-    source = fs.readFileSync(path.resolve(currentDir, 'CommentItem.tsx'), 'utf8')
+  before(async () => {
+    ;(globalThis as { React?: unknown }).React = React
+    ;({ itemReducer, INITIAL_ITEM_STATE } = await import('./CommentItem'))
   })
 
-  it('asks for confirmation before deleting, with Cancel focused first', () => {
-    assert.match(source, /setMode\('confirmDelete'\)/)
-    assert.match(source, /Delete this comment\?/)
-    assert.match(source, /cancelDeleteRef\.current\?\.focus\(\)/)
-    // The only call into onDelete is the confirm button's handler.
-    assert.equal([...source.matchAll(/run\(onDelete\)/g)].length, 1)
+  it('starts viewing, idle, with no error', () => {
+    assert.deepEqual(INITIAL_ITEM_STATE, { mode: 'view', busy: false, error: null })
   })
 
-  it('shows a failed action inline as an alert', () => {
-    assert.match(source, /role="alert"/)
-    assert.match(source, /setError\(err instanceof Error \? err\.message/)
+  it('open edit / open confirmDelete switch mode and clear an old error', () => {
+    const failed = { mode: 'view' as const, busy: false, error: 'Access denied' }
+    assert.deepEqual(itemReducer(failed, { type: 'open', mode: 'edit' }), {
+      mode: 'edit',
+      busy: false,
+      error: null,
+    })
+    assert.deepEqual(itemReducer(failed, { type: 'open', mode: 'confirmDelete' }), {
+      mode: 'confirmDelete',
+      busy: false,
+      error: null,
+    })
   })
 
-  it('edit saves on Enter, newline on Shift+Enter, cancels on Escape', () => {
-    assert.match(source, /e\.key === 'Enter' && !e\.shiftKey/)
-    assert.match(source, /e\.key === 'Escape'/)
+  it('close goes back to viewing and clears the error, without touching busy', () => {
+    const editing = { mode: 'edit' as const, busy: false, error: 'boom' }
+    assert.deepEqual(itemReducer(editing, { type: 'close' }), {
+      mode: 'view',
+      busy: false,
+      error: null,
+    })
   })
 
-  it('edits are sent trimmed', () => {
-    assert.match(source, /onEdit\(draft\.trim\(\)\)/)
+  it('start marks the item busy and clears the error, keeping the mode', () => {
+    const editing = { mode: 'edit' as const, busy: false, error: 'boom' }
+    assert.deepEqual(itemReducer(editing, { type: 'start' }), {
+      mode: 'edit',
+      busy: true,
+      error: null,
+    })
   })
 
-  it('gates every button on getCommentPermissions, not on role strings', () => {
-    assert.match(
-      source,
-      /getCommentPermissions\(comment, \{ role: viewerRole, userId: viewerUserId \}\)/
+  it('a saved edit goes back to viewing, idle', () => {
+    const saving = { mode: 'edit' as const, busy: true, error: null }
+    assert.deepEqual(itemReducer(saving, { type: 'succeeded' }), {
+      mode: 'view',
+      busy: false,
+      error: null,
+    })
+  })
+
+  it('a failed edit stays in the edit box with the message, so the draft can be retried', () => {
+    const saving = { mode: 'edit' as const, busy: true, error: null }
+    assert.deepEqual(
+      itemReducer(saving, { type: 'failed', message: 'Too many requests.', mode: 'edit' }),
+      { mode: 'edit', busy: false, error: 'Too many requests.' }
     )
-    assert.doesNotMatch(source, /viewerRole ===|role === '/)
+  })
+
+  it('a failed delete returns to viewing with the message', () => {
+    const deleting = { mode: 'confirmDelete' as const, busy: true, error: null }
+    assert.deepEqual(
+      itemReducer(deleting, { type: 'failed', message: 'Access denied', mode: 'view' }),
+      { mode: 'view', busy: false, error: 'Access denied' }
+    )
+  })
+
+  it('a full cycle: confirm, start, fail, retry, succeed', () => {
+    let state = INITIAL_ITEM_STATE
+    state = itemReducer(state, { type: 'open', mode: 'confirmDelete' })
+    state = itemReducer(state, { type: 'start' })
+    assert.equal(state.busy, true)
+    state = itemReducer(state, { type: 'failed', message: 'nope', mode: 'view' })
+    assert.deepEqual(state, { mode: 'view', busy: false, error: 'nope' })
+    state = itemReducer(state, { type: 'open', mode: 'confirmDelete' })
+    assert.equal(state.error, null)
+    state = itemReducer(state, { type: 'start' })
+    state = itemReducer(state, { type: 'succeeded' })
+    assert.deepEqual(state, INITIAL_ITEM_STATE)
   })
 })

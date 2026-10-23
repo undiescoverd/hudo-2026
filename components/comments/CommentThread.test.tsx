@@ -1,6 +1,8 @@
 /**
- * CommentThread — nesting, the "Comment deleted" placeholder vs hidden, and which
- * comments in a thread offer Reply. Real server renders.
+ * CommentThread — nesting, the "Comment deleted" placeholder, and which comments in
+ * a thread offer Reply. Real server renders. (Which threads render at all, and
+ * dropping deleted replies, is buildThreads' job: see comment-threads.test.ts and
+ * the CommentPanel render tests.)
  *
  * Run: npx tsx --test components/comments/CommentThread.test.tsx
  */
@@ -83,23 +85,6 @@ describe('CommentThread (rendered)', () => {
     assert.match(html, /Delete comment by/)
   })
 
-  it('a deleted comment WITHOUT replies renders nothing', () => {
-    assert.equal(render(makeComment({ deletedAt: DELETED }), []), '')
-  })
-
-  it('a deleted comment whose replies are all deleted renders nothing', () => {
-    const parent = makeComment({ deletedAt: DELETED })
-    assert.equal(render(parent, [makeComment({ parentId: parent.id, deletedAt: DELETED })]), '')
-  })
-
-  it('a live comment with only deleted replies renders just the comment', () => {
-    const parent = makeComment({ content: 'alone now' })
-    const gone = makeComment({ parentId: parent.id, deletedAt: DELETED, content: 'gone reply' })
-    const html = render(parent, [gone])
-    assert.match(html, /alone now/)
-    assert.doesNotMatch(html, /gone reply|Comment deleted/)
-  })
-
   it('Reply appears on the top-level comment only, never on its replies', () => {
     const parent = makeComment({ authorName: 'Parent Person' })
     const reply = makeComment({ parentId: parent.id, authorName: 'Reply Person' })
@@ -129,15 +114,11 @@ describe('CommentThread — wiring (source invariants)', () => {
     source = fs.readFileSync(path.resolve(dir, 'CommentThread.tsx'), 'utf8')
   })
 
-  it('opens the reply composer for the PARENT, closes it on cancel or after posting', () => {
+  it('the reply composer replies to the PARENT, and closes on Cancel or after posting', () => {
     assert.match(source, /replyTo=\{parent\}/)
-    assert.match(source, /onCancel=\{\(\) => setReplying\(false\)\}/)
-    assert.match(source, /onPosted=\{\(\) => setReplying\(false\)\}/)
-  })
-
-  it('never offers Reply on the replies (no onReply passed to them)', () => {
-    const repliesBlock = source.slice(source.indexOf('visibleReplies(replies).map'))
-    assert.doesNotMatch(repliesBlock.split('replying &&')[0], /onReply/)
+    assert.match(source, /onCancel=\{closeReply\}/)
+    assert.match(source, /onPosted=\{closeReply\}/)
+    assert.match(source, /replyButtonRef\.current\?\.focus\(\)/) // focus back on the Reply button
   })
 
   it('binds each action to the comment it was rendered for', () => {

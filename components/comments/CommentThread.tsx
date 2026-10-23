@@ -1,14 +1,14 @@
 // components/comments/CommentThread.tsx
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Comment } from '@/lib/comments'
 import { CommentItem } from './CommentItem'
 import { CommentInput, type CommentInputProps } from './CommentInput'
-import { isThreadVisible, visibleReplies } from './comment-threads'
 
 interface CommentThreadProps {
   parent: Comment
+  /** Live replies, already filtered and ordered (see buildThreads). */
   replies: Comment[]
   onSeek: (t: number) => void
   /** The viewer's agency role and user id; with no role no actions render. */
@@ -21,6 +21,10 @@ interface CommentThreadProps {
   replyInput?: Omit<CommentInputProps, 'replyTo' | 'onCancel' | 'onPosted'>
 }
 
+/**
+ * A top-level comment with its replies. A deleted parent renders as a "Comment
+ * deleted" placeholder (CommentItem) with its replies intact.
+ */
 export function CommentThread({
   parent,
   replies,
@@ -33,12 +37,21 @@ export function CommentThread({
   replyInput,
 }: CommentThreadProps) {
   const [replying, setReplying] = useState(false)
+  const replyButtonRef = useRef<HTMLButtonElement>(null)
+  const returnFocus = useRef(false)
 
-  // Hide a deleted parent that has no live replies; with replies it stays as a
-  // "Comment deleted" placeholder (CommentItem) and its replies remain.
-  if (!isThreadVisible(parent, replies)) {
-    return null
+  // Closing the composer (Cancel, Escape, or a posted reply) removes the focused
+  // textarea, so hand focus back to the Reply button that opened it.
+  const closeReply = () => {
+    returnFocus.current = true
+    setReplying(false)
   }
+  useEffect(() => {
+    if (!replying && returnFocus.current) {
+      returnFocus.current = false
+      replyButtonRef.current?.focus()
+    }
+  }, [replying])
 
   const actionsFor = (comment: Comment) => ({
     viewerRole,
@@ -55,8 +68,9 @@ export function CommentThread({
         onSeek={onSeek}
         {...actionsFor(parent)}
         onReply={replyInput ? () => setReplying(true) : undefined}
+        replyButtonRef={replyButtonRef}
       />
-      {visibleReplies(replies).map((reply) => (
+      {replies.map((reply) => (
         <CommentItem
           key={reply.id}
           comment={reply}
@@ -69,8 +83,8 @@ export function CommentThread({
         <CommentInput
           {...replyInput}
           replyTo={parent}
-          onCancel={() => setReplying(false)}
-          onPosted={() => setReplying(false)}
+          onCancel={closeReply}
+          onPosted={closeReply}
         />
       )}
     </div>

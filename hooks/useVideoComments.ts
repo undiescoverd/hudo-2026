@@ -207,6 +207,18 @@ export async function runCommentDelete(opts: {
   apply((prev) => markDeleted(prev, commentId))
 }
 
+/** Run `after` once `action` has resolved, not if it rejects. No action in, none out. */
+export function afterAction<A extends unknown[]>(
+  action: ((...args: A) => Promise<void>) | undefined,
+  after: () => void
+): ((...args: A) => Promise<void>) | undefined {
+  if (!action) return undefined
+  return async (...args: A) => {
+    await action(...args)
+    after()
+  }
+}
+
 /**
  * Wrap a comment action so that "the comment is already gone" (after the list has
  * been healed) becomes a notice instead of an error: the comment disappearing is

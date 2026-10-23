@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import { COMMENT_BODY_MAX_LENGTH, type Comment } from '@/lib/comments'
 import { formatTimecode } from '@/lib/format-time'
 import { useVideoPlayerContext } from '@/components/player/VideoPlayer'
+import { editKeyAction } from './comment-keys'
 import { TEMP_COMMENT_ID_PREFIX } from './comment-permissions'
 
 export interface CommentInputProps {
@@ -28,20 +29,82 @@ export interface CommentInputProps {
   onPosted?: () => void
 }
 
-/** The POST body for the comments collection endpoint. */
-export function buildCommentPayload(input: {
-  content: string
+/** Where a new comment goes: what kind it is, its timestamps and its parent. */
+export interface CommentTarget {
   commentType: 'point' | 'range'
   startSec: number
   endSec: number | null
   parentId: string | null
-}): Record<string, unknown> {
+}
+
+/**
+ * Work out the target of a new comment. A reply is a point comment at its parent's
+ * timestamp (the player's range is ignored). Otherwise it is a range when both
+ * range marks are set and in order, else a point at the current time.
+ */
+export function resolveCommentTarget(input: {
+  replyTo: Comment | null
+  rangeIn: number | null
+  rangeOut: number | null
+  currentTime: number
+}): CommentTarget {
+  const { replyTo, rangeIn, rangeOut, currentTime } = input
+  if (replyTo) {
+    return {
+      commentType: 'point',
+      startSec: replyTo.timestampSeconds,
+      endSec: null,
+      parentId: replyTo.id,
+    }
+  }
+  if (rangeIn !== null && rangeOut !== null && rangeOut > rangeIn) {
+    return { commentType: 'range', startSec: rangeIn, endSec: rangeOut, parentId: null }
+  }
+  return { commentType: 'point', startSec: currentTime, endSec: null, parentId: null }
+}
+
+/** The POST body for the comments collection endpoint. */
+export function buildCommentPayload(
+  input: CommentTarget & { content: string }
+): Record<string, unknown> {
   return {
     content: input.content,
     comment_type: input.commentType,
     timestamp_seconds: input.startSec,
     ...(input.endSec !== null ? { end_timestamp_seconds: input.endSec } : {}),
     ...(input.parentId !== null ? { parent_id: input.parentId } : {}),
+  }
+}
+
+/** The not-yet-saved comment shown while the POST is in flight; a reply nests under its parent at once. */
+export function buildOptimisticComment(
+  input: CommentTarget & {
+    tempId: string
+    nowIso: string
+    versionId: string
+    agencyId: string
+    userId: string
+    content: string
+    authorName: string | null
+  }
+): Comment {
+  return {
+    id: input.tempId,
+    videoVersionId: input.versionId,
+    agencyId: input.agencyId,
+    userId: input.userId,
+    content: input.content,
+    commentType: input.commentType,
+    timestampSeconds: input.startSec,
+    endTimestampSeconds: input.endSec,
+    parentId: input.parentId,
+    resolved: false,
+    resolvedAt: null,
+    resolvedBy: null,
+    deletedAt: null,
+    createdAt: input.nowIso,
+    authorName: input.authorName,
+    authorAvatarUrl: null,
   }
 }
 
@@ -64,19 +127,13 @@ export function CommentInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const isReply = replyTo !== null
-  const parentId = replyTo?.id ?? null
-  const hasRange =
-    !isReply &&
-    player.rangeIn !== null &&
-    player.rangeOut !== null &&
-    player.rangeOut > player.rangeIn
-  const commentType: 'point' | 'range' = hasRange ? 'range' : 'point'
-  const startSec = replyTo
-    ? replyTo.timestampSeconds
-    : hasRange
-      ? (player.rangeIn as number)
-      : player.currentTime
-  const endSec = hasRange ? (player.rangeOut as number) : null
+  const { commentType, startSec, endSec, parentId } = resolveCommentTarget({
+    replyTo,
+    rangeIn: player.rangeIn,
+    rangeOut: player.rangeOut,
+    currentTime: player.currentTime,
+  })
+  const hasRange = commentType === 'range'
 
   // A reply composer opens on demand, so put the caret in it.
   useEffect(() => {
@@ -94,24 +151,19 @@ export function CommentInput({
 
     const tempId = `${TEMP_COMMENT_ID_PREFIX}${crypto.randomUUID()}`
     const nowIso = new Date().toISOString()
-    const optimistic: Comment = {
-      id: tempId,
-      videoVersionId: versionId,
+    const optimistic = buildOptimisticComment({
+      tempId,
+      nowIso,
+      versionId,
       agencyId,
       userId,
       content: trimmed,
       commentType,
-      timestampSeconds: startSec,
-      endTimestampSeconds: endSec,
+      startSec,
+      endSec,
       parentId,
-      resolved: false,
-      resolvedAt: null,
-      resolvedBy: null,
-      deletedAt: null,
-      createdAt: nowIso,
       authorName: currentUserName ?? null,
-      authorAvatarUrl: null,
-    }
+    })
 
     const originalBody = body
     onOptimisticInsert(optimistic)
@@ -173,10 +225,11 @@ export function CommentInput({
   ])
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    const action = editKeyAction(e.key, e.shiftKey)
+    if (action === 'save') {
       e.preventDefault()
       void submit()
-    } else if (e.key === 'Escape' && onCancel) {
+    } else if (action === 'cancel' && onCancel) {
       e.preventDefault()
       onCancel()
     }

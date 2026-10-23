@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { buildThreads, isThreadVisible, visibleReplies } from './comment-threads'
+import { buildThreads } from './comment-threads'
 import { makeComment } from './comment-fixtures'
 
 const DELETED = '2026-10-23T11:00:00.000Z'
@@ -93,29 +93,70 @@ describe('buildThreads', () => {
   })
 })
 
-describe('thread visibility', () => {
-  it('visibleReplies drops deleted replies', () => {
-    const live = makeComment({ parentId: 'p' })
-    const gone = makeComment({ parentId: 'p', deletedAt: DELETED })
-    assert.deepEqual(visibleReplies([live, gone]), [live])
+describe('buildThreads — only visible threads, with live replies', () => {
+  it('drops deleted replies from a live parent', () => {
+    const parent = makeComment({ content: 'alone now' })
+    const live = makeComment({ parentId: parent.id })
+    const gone = makeComment({ parentId: parent.id, deletedAt: DELETED })
+    const [thread] = buildThreads([parent, live, gone])
+    assert.deepEqual(thread.replies, [live])
   })
 
-  it('a live parent is always visible', () => {
-    assert.equal(isThreadVisible(makeComment(), []), true)
+  it('keeps a live parent even when every reply is deleted', () => {
+    const parent = makeComment()
+    const gone = makeComment({ parentId: parent.id, deletedAt: DELETED })
+    const threads = buildThreads([parent, gone])
+    assert.equal(threads.length, 1)
+    assert.deepEqual(threads[0].replies, [])
   })
 
-  it('a deleted parent with a live reply is visible (placeholder + replies)', () => {
+  it('keeps a deleted parent that has a live reply (placeholder + replies)', () => {
     const parent = makeComment({ deletedAt: DELETED })
-    assert.equal(isThreadVisible(parent, [makeComment({ parentId: parent.id })]), true)
+    const reply = makeComment({ parentId: parent.id })
+    const threads = buildThreads([parent, reply])
+    assert.equal(threads.length, 1)
+    assert.equal(threads[0].parent, parent)
+    assert.deepEqual(threads[0].replies, [reply])
   })
 
-  it('a deleted parent with no replies is hidden', () => {
-    assert.equal(isThreadVisible(makeComment({ deletedAt: DELETED }), []), false)
+  it('drops a deleted parent with no replies', () => {
+    assert.deepEqual(buildThreads([makeComment({ deletedAt: DELETED })]), [])
   })
 
-  it('a deleted parent whose replies are all deleted is hidden', () => {
+  it('drops a deleted parent whose replies are all deleted', () => {
     const parent = makeComment({ deletedAt: DELETED })
-    const replies = [makeComment({ parentId: parent.id, deletedAt: DELETED })]
-    assert.equal(isThreadVisible(parent, replies), false)
+    const reply = makeComment({ parentId: parent.id, deletedAt: DELETED })
+    assert.deepEqual(buildThreads([parent, reply]), [])
+  })
+
+  it('drops an orphan group whose replies are all deleted (nothing to show after a reload)', () => {
+    const gone = makeComment({
+      parentId: 'c0000000-0000-4000-8000-00000000dead',
+      deletedAt: DELETED,
+    })
+    assert.deepEqual(buildThreads([gone]), [])
+  })
+
+  it('an empty result is what the panel treats as "No comments yet"', () => {
+    const only = makeComment({ deletedAt: DELETED })
+    assert.equal(buildThreads([only]).length, 0)
+  })
+})
+
+describe('buildThreads — ordering', () => {
+  it('breaks timestamp ties by creation time, whatever order the list is in', () => {
+    const first = makeComment({ timestampSeconds: 20, createdAt: '2026-10-23T10:01:00.000Z' })
+    const second = makeComment({ timestampSeconds: 20, createdAt: '2026-10-23T10:02:00.000Z' })
+    const third = makeComment({ timestampSeconds: 20, createdAt: '2026-10-23T10:03:00.000Z' })
+    for (const input of [
+      [first, second, third],
+      [third, first, second],
+      [second, third, first],
+    ]) {
+      assert.deepEqual(
+        buildThreads(input).map((t) => t.parent.id),
+        [first.id, second.id, third.id]
+      )
+    }
   })
 })

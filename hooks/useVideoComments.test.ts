@@ -18,6 +18,7 @@ import type { Comment } from '@/lib/comments'
 import { makeComment } from '../components/comments/comment-fixtures'
 import {
   COMMENT_GONE_MESSAGE,
+  afterAction,
   CommentGoneError,
   handleCommentGone,
   markDeleted,
@@ -581,6 +582,41 @@ describe('runCommentDelete', () => {
       CommentGoneError
     )
     assert.notEqual(s.get()[0].deletedAt, null)
+  })
+})
+
+describe('afterAction', () => {
+  it('runs the follow-up after the action resolves', async () => {
+    const order: string[] = []
+    const wrapped = afterAction(
+      async (id: string) => {
+        order.push(`action ${id}`)
+      },
+      () => order.push('after')
+    )
+    await wrapped?.('c1')
+    assert.deepEqual(order, ['action c1', 'after'])
+  })
+
+  it('does not run the follow-up when the action rejects, and rethrows', async () => {
+    let ran = false
+    const wrapped = afterAction(
+      async () => {
+        throw new Error('Access denied')
+      },
+      () => {
+        ran = true
+      }
+    )
+    await assert.rejects(wrapped!(), { message: 'Access denied' })
+    assert.equal(ran, false)
+  })
+
+  it('no action in, none out', () => {
+    assert.equal(
+      afterAction(undefined, () => {}),
+      undefined
+    )
   })
 })
 

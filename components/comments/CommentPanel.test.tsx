@@ -63,20 +63,6 @@ describe('CommentPanel — source invariants', () => {
     assert.match(source, /c\.deletedAt === null/)
     assert.match(source, /Comments · \{visibleCount\}/)
   })
-
-  it('forwards the viewer role + user id and the comment actions to each thread', () => {
-    assert.match(source, /viewerRole\?: string \| null/)
-    assert.match(source, /viewerRole=\{viewerRole\}/)
-    assert.match(source, /viewerUserId=\{userId\}/)
-    assert.match(source, /onResolve=\{onResolveComment\}/)
-    assert.match(source, /onEdit=\{onEditComment\}/)
-    assert.match(source, /onDelete=\{onDeleteComment\}/)
-  })
-
-  it('decides the empty state from threads that render, not from raw comments', () => {
-    assert.match(source, /buildThreads\(comments\)\.filter\(\(t\) => isThreadVisible/)
-    assert.match(source, /threads\.length === 0/)
-  })
 })
 
 describe('CommentPanel (rendered in a real player provider)', () => {
@@ -206,5 +192,16 @@ describe('CommentPanel (rendered in a real player provider)', () => {
   it('without a viewer role no comment shows any action', () => {
     const html = render([makeComment({ userId: AUTHOR_ID })])
     assert.doesNotMatch(html, /Comment actions/)
+  })
+
+  it('the list is a programmatic focus target (tabIndex -1) so focus survives a delete', () => {
+    const html = render([makeComment()])
+    assert.match(html, /<div tabindex="-1" class="flex-1 overflow-y-auto[^"]*"/)
+  })
+
+  it('has an always-present status region for notices, empty until one is raised', () => {
+    const html = render([makeComment()])
+    assert.match(html, /<div role="status"><\/div>/)
+    assert.doesNotMatch(html, /Dismiss notice/)
   })
 })

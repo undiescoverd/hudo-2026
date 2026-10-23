@@ -1,9 +1,10 @@
 // components/comments/CommentItem.tsx
 'use client'
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useReducer, useRef, useState, type KeyboardEvent, type Ref } from 'react'
 import { COMMENT_BODY_MAX_LENGTH, type Comment } from '@/lib/comments'
 import { formatRelativeTime, formatTimecode } from '@/lib/format-time'
+import { editKeyAction } from './comment-keys'
 import { getCommentPermissions, validateEditDraft } from './comment-permissions'
 
 interface CommentItemProps {
@@ -18,6 +19,8 @@ interface CommentItemProps {
    *  The async ones reject with a user-facing message when the request fails
    *  (the list has already been rolled back by then). */
   onReply?: () => void
+  /** Lets the thread return focus to the Reply button when its composer closes. */
+  replyButtonRef?: Ref<HTMLButtonElement>
   onResolve?: (resolved: boolean) => Promise<void>
   onEdit?: (content: string) => Promise<void>
   onDelete?: () => Promise<void>
@@ -56,6 +59,47 @@ const dangerButtonClass =
 
 type Mode = 'view' | 'edit' | 'confirmDelete'
 
+export interface ItemState {
+  mode: Mode
+  /** An action is in flight: its buttons are disabled. */
+  busy: boolean
+  /** The last failed action's message, shown inline. */
+  error: string | null
+}
+
+export type ItemEvent =
+  | { type: 'open'; mode: 'edit' | 'confirmDelete' }
+  | { type: 'close' }
+  | { type: 'start' }
+  | { type: 'succeeded' }
+  | { type: 'failed'; message: string; mode: Mode }
+
+export const INITIAL_ITEM_STATE: ItemState = { mode: 'view', busy: false, error: null }
+
+/**
+ * The item's inline edit / delete-confirm / action states.
+ * - open: enter the edit box or the delete confirm (clears any old error)
+ * - close: back to viewing without acting (Cancel)
+ * - start: an action began
+ * - succeeded: the action finished, back to viewing
+ * - failed: the action failed; show the message and go to `mode` (the edit box
+ *   stays open so the draft can be retried; a failed delete returns to viewing)
+ */
+export function itemReducer(state: ItemState, event: ItemEvent): ItemState {
+  switch (event.type) {
+    case 'open':
+      return { ...state, mode: event.mode, error: null }
+    case 'close':
+      return { ...state, mode: 'view', error: null }
+    case 'start':
+      return { ...state, busy: true, error: null }
+    case 'succeeded':
+      return { mode: 'view', busy: false, error: null }
+    case 'failed':
+      return { mode: event.mode, busy: false, error: event.message }
+  }
+}
+
 export function CommentItem({
   comment,
   onSeek,
@@ -63,14 +107,13 @@ export function CommentItem({
   viewerRole,
   viewerUserId,
   onReply,
+  replyButtonRef,
   onResolve,
   onEdit,
   onDelete,
 }: CommentItemProps) {
-  const [mode, setMode] = useState<Mode>('view')
+  const [{ mode, busy, error }, dispatch] = useReducer(itemReducer, INITIAL_ITEM_STATE)
   const [draft, setDraft] = useState(comment.content)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   const editRef = useRef<HTMLTextAreaElement>(null)
   const cancelDeleteRef = useRef<HTMLButtonElement>(null)
@@ -93,6 +136,12 @@ export function CommentItem({
     }
   }, [mode])
 
+  // A failed save keeps the edit box open; put the caret back so the draft can be
+  // retried even if clicking Save moved focus to a button that is now disabled.
+  useEffect(() => {
+    if (error && mode === 'edit') editRef.current?.focus()
+  }, [error, mode])
+
   const isDeleted = comment.deletedAt !== null
   const isResolved = comment.resolved
   const authorLabel = comment.authorName ?? 'Unknown'
@@ -103,7 +152,8 @@ export function CommentItem({
 
   if (isDeleted) {
     return (
-      <div className={`${isReply ? 'ml-8' : ''} px-3 py-2`}>
+      // Only top-level comments ever render deleted: a deleted reply is dropped from its thread.
+      <div className="px-3 py-2">
         <p className="text-xs italic text-gray-500 dark:text-gray-400">Comment deleted</p>
       </div>
     )
@@ -118,68 +168,59 @@ export function CommentItem({
 
   const draftProblem = validateEditDraft(draft, comment.content)
 
-  /** Run an action with the buttons disabled meanwhile; a failure shows inline. */
-  async function run(action: () => Promise<void>): Promise<boolean> {
-    setBusy(true)
-    setError(null)
+  /** Run an action with the buttons disabled meanwhile; a failure shows inline and goes to `failMode`. */
+  async function run(action: () => Promise<void>, failMode: Mode): Promise<void> {
+    dispatch({ type: 'start' })
     try {
       await action()
-      return true
+      dispatch({ type: 'succeeded' })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
-      return false
-    } finally {
-      setBusy(false)
+      const message = err instanceof Error ? err.message : 'Something went wrong. Please try again.'
+      dispatch({ type: 'failed', message, mode: failMode })
     }
   }
 
   const startEdit = () => {
     setDraft(comment.content)
-    setError(null)
-    setMode('edit')
+    dispatch({ type: 'open', mode: 'edit' })
   }
 
   const cancelEdit = () => {
+    if (busy) return
     refocus.current = 'edit'
-    setError(null)
-    setMode('view')
+    dispatch({ type: 'close' })
   }
 
-  const saveEdit = async () => {
-    if (!onEdit || draftProblem !== null) return
-    if (await run(() => onEdit(draft.trim()))) {
-      refocus.current = 'edit'
-      setMode('view')
-    }
+  const saveEdit = () => {
+    if (!onEdit || busy || draftProblem !== null) return
+    refocus.current = 'edit'
+    void run(() => onEdit(draft.trim()), 'edit')
   }
 
   const handleEditKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      void saveEdit()
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      cancelEdit()
-    }
+    const action = editKeyAction(e.key, e.shiftKey)
+    if (!action) return
+    e.preventDefault()
+    if (action === 'save') saveEdit()
+    else cancelEdit()
   }
 
   const cancelDelete = () => {
     refocus.current = 'delete'
-    setMode('view')
+    dispatch({ type: 'close' })
   }
 
-  const confirmDelete = async () => {
-    if (!onDelete) return
-    // The list only changes once the server confirms, so this item stays mounted
-    // while "Deleting…" shows, and a failure can be reported right here. Success
-    // turns it into the deleted placeholder (or removes it).
-    await run(onDelete)
+  // The list only changes once the server confirms, so this item stays mounted
+  // while "Deleting…" shows, and a failure can be reported right here. Success
+  // turns it into the deleted placeholder (or removes it).
+  const confirmDelete = () => {
+    if (!onDelete || busy) return
     refocus.current = 'delete'
-    setMode('view')
+    void run(onDelete, 'view')
   }
 
   const toggleResolve = () => {
-    if (onResolve) void run(() => onResolve(!isResolved))
+    if (onResolve) void run(() => onResolve(!isResolved), 'view')
   }
 
   return (
@@ -238,9 +279,11 @@ export function CommentItem({
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={handleEditKeyDown}
               rows={3}
-              disabled={busy}
+              // readOnly, not disabled: a disabled textarea drops focus, and a failed save
+              // must leave the caret where it was so the draft can be retried.
+              readOnly={busy}
               aria-label={`Edit comment by ${authorLabel}`}
-              className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+              className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 read-only:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
             />
             <div className="mt-2 flex items-center justify-between gap-2">
               <span
@@ -263,7 +306,7 @@ export function CommentItem({
                 </button>
                 <button
                   type="button"
-                  onClick={() => void saveEdit()}
+                  onClick={saveEdit}
                   disabled={busy || draftProblem !== null}
                   className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -302,7 +345,7 @@ export function CommentItem({
             </button>
             <button
               type="button"
-              onClick={() => void confirmDelete()}
+              onClick={confirmDelete}
               disabled={busy}
               className={dangerButtonClass}
             >
@@ -315,6 +358,7 @@ export function CommentItem({
           <div role="group" aria-label="Comment actions" className="mt-1.5 flex flex-wrap gap-1">
             {showReply && (
               <button
+                ref={replyButtonRef}
                 type="button"
                 onClick={onReply}
                 disabled={busy}
@@ -351,10 +395,7 @@ export function CommentItem({
               <button
                 ref={deleteButtonRef}
                 type="button"
-                onClick={() => {
-                  setError(null)
-                  setMode('confirmDelete')
-                }}
+                onClick={() => dispatch({ type: 'open', mode: 'confirmDelete' })}
                 disabled={busy}
                 aria-label={`Delete comment by ${authorLabel}`}
                 className={dangerButtonClass}
