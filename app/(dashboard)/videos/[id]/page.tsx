@@ -114,7 +114,19 @@ export default function VideoPage({ params }: Props) {
         >
           ← Back to videos
         </Link>
-        <GuestShareButton videoId={params.id} />
+        <div className="flex items-center gap-2">
+          {/* agencyId is only set once the versions endpoint returned 200, which
+              proves the viewer is the owning talent or a non-talent member. */}
+          {agencyId && (
+            <Link
+              href={`/upload?videoId=${params.id}`}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              Upload new version
+            </Link>
+          )}
+          <GuestShareButton videoId={params.id} />
+        </div>
       </div>
       <div className="px-4 pt-2">
         <VersionSelector

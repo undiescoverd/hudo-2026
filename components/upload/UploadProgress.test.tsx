@@ -40,7 +40,10 @@ describe('upload page — wiring (B1/B2)', () => {
 
   it('holds the first presign videoId in a ref and clears it on "Choose different file"', () => {
     assert.match(source, /draftVideoIdRef/)
-    assert.equal((source.match(/draftVideoIdRef\.current = undefined/g) ?? []).length >= 2, true)
+    assert.equal(
+      (source.match(/draftVideoIdRef\.current = targetVideoId/g) ?? []).length >= 2,
+      true
+    )
   })
 
   it('sends talentId only for agent-class roles and requires a talent pick', () => {

@@ -102,4 +102,22 @@ describe('VideoPage — source invariants', () => {
     assert.match(source, /<CommentPanel[\s\S]*?onOptimisticInsert=\{handleCommentInsert\}/)
     assert.match(source, /<CommentPanel[\s\S]*?onOptimisticRollback=\{handleCommentRollback\}/)
   })
+  it('shows an accessible "Upload new version" link to /upload?videoId only when agencyId is set', () => {
+    assert.match(
+      source,
+      /\{agencyId && \(\s*<Link\s+href=\{`\/upload\?videoId=\$\{params\.id\}`\}[\s\S]*?>\s*Upload new version\s*<\/Link>/
+    )
+  })
+
+  it('starts with no active version so VersionSelector auto-selects the newest after a redirect', () => {
+    assert.match(source, /useState<string \| null>\(null\)/)
+    const selector = fs.readFileSync(
+      path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        '../../../../components/versions/VersionSelector.tsx'
+      ),
+      'utf8'
+    )
+    assert.match(selector, /!activeVersionId && [\w.]+\.length > 0/)
+  })
 })

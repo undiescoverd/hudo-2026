@@ -746,3 +746,23 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Dependencies extended:** `S4-ACCESS-001` now waits for REVIEW-001–003 (its note already says it runs after UI changes). `S4-LAUNCH-002` now waits for REVIEW-002, because its smoke flow covers "comment and resolve".
   - **Linear:** this session has no `LINEAR_API_KEY` and the Linear connector failed to connect, so the four issues still need creating, each title starting with its exact task ID. Until then, `sync-check` shows `⚠ ERROR` for them (Failure Log, 2026-06-16 Linear entry).
 - **Gotcha (if any):** a cloud session can push only its designated branch unless the user OKs another. When one PR is already open on it, ask early for a second branch rather than queueing unrelated work behind the merge.
+
+## 2026-10-23 22:30 — S4-REVIEW-001 new-version upload (built; live check pending)
+
+- **Task:** S4-REVIEW-001 (GitHub #190)
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** partial. The code, tests and build are done, in a draft PR. The live Preview check of a v2 upload, as talent and as agent, is still to do.
+- **Notes:**
+  - **Video page:** an "Upload new version" link to `/upload?videoId=<id>`. It shows only once the versions endpoint has returned 200, which happens only for the owning talent or a non-talent member. Guests never load this page.
+  - **Upload page, version mode:**
+    - It reads the `searchParams` prop, not `useSearchParams`, which needs a Suspense boundary at build time.
+    - It looks up the title and `agency_id` with an RLS-scoped query. On a miss it falls back to the membership agency, so presign returns its 404/403.
+    - There is no talent picker and no `talentId` in this mode.
+    - `draftVideoIdRef` is seeded with the target and reset to it, so no path creates a new video.
+    - It skips MetadataForm and redirects to `/videos/<id>`. VersionSelector auto-selects the newest version there.
+  - **Added a `beforeunload` warning while uploading.** The spec assumed the upload page already had one; it didn't.
+  - No API route changed. The status flip and notification for talent uploads stay server-side, as before.
+  - Other sessions are building REVIEW-002 (#197), REVIEW-004 (#196) and the callback rate limit (#195) in parallel.
+  - Linear sync failed: there's no `LINEAR_API_KEY` in the cloud. Run `sync-fix` locally.
+  - The DeepSeek review bots are still out of credit, so the pr-fix loop was skipped. Not a security surface (UI only), so no hudo-security-reviewer run. Opus reviewed the diff.
+- **Gotcha (if any):** `orchestrate.js start` checks out the task's `feat/…` branch. In a cloud session tied to one designated branch, switch back before committing.
