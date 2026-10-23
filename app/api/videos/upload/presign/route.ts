@@ -15,6 +15,7 @@ import {
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit, requireUploadRole } from '@/lib/api-helpers'
 import { isGracePeriodExpired } from '@/lib/plan-gates'
+import { isValidUUID } from '@/lib/validation'
 
 /**
  * POST /api/videos/upload/presign
@@ -142,6 +143,14 @@ export async function POST(request: NextRequest) {
     role !== 'talent' && typeof talentId === 'string' && talentId.trim() ? talentId.trim() : null
 
   if (agentTalentId) {
+    // Malformed ids would fail PostgREST's uuid cast with a 500; reject up front.
+    if (!isValidUUID(agentTalentId)) {
+      return NextResponse.json(
+        { error: 'Selected talent is not a member of this agency' },
+        { status: 400 }
+      )
+    }
+
     const { data: talentMembership, error: talentMembershipError } = await admin
       .from('memberships')
       .select('user_id')
