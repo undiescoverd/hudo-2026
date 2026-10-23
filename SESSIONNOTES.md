@@ -629,3 +629,16 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - The pgTAP for 0027 is unrun locally (no Docker). The migration is not applied.
   - The Pullfrog/AI Code Review checks fail on every PR because the DeepSeek account is out of credit; this is not a code issue.
 - **Gotcha (if any):** Supabase `signUp` with confirmation ON returns an empty-`identities` user only for an already-_confirmed_ email. An _unconfirmed_ email returns the real existing user, so any "delete the auth user on failure" cleanup must prove this request created it.
+
+## 2026-10-23 — JOURNEY-002 team page, #156 conflict, presign talentId gate
+
+- **Task:** S4-JOURNEY-002 (PR #181); unblock S4-UPLOADFIX-001 (PR #156); presign `talentId` membership fix (PR #182)
+- **Models:** planner=opus, executor=sonnet (worktrees), reviewers=hudo-security-reviewer, sonnet code review
+- **Outcome:** done (PRs open; merges left to Ian)
+- **Notes:**
+  - **#181:** the Team page plus `InviteForm`. `INVITE_PERMISSIONS` moved to `lib/invite-permissions.ts`, because a route module can't export constants. Both reviews: merge.
+  - **#156:** merged `origin/main` into the branch (no force-push). The only conflict was in SESSIONNOTES.
+  - **#182:** the presign route trusted an agent-supplied `talentId` (pre-existing on main; #156 is the first UI that sends it). It now checks for a talent membership in `agencyId`, and returns 400 on a malformed or non-member id. It has behavioural tests that call the real handler. Merge before #156.
+  - JOURNEY-001's CI RLS job applied 0027 and its pgTAP passed.
+  - **Held back:** LAUNCH-001 (it edits the register page, which conflicts with #180) and DELETE-001 (the archive plan orders Phase 1 #156 first).
+- **Gotcha (if any):** a route handler can get behavioural tests without `mock.module`. Stub global `fetch` for Supabase and Upstash, and wrap the call in `requestAsyncStorage.run` so `cookies()` works. See the #180 and #182 route tests. Prefer this over regex-on-source tests for auth gates. Also, in zsh `"$B:lib/x"` applies the `:l` lowercase modifier; write `"${B}:lib/x"`.
