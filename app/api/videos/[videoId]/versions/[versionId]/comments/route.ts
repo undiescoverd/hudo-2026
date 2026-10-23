@@ -14,6 +14,8 @@ import { enqueueCommentNotification } from '@/lib/notifications'
 import { checkRateLimit } from '@/lib/api-helpers'
 import { isValidUUID } from '@/lib/validation'
 
+const REPLY_DEPTH_ERROR = 'Replies can only be one level deep'
+
 /**
  * GET /api/videos/:videoId/versions/:versionId/comments
  *
@@ -104,6 +106,8 @@ export async function GET(
  * - comment_type must be 'point' or 'range'
  * - end_timestamp_seconds required for range comments
  * - parent_id must be a valid UUID if provided
+ * - Replies are one level deep: a parent that is itself a reply is rejected (400),
+ *   mirroring the 0008 depth trigger (see the 23514 backstop below)
  */
 export async function POST(
   request: NextRequest,
@@ -172,7 +176,7 @@ export async function POST(
   if (input.parent_id) {
     const { data: parent, error: parentError } = await admin
       .from('comments')
-      .select('id, video_version_id, agency_id, deleted_at')
+      .select('id, video_version_id, agency_id, parent_id, deleted_at')
       .eq('id', input.parent_id)
       .single()
 
@@ -194,6 +198,11 @@ export async function POST(
         { status: 400 }
       )
     }
+    // Replies are one level deep. Checked last so a foreign parent's structure
+    // is never revealed. Without this the insert trips the 0008 depth trigger.
+    if (parent.parent_id !== null) {
+      return NextResponse.json({ error: REPLY_DEPTH_ERROR }, { status: 400 })
+    }
   }
 
   const { data: comment, error: insertError } = await admin
@@ -210,6 +219,14 @@ export async function POST(
     })
     .select('*, users!comments_user_id_fkey(full_name, avatar_url)')
     .single()
+
+  // Race backstop: the parent can become a reply between the check above and
+  // the insert. Postgres then raises the 0008 depth trigger as ERRCODE 23514
+  // (check_violation). Only a reply can trip it, so a 23514 on a top-level insert
+  // is some other constraint and stays a 500.
+  if (input.parent_id && insertError?.code === '23514') {
+    return NextResponse.json({ error: REPLY_DEPTH_ERROR }, { status: 400 })
+  }
 
   if (insertError || !comment) {
     console.error('[comments:POST] Insert failed:', insertError)
