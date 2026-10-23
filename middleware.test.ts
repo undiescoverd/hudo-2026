@@ -121,27 +121,21 @@ test('isForbidden role rules', () => {
   assert.equal(isForbidden('/videos', ['talent']), false)
 })
 
-test('middleware redirects signed-out request to sign-in', async () => {
-  const res = await middleware(new NextRequest('http://localhost/dashboard'))
-  assert.ok([302, 307].includes(res.status), `status ${res.status}`)
-  const loc = new URL(res.headers.get('location')!)
-  assert.equal(loc.pathname, '/auth/signin')
-  assert.equal(loc.searchParams.get('redirect'), '/dashboard')
-})
-
-test('middleware keeps the query string in redirect, not on the sign-in URL', async () => {
-  const res = await middleware(new NextRequest('http://localhost/videos/abc?t=30'))
-  const loc = new URL(res.headers.get('location')!)
-  assert.equal(loc.pathname, '/auth/signin')
-  assert.equal(loc.searchParams.get('redirect'), '/videos/abc?t=30')
-  assert.equal(loc.searchParams.get('t'), null)
-})
-
-test('middleware redirects signed-out request on a role-gated path', async () => {
-  const res = await middleware(new NextRequest('http://localhost/talent'))
-  const loc = new URL(res.headers.get('location')!)
-  assert.equal(loc.pathname, '/auth/signin')
-  assert.equal(loc.searchParams.get('redirect'), '/talent')
+test('middleware redirects signed-out requests to sign-in with ?redirect=', async () => {
+  for (const [path, expected] of [
+    ['/dashboard', '/dashboard'],
+    // Role-gated path: sign-in comes before the role check.
+    ['/talent', '/talent'],
+    // Query goes into ?redirect=, not onto the sign-in URL itself.
+    ['/videos/abc?t=30', '/videos/abc?t=30'],
+  ]) {
+    const res = await middleware(new NextRequest('http://localhost' + path))
+    assert.ok([302, 307].includes(res.status), `${path}: status ${res.status}`)
+    const loc = new URL(res.headers.get('location')!)
+    assert.equal(loc.pathname, '/auth/signin', path)
+    assert.equal(loc.searchParams.get('redirect'), expected, path)
+    assert.equal(loc.searchParams.get('t'), null, path)
+  }
 })
 
 test('middleware lets public paths through', async () => {

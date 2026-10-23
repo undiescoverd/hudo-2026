@@ -40,9 +40,22 @@ const AGENT_ROLES = new Set(['owner', 'admin_agent', 'agent'])
 /** Roles that can access /talent routes. */
 const TALENT_ROLES = new Set(['owner', 'admin_agent', 'agent', 'talent'])
 
+// Explicit role sets rather than lib/auth roleAtLeast(): an unknown role string
+// has indexOf -1 there, which would pass the check (fail open).
+const GATED_PREFIXES: Array<[string, Set<string>]> = [
+  ['/admin', ADMIN_ROLES],
+  ['/agent', AGENT_ROLES],
+  ['/talent', TALENT_ROLES],
+]
+
+/** True when pathname is `base` itself or a sub-path of it (not `/basex`). */
+function hasPrefix(pathname: string, base: string): boolean {
+  return pathname === base || pathname.startsWith(base + '/')
+}
+
 /** True when the pathname is public (exact match or a sub-path of a public entry). */
 export function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))
+  return PUBLIC_PATHS.some((p) => hasPrefix(pathname, p))
 }
 
 /**
@@ -50,10 +63,7 @@ export function isPublicPath(pathname: string): boolean {
  * role restriction applies (authenticated users of any role may access it).
  */
 export function requiredRolesFor(pathname: string): Set<string> | null {
-  if (pathname === '/admin' || pathname.startsWith('/admin/')) return ADMIN_ROLES
-  if (pathname === '/agent' || pathname.startsWith('/agent/')) return AGENT_ROLES
-  if (pathname === '/talent' || pathname.startsWith('/talent/')) return TALENT_ROLES
-  return null
+  return GATED_PREFIXES.find(([base]) => hasPrefix(pathname, base))?.[1] ?? null
 }
 
 /**
@@ -85,11 +95,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  })
+  let response = NextResponse.next({ request })
 
   // Cookie handling pattern from @supabase/ssr docs: mutating request.cookies
   // alongside response.cookies is required so both server components and the
@@ -114,32 +120,33 @@ export async function middleware(request: NextRequest) {
   // getUser() may refresh and rotate the session tokens via setAll above. Any
   // response other than `response` must carry those cookies too, or the browser
   // keeps a stale refresh token and the session can be revoked as reused.
+  // Must read `response` at call time: setAll reassigns it.
   const withSessionCookies = (res: NextResponse) => {
     response.cookies.getAll().forEach((cookie) => res.cookies.set(cookie))
     return res
   }
   const forbidden = () => withSessionCookies(new NextResponse('Forbidden', { status: 403 }))
-  const toSignIn = (withRedirect: boolean) => {
+  const toSignIn = (redirectTo?: string) => {
     const signInUrl = request.nextUrl.clone()
     signInUrl.pathname = '/auth/signin'
     signInUrl.search = ''
-    // Preserve the intended destination, query included (e.g. a ?t= deep link).
-    if (withRedirect) signInUrl.searchParams.set('redirect', pathname + search)
+    if (redirectTo) signInUrl.searchParams.set('redirect', redirectTo)
     return withSessionCookies(NextResponse.redirect(signInUrl))
   }
+  const errMessage = (err: unknown) => (err as { message?: string })?.message ?? 'Unknown error'
 
   let user = null
   try {
     const { data } = await supabase.auth.getUser()
     user = data.user
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    console.error('[middleware] supabase.auth.getUser() failed:', message)
-    return toSignIn(false)
+    console.error('[middleware] supabase.auth.getUser() failed:', errMessage(err))
+    return toSignIn()
   }
 
   if (!user) {
-    return toSignIn(true)
+    // Preserve the intended destination, query included (e.g. a ?t= deep link).
+    return toSignIn(pathname + search)
   }
 
   if (requiredRolesFor(pathname) !== null) {
@@ -148,19 +155,14 @@ export async function middleware(request: NextRequest) {
         .from('memberships')
         .select('role')
         .eq('user_id', user.id)
-
-      if (error) {
-        console.error('[middleware] memberships query failed:', error.message)
-        return forbidden()
-      }
+      if (error) throw error
 
       const roles = (data ?? []).map((m: { role: string }) => m.role)
       if (isForbidden(pathname, roles)) {
         return forbidden()
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      console.error('[middleware] memberships query threw:', message)
+      console.error('[middleware] memberships query failed:', errMessage(err))
       return forbidden()
     }
   }
