@@ -9,10 +9,22 @@ import { createAdminClient } from '@/lib/supabase-admin'
 /**
  * POST /api/auth/register
  *
- * Creates a new Supabase Auth user and inserts a corresponding public.users record.
+ * Creates a new Supabase Auth user, then (via the service-role-only RPC
+ * create_agency_with_owner) the public.users row, the agency and the owner
+ * membership in a single transaction.
  * Supabase automatically sends a confirmation email on signUp — the email provider
  * (Resend) is configured via S0-INFRA-012; local dev uses the built-in mailpit service.
  */
+const AGENCY_NAME_MAX = 100
+
+function toSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request)
 
@@ -27,7 +39,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
-  const { email, password, fullName } = body as Record<string, unknown>
+  const { email, password, fullName, agencyName } = body as Record<string, unknown>
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   if (typeof email !== 'string' || !email.trim() || !EMAIL_RE.test(email.trim())) {
@@ -35,6 +47,22 @@ export async function POST(request: NextRequest) {
   }
   if (typeof fullName !== 'string' || !fullName.trim()) {
     return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
+  }
+  if (typeof agencyName !== 'string' || !agencyName.trim()) {
+    return NextResponse.json({ error: 'Agency name is required' }, { status: 400 })
+  }
+  if (agencyName.trim().length > AGENCY_NAME_MAX) {
+    return NextResponse.json(
+      { error: `Agency name must be ${AGENCY_NAME_MAX} characters or fewer` },
+      { status: 400 }
+    )
+  }
+  const slug = toSlug(agencyName)
+  if (!slug) {
+    return NextResponse.json(
+      { error: 'Agency name must contain letters or numbers' },
+      { status: 400 }
+    )
   }
   if (typeof password !== 'string') {
     return NextResponse.json({ error: 'Password is required' }, { status: 400 })
@@ -67,6 +95,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
   }
 
+  const admin = createAdminClient()
+  const AGENCY_TAKEN = {
+    error: 'An agency with that name already exists. Please choose a different name.',
+  }
+
+  // Read-only availability check BEFORE signUp so a taken name never creates an auth user.
+  const { data: taken, error: slugError } = await admin
+    .from('agencies')
+    .select('id')
+    .eq('slug', slug)
+    .maybeSingle()
+  if (slugError) {
+    console.error('[register] slug check failed:', slugError.message)
+    return NextResponse.json({ error: 'Registration failed. Please try again.' }, { status: 500 })
+  }
+  if (taken) {
+    return NextResponse.json(AGENCY_TAKEN, { status: 409 })
+  }
+
   // Sign up via anon key — Supabase sends confirmation email automatically.
   const supabase = createClient(supabaseUrl, anonKey)
   const origin = getSiteOrigin(request)
@@ -75,8 +122,8 @@ export async function POST(request: NextRequest) {
     email: email.trim(),
     password,
     options: {
-      // After email confirmation, redirect to app root (future: /onboarding — S4-LAUNCH-004)
-      emailRedirectTo: `${origin}/auth/callback`,
+      // After email confirmation the owner lands on their dashboard.
+      emailRedirectTo: `${origin}/auth/callback?next=/dashboard`,
     },
   })
 
@@ -85,20 +132,36 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Registration failed. Please try again.' }, { status: 400 })
   }
 
-  // Insert into public.users via service role (bypasses RLS — this route is server-side only).
-  if (data.user) {
-    const admin = createAdminClient()
-    const { error: insertError } = await admin.from('users').insert({
-      id: data.user.id,
-      email: email.trim().toLowerCase(),
-      full_name: fullName.trim(),
-    })
-    if (insertError) {
-      // Log but don't surface — the auth user exists and email confirmation will proceed.
-      // A reconciliation step can create the users record on first sign-in if needed.
-      console.error('[register] users insert failed:', insertError.message)
-    }
+  // Already-registered email (confirmation on): Supabase returns an obfuscated user with an
+  // empty identities array and no error. Do NOT touch that account; answer exactly like a
+  // fresh sign-up so account existence is not leaked.
+  if (!data.user || (data.user.identities?.length ?? 0) === 0) {
+    return NextResponse.json({ success: true, session: false })
   }
 
-  return NextResponse.json({ success: true })
+  // users + agency + owner membership atomically. Failure => remove the auth user we just
+  // created (best-effort) so the email can retry.
+  const { error: rpcError } = await admin.rpc('create_agency_with_owner', {
+    p_user_id: data.user.id,
+    p_email: email.trim().toLowerCase(),
+    p_full_name: fullName.trim(),
+    p_agency_name: agencyName.trim(),
+    p_slug: slug,
+  })
+
+  if (rpcError) {
+    console.error('[register] create_agency_with_owner failed:', rpcError.code, rpcError.message)
+    const { error: deleteError } = await admin.auth.admin.deleteUser(data.user.id)
+    if (deleteError) {
+      console.error('[register] orphaned auth user cleanup failed:', deleteError.message)
+    }
+    if (rpcError.code === '23505') {
+      return NextResponse.json(AGENCY_TAKEN, { status: 409 })
+    }
+    return NextResponse.json({ error: 'Registration failed. Please try again.' }, { status: 500 })
+  }
+
+  // `session: true` => email confirmation is off; the client then signs in via
+  // /api/auth/signin (which sets cookies). Never return tokens.
+  return NextResponse.json({ success: true, session: data.session !== null })
 }
