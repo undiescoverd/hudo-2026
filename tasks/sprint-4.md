@@ -148,13 +148,13 @@ NOTES: S — GitHub #146; plan Phase 4; decision D8. The prod bucket needs the s
 
 ---
 
-- [ ] **S4-JOURNEY-001** — Minimal agency creation at sign-up
+- [x] **S4-JOURNEY-001** — Minimal agency creation at sign-up
 
 TASK_ID: S4-JOURNEY-001
 TITLE: Minimal agency creation at sign-up (agency-name field, atomic RPC, owner lands on /dashboard)
 BRANCH: feat/s4-S4-JOURNEY-001-owner-signup
 MODEL: sonnet
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Register page has an agency-name field; register route rejects a missing name with 400
@@ -193,13 +193,13 @@ NOTES: S — Resend and revoke stay in Sprint 5. Reuse requireAgentRole and INVI
 
 ---
 
-- [ ] **S4-JOURNEY-003** — Invite accept must not burn the token on failure
+- [x] **S4-JOURNEY-003** — Invite accept must not burn the token on failure
 
 TASK_ID: S4-JOURNEY-003
 TITLE: Invite accept retry (validate before claim, release claim on failure)
 BRANCH: feat/s4-S4-JOURNEY-003-accept-retry
 MODEL: sonnet
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - A 400 (missing password or name) does not consume the token; the retry with the same token succeeds
