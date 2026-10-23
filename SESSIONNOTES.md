@@ -729,3 +729,20 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - Lows L1 (wording around the `/..//` check, which is defence in depth) and L2 (note that the result must never be percent-decoded again) are fixed in the follow-up commit.
     - The medium, already on main: `/auth/callback` has no Upstash rate limiter. It's queued as a separate task card.
 - **Gotcha (if any):** a redirect guard that checks string prefixes (`startsWith('/') && !startsWith('//')`) is bypassable. Browsers treat `\` as `/` and drop tab/CR/LF, and `searchParams.get` decodes `%09` first. Validate with `new URL(t, base).origin` and return the raw target, never the normalised one.
+
+## 2026-10-23 20:25 — #193 merged; S4-REVIEW-001–004 sprint rows (handoff step 3)
+
+- **Task:** handoff step 3, adding the sprint rows for the gate gaps Ian specced on 2026-10-23
+- **Models:** planner=opus (rows written by opus from the agreed specs; no code)
+- **Outcome:** partial. The rows are in a PR. Their Linear issues aren't created yet, because this session has no Linear access.
+- **Notes:**
+  - **#193 (open-redirect fix)** was squash-merged as `3107320` on Ian's go-ahead once the required checks were green. The DeepSeek bots fail on every PR (402).
+  - **Ian approved a second branch,** `chore/s4-review-rows`, cut from `origin/main`.
+  - **New rows in `tasks/sprint-4.md`:**
+    - `S4-REVIEW-001`: new version upload (#190)
+    - `S4-REVIEW-002`: comment actions (#191)
+    - `S4-REVIEW-003`: talent resubmit (#192), blocked by 001
+    - `S4-REVIEW-004`: forward migration for #187 option (b)
+  - **Dependencies extended:** `S4-ACCESS-001` now waits for REVIEW-001–003 (its note already says it runs after UI changes). `S4-LAUNCH-002` now waits for REVIEW-002, because its smoke flow covers "comment and resolve".
+  - **Linear:** this session has no `LINEAR_API_KEY` and the Linear connector failed to connect, so the four issues still need creating, each title starting with its exact task ID. Until then, `sync-check` shows `⚠ ERROR` for them (Failure Log, 2026-06-16 Linear entry).
+- **Gotcha (if any):** a cloud session can push only its designated branch unless the user OKs another. When one PR is already open on it, ask early for a second branch rather than queueing unrelated work behind the merge.
