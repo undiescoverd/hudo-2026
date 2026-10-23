@@ -194,9 +194,10 @@ export const config = {
      * - _next/image (image optimisation)
      * - favicon.ico
      * - api routes (handled individually)
-     * - common static files, matched by extension anchored to the end of the
-     *   path (robots.txt, sitemap.xml, /sw.js, /manifest.webmanifest, icons...)
+     * - named root static files (/icons/*, robots.txt, sitemap.xml, /sw.js,
+     *   /manifest.webmanifest). Listed by name, not by extension, so a page
+     *   path like /talent/x.png can never skip the auth check.
      */
-    '/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest|js|json|woff|woff2|map)$).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico$|api/|icons/|robots\\.txt$|sitemap\\.xml$|sw\\.js$|manifest\\.webmanifest$).*)',
   ],
 }

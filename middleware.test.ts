@@ -29,6 +29,11 @@ test('matcher matches app pages', () => {
     '/talent',
     '/settings/billing',
     '/auth/signin',
+    // A file-like extension on a page path must not skip the auth check.
+    '/talent/x.png',
+    '/videos/abc.json',
+    '/admin/x.js',
+    '/favicon.icox',
   ]) {
     assert.ok(matcher.test(p), `should match ${p}`)
   }
