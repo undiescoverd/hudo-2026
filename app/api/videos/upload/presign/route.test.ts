@@ -8,7 +8,8 @@
  */
 
 import assert from 'node:assert/strict'
-import { before, describe, it } from 'node:test'
+import type { NextRequest } from 'next/server'
+import { afterEach, before, describe, it } from 'node:test'
 import {
   ALLOWED_CONTENT_TYPES,
   MAX_FILE_SIZE_BYTES,
@@ -225,5 +226,287 @@ describe('presign route — source code invariants', () => {
     assert.match(source, /upload:presign:user:/)
     assert.match(source, /UPLOAD_RATE_LIMIT/)
     assert.match(source, /generateUploadUrl|createMultipartUpload/)
+  })
+})
+
+describe('presign route — agent-supplied talentId membership check', () => {
+  let source: string
+
+  before(async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    source = fs.readFileSync(path.resolve(import.meta.dirname ?? __dirname, 'route.ts'), 'utf8')
+  })
+
+  it('queries memberships for user_id = talentId, agency_id = agencyId, role = talent', () => {
+    assert.match(
+      source,
+      /\.from\('memberships'\)\s*\.select\('user_id'\)\s*\.eq\('user_id', agentTalentId\)\s*\.eq\('agency_id', agencyId\)\s*\.eq\('role', 'talent'\)/
+    )
+  })
+
+  it('only applies to non-talent callers that supplied a non-empty talentId', () => {
+    assert.match(
+      source,
+      /role !== 'talent' && typeof talentId === 'string' && talentId\.trim\(\) \? talentId\.trim\(\) : null/
+    )
+    assert.match(source, /if \(agentTalentId\) \{/)
+  })
+
+  it('returns 400 for a non-member / non-talent target', () => {
+    assert.match(
+      source,
+      /if \(!talentMembership\) \{\s*return NextResponse\.json\(\s*\{ error: 'Selected talent is not a member of this agency' \},\s*\{ status: 400 \}/
+    )
+  })
+
+  it('logs and returns 500 when the membership query errors (checked before the 400)', () => {
+    const errIdx = source.indexOf('if (talentMembershipError)')
+    const missIdx = source.indexOf('if (!talentMembership)')
+    assert.ok(errIdx > -1 && missIdx > errIdx)
+    assert.match(source, /Failed to verify talent membership:/)
+    assert.match(source, /Failed to verify selected talent' \}, \{ status: 500 \}/)
+  })
+
+  it('runs before the videos insert (no partial writes)', () => {
+    const checkIdx = source.indexOf(".eq('role', 'talent')")
+    const insertIdx = source.indexOf(".from('videos')\n      .insert")
+    assert.ok(checkIdx > -1 && insertIdx > checkIdx)
+  })
+
+  it('talent callers are still forced to their own id; absent talentId defaults to caller', () => {
+    assert.match(
+      source,
+      /const resolvedTalentId = role === 'talent' \? user\.id : \(agentTalentId \?\? user\.id\)/
+    )
+  })
+
+  it('does not alter the existing-video path (it never writes talent_id)', () => {
+    const retry = source.slice(source.indexOf('// Verify video exists'))
+    assert.doesNotMatch(retry.split('// --- Generate presigned')[0], /talent_id:/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Handler behaviour — real POST, with Supabase REST/Auth + Upstash stubbed at the
+// fetch layer and the Next request scope (cookies()) supplied via AsyncLocalStorage.
+// ---------------------------------------------------------------------------
+
+describe('presign route — talentId membership gate (real POST handler)', () => {
+  const SB = 'https://sb.presign.test'
+  const REDIS = 'https://redis.presign.test'
+  const AGENCY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  const OTHER_AGENCY = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  const AGENT = '11111111-1111-4111-8111-111111111111'
+  const TALENT = '22222222-2222-4222-8222-222222222222'
+  const realFetch = globalThis.fetch
+
+  type Row = { user_id: string; agency_id: string; role: string }
+  let memberships: Row[] = []
+  let membershipsError = false
+  let calls: { method: string; url: URL; body: unknown }[] = []
+  let POST: (req: NextRequest) => Promise<Response>
+  let runInScope: <T>(fn: () => Promise<T>) => Promise<T>
+
+  function installFetch() {
+    globalThis.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+      const method = (init.method ?? 'GET').toUpperCase()
+      let body: unknown
+      if (typeof init.body === 'string') {
+        try {
+          body = JSON.parse(init.body)
+        } catch {
+          body = init.body
+        }
+      }
+      if (url.origin === REDIS) {
+        const n = Array.isArray(body) ? body.length : 1
+        const items = Array.from({ length: n }, () => ({ result: 1 }))
+        return Response.json(Array.isArray(body) ? items : items[0])
+      }
+      calls.push({ method, url, body })
+      const json = (status: number, b: unknown) =>
+        new Response(JSON.stringify(b), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        })
+
+      if (url.pathname === '/auth/v1/user') {
+        return json(200, {
+          id: AGENT,
+          aud: 'authenticated',
+          role: 'authenticated',
+          email: 'agent@presign.test',
+          app_metadata: {},
+          user_metadata: {},
+          created_at: new Date().toISOString(),
+        })
+      }
+      if (url.pathname === '/rest/v1/memberships') {
+        if (membershipsError && url.searchParams.get('role')) {
+          return json(500, { code: 'XX000', message: 'boom', details: null, hint: null })
+        }
+        const eq = (k: string) => url.searchParams.get(k)?.replace(/^eq\./, '')
+        const rows = memberships.filter(
+          (m) =>
+            (!eq('user_id') || m.user_id === eq('user_id')) &&
+            (!eq('agency_id') || m.agency_id === eq('agency_id')) &&
+            (!eq('role') || m.role === eq('role'))
+        )
+        const accept = new Headers(init.headers).get('accept') ?? ''
+        if (accept.includes('pgrst.object')) {
+          return rows.length
+            ? json(200, rows[0])
+            : json(406, { code: 'PGRST116', message: 'no rows', details: '', hint: null })
+        }
+        return json(200, rows)
+      }
+      if (url.pathname === '/rest/v1/agencies') {
+        return json(200, {
+          storage_usage_bytes: 0,
+          storage_limit_bytes: null,
+          subscription_status: 'active',
+          grace_period_ends_at: null,
+        })
+      }
+      if (url.pathname === '/rest/v1/videos' && method === 'POST') {
+        return json(201, { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' })
+      }
+      return json(404, { message: `unexpected ${method} ${url.pathname}` })
+    }) as typeof fetch
+  }
+
+  before(async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = SB
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-presign-test'
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-presign-test'
+    process.env.UPSTASH_REDIS_REST_URL = REDIS
+    process.env.UPSTASH_REDIS_REST_TOKEN = 'redis-presign-test'
+    process.env.R2_ACCESS_KEY_ID = 'r2-key-presign-test'
+    process.env.R2_SECRET_ACCESS_KEY = 'r2-secret-presign-test'
+    process.env.R2_ACCOUNT_ID = 'acct'
+    process.env.R2_BUCKET_NAME = 'bucket'
+    process.env.R2_ENDPOINT = 'https://acct.r2.presign.test'
+    // Next's request-scope storage needs the global ALS that its server runtime normally installs.
+    const { AsyncLocalStorage } = await import('node:async_hooks')
+    ;(globalThis as { AsyncLocalStorage?: unknown }).AsyncLocalStorage = AsyncLocalStorage
+    const { requestAsyncStorage } =
+      await import('next/dist/client/components/request-async-storage.external')
+
+    // Session cookie that @supabase/ssr turns into a (non-expired) session for getUser().
+    const session = {
+      access_token: 'access-presign-test',
+      refresh_token: 'refresh-presign-test',
+      token_type: 'bearer',
+      expires_in: 3600,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user: { id: AGENT, aud: 'authenticated' },
+    }
+    const cookieList = [{ name: 'sb-sb-auth-token', value: JSON.stringify(session) }]
+    const cookies = { getAll: () => cookieList, set: () => {}, get: () => undefined }
+    runInScope = (fn) =>
+      requestAsyncStorage.run({ cookies, mutableCookies: cookies } as never, fn) as Promise<never>
+    ;({ POST } = await import('./route'))
+  })
+
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  function setup(rows: Row[]) {
+    calls = []
+    membershipsError = false
+    memberships = rows
+    installFetch()
+  }
+
+  const agentRow: Row = { user_id: AGENT, agency_id: AGENCY, role: 'agent' }
+  const talentRow: Row = { user_id: TALENT, agency_id: AGENCY, role: 'talent' }
+
+  function call(overrides: Record<string, unknown> = {}) {
+    const req = new Request('http://localhost:3000/api/videos/upload/presign', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        agencyId: AGENCY,
+        fileName: 'clip.mp4',
+        contentType: 'video/mp4',
+        fileSizeBytes: 1024,
+        ...overrides,
+      }),
+    }) as unknown as NextRequest
+    return runInScope(() => POST(req))
+  }
+
+  const videoInserts = () =>
+    calls.filter((c) => c.url.pathname === '/rest/v1/videos' && c.method === 'POST')
+  const talentLookups = () =>
+    calls.filter((c) => c.url.pathname === '/rest/v1/memberships' && c.url.searchParams.get('role'))
+
+  it('agent + non-member talentId -> 400, no videos insert', async () => {
+    setup([agentRow])
+    const res = await call({ talentId: TALENT })
+    assert.equal(res.status, 400)
+    assert.match(
+      ((await res.json()) as { error: string }).error,
+      /Selected talent is not a member of this agency/
+    )
+    assert.equal(videoInserts().length, 0)
+  })
+
+  it('agent + talent of a DIFFERENT agency -> 400, no videos insert', async () => {
+    setup([agentRow, { user_id: TALENT, agency_id: OTHER_AGENCY, role: 'talent' }])
+    const res = await call({ talentId: TALENT })
+    assert.equal(res.status, 400)
+    assert.equal(videoInserts().length, 0)
+  })
+
+  it('agent + member of this agency with a non-talent role -> 400', async () => {
+    setup([agentRow, { user_id: TALENT, agency_id: AGENCY, role: 'agent' }])
+    const res = await call({ talentId: TALENT })
+    assert.equal(res.status, 400)
+    assert.equal(videoInserts().length, 0)
+  })
+
+  it('membership lookup error -> 500, no videos insert', async () => {
+    setup([agentRow, talentRow])
+    membershipsError = true
+    const res = await call({ talentId: TALENT })
+    assert.equal(res.status, 500)
+    assert.equal(videoInserts().length, 0)
+  })
+
+  it('agent + valid talent with surrounding whitespace -> inserts the trimmed id', async () => {
+    setup([agentRow, talentRow])
+    const res = await call({ talentId: `  ${TALENT}  ` })
+    assert.equal(res.status, 200)
+    const inserts = videoInserts()
+    assert.equal(inserts.length, 1)
+    assert.equal((inserts[0].body as { talent_id: string }).talent_id, TALENT)
+  })
+
+  it('malformed talentId -> 400 and no talent membership query', async () => {
+    setup([agentRow, talentRow])
+    const res = await call({ talentId: 'abc' })
+    assert.equal(res.status, 400)
+    assert.equal(talentLookups().length, 0)
+    assert.equal(videoInserts().length, 0)
+  })
+
+  it('no talentId -> unchanged: video assigned to the caller, no talent lookup', async () => {
+    setup([agentRow])
+    const res = await call()
+    assert.equal(res.status, 200)
+    assert.equal((videoInserts()[0].body as { talent_id: string }).talent_id, AGENT)
+    assert.equal(talentLookups().length, 0)
+  })
+
+  it('talent caller has talentId forced to themselves', async () => {
+    setup([{ user_id: AGENT, agency_id: AGENCY, role: 'talent' }])
+    const res = await call({ talentId: AGENT })
+    assert.equal(res.status, 200)
+    assert.equal((videoInserts()[0].body as { talent_id: string }).talent_id, AGENT)
+    assert.equal(talentLookups().length, 0)
   })
 })
