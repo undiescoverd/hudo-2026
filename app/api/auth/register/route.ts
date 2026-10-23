@@ -16,6 +16,9 @@ import { createAdminClient } from '@/lib/supabase-admin'
  * (Resend) is configured via S0-INFRA-012; local dev uses the built-in mailpit service.
  */
 const AGENCY_NAME_MAX = 100
+const FULL_NAME_MAX = 100
+// Tolerance for clock skew between this server and the auth server's created_at.
+const CREATED_SKEW_MS = 60_000
 
 function toSlug(name: string): string {
   return name
@@ -26,6 +29,7 @@ function toSlug(name: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  const requestStart = Date.now()
   const ip = getClientIp(request)
 
   let body: unknown
@@ -47,6 +51,12 @@ export async function POST(request: NextRequest) {
   }
   if (typeof fullName !== 'string' || !fullName.trim()) {
     return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
+  }
+  if (fullName.trim().length > FULL_NAME_MAX) {
+    return NextResponse.json(
+      { error: `Full name must be ${FULL_NAME_MAX} characters or fewer` },
+      { status: 400 }
+    )
   }
   if (typeof agencyName !== 'string' || !agencyName.trim()) {
     return NextResponse.json({ error: 'Agency name is required' }, { status: 400 })
@@ -139,8 +149,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, session: false })
   }
 
-  // users + agency + owner membership atomically. Failure => remove the auth user we just
-  // created (best-effort) so the email can retry.
+  // An existing public.users row means this auth user predates the request (e.g. a repeat
+  // sign-up for an unconfirmed email, where Supabase returns the real user and re-sends the
+  // confirmation). Never run the RPC or any cleanup against it; answer like a fresh sign-up.
+  const { data: existingUser, error: lookupError } = await admin
+    .from('users')
+    .select('id')
+    .eq('id', data.user.id)
+    .maybeSingle()
+  if (lookupError) {
+    console.error('[register] users lookup failed:', lookupError.message)
+    return NextResponse.json({ error: 'Registration failed. Please try again.' }, { status: 500 })
+  }
+  if (existingUser) {
+    return NextResponse.json({ success: true, session: false })
+  }
+
+  // users + agency + owner membership atomically. Failure => remove the auth user ONLY if
+  // this request created it (best-effort) so the email can retry.
   const { error: rpcError } = await admin.rpc('create_agency_with_owner', {
     p_user_id: data.user.id,
     p_email: email.trim().toLowerCase(),
@@ -151,11 +177,17 @@ export async function POST(request: NextRequest) {
 
   if (rpcError) {
     console.error('[register] create_agency_with_owner failed:', rpcError.code, rpcError.message)
-    const { error: deleteError } = await admin.auth.admin.deleteUser(data.user.id)
-    if (deleteError) {
-      console.error('[register] orphaned auth user cleanup failed:', deleteError.message)
+    const createdAt = Date.parse(data.user.created_at ?? '')
+    if (Number.isFinite(createdAt) && createdAt >= requestStart - CREATED_SKEW_MS) {
+      const { error: deleteError } = await admin.auth.admin.deleteUser(data.user.id)
+      if (deleteError) {
+        console.error('[register] orphaned auth user cleanup failed:', deleteError.message)
+      }
+    } else {
+      console.error('[register] skipping cleanup: auth user was not created by this request')
     }
-    if (rpcError.code === '23505') {
+    const detail = `${rpcError.message ?? ''} ${rpcError.details ?? ''}`
+    if (rpcError.code === '23505' && detail.includes('agencies_slug_key')) {
       return NextResponse.json(AGENCY_TAKEN, { status: 409 })
     }
     return NextResponse.json({ error: 'Registration failed. Please try again.' }, { status: 500 })

@@ -81,7 +81,7 @@ const realFetch = globalThis.fetch
 
 let calls: { method: string; url: URL; body: unknown }[] = []
 let rateLimited = false
-let handlers: { slug: Handler; signup: Handler; rpc: Handler; del: Handler }
+let handlers: { slug: Handler; signup: Handler; rpc: Handler; del: Handler; users: Handler }
 let POST: (req: NextRequest) => Promise<Response>
 
 function freshHandlers() {
@@ -89,8 +89,15 @@ function freshHandlers() {
     slug: () => ({ status: 200, body: [] }),
     signup: () => ({
       status: 200,
-      body: { id: USER_ID, email: 'a@b.co', identities: [{ id: 'x' }], aud: 'authenticated' },
+      body: {
+        id: USER_ID,
+        email: 'a@b.co',
+        identities: [{ id: 'x' }],
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+      },
     }),
+    users: () => ({ status: 200, body: [] }),
     rpc: () => ({ status: 200, body: '"agency-id"' }),
     del: () => ({ status: 200, body: {} }),
   }
@@ -117,6 +124,7 @@ function installFetch() {
     calls.push({ method, url, body })
     let r: { status: number; body?: unknown }
     if (url.pathname === '/rest/v1/agencies') r = handlers.slug(url, init)
+    else if (url.pathname === '/rest/v1/users') r = handlers.users(url, init)
     else if (url.pathname === '/auth/v1/signup') r = handlers.signup(url, init)
     else if (url.pathname === '/rest/v1/rpc/create_agency_with_owner') r = handlers.rpc(url, init)
     else if (url.pathname.startsWith('/auth/v1/admin/users/')) r = handlers.del(url, init)
@@ -205,13 +213,77 @@ describe('register handler — agency + owner at sign-up', () => {
 
   it('maps RPC unique_violation (race) to 409 and deletes the auth user', async () => {
     setup()
-    handlers.rpc = () => ({ status: 409, body: { code: '23505', message: 'duplicate key' } })
+    handlers.rpc = () => ({
+      status: 409,
+      body: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "agencies_slug_key"',
+      },
+    })
     const res = await POST(req())
     assert.equal(res.status, 409)
     const del = callsTo('/auth/v1/admin/users/')
     assert.equal(del.length, 1)
     assert.equal(del[0].method, 'DELETE')
     assert.ok(del[0].url.pathname.endsWith(USER_ID))
+  })
+
+  it('maps a 23505 on another constraint to 500 and still deletes the fresh auth user', async () => {
+    setup()
+    handlers.rpc = () => ({
+      status: 409,
+      body: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "users_email_key"',
+      },
+    })
+    const res = await POST(req())
+    assert.equal(res.status, 500)
+    assert.equal(callsTo('/auth/v1/admin/users/').length, 1)
+  })
+
+  it('unconfirmed repeat sign-up (existing users row): generic success, no RPC, no delete', async () => {
+    setup()
+    handlers.users = () => ({ status: 200, body: [{ id: USER_ID }] })
+    const res = await POST(req())
+    assert.equal(res.status, 200)
+    assert.deepEqual(await res.json(), { success: true, session: false })
+    assert.equal(callsTo('/rest/v1/rpc').length, 0)
+    assert.equal(callsTo('/auth/v1/admin/users/').length, 0)
+  })
+
+  it('users lookup error: 500, no RPC, no delete', async () => {
+    setup()
+    handlers.users = () => ({ status: 500, body: { code: 'XX000', message: 'boom' } })
+    const res = await POST(req())
+    assert.equal(res.status, 500)
+    assert.equal(callsTo('/rest/v1/rpc').length, 0)
+    assert.equal(callsTo('/auth/v1/admin/users/').length, 0)
+  })
+
+  it('RPC error for an auth user older than the request: no delete', async () => {
+    setup()
+    handlers.signup = () => ({
+      status: 200,
+      body: {
+        id: USER_ID,
+        email: 'a@b.co',
+        identities: [{ id: 'x' }],
+        aud: 'authenticated',
+        created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+      },
+    })
+    handlers.rpc = () => ({ status: 400, body: { code: 'XX000', message: 'boom' } })
+    const res = await POST(req())
+    assert.equal(res.status, 500)
+    assert.equal(callsTo('/auth/v1/admin/users/').length, 0)
+  })
+
+  it('rejects a full name over 100 characters with 400 before any network call', async () => {
+    setup()
+    const res = await POST(req({ fullName: 'x'.repeat(101) }))
+    assert.equal(res.status, 400)
+    assert.equal(calls.length, 0)
   })
 
   it('maps any other RPC error to 500 and deletes the auth user', async () => {

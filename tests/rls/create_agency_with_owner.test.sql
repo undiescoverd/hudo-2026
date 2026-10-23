@@ -5,7 +5,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(11);
+SELECT plan(13);
 
 -- ── Test 1-3: service_role can execute; creates users + agency + owner membership ──
 SET LOCAL ROLE service_role;
@@ -71,8 +71,7 @@ SELECT is(
   'failed call leaves no users row behind'
 );
 
--- ── Test 7: failure after the users insert (agency step) is atomic via subtransaction ──
--- A blank slug is rejected up front; no rows are written.
+-- ── Test 7-8: blank slug is rejected up front; no rows are written ──
 SELECT throws_ok(
   $$SELECT create_agency_with_owner(
     'dbeef027-0027-4000-a000-000000000003'::uuid,
@@ -94,7 +93,28 @@ SELECT is(
   'blank-slug rejection writes nothing'
 );
 
--- ── Test 9: authenticated cannot execute ──
+-- ── Test 9-10: email collision with an existing users row (fresh agency) rolls back fully ──
+-- The users insert (PK/email) fails mid-function; no agency row for the fresh slug may remain.
+SELECT throws_ok(
+  $$SELECT create_agency_with_owner(
+    'dbeef027-0027-4000-a000-000000000006'::uuid,
+    'owner@signup.rls',
+    'Colliding Owner',
+    'Collision Fresh Agency',
+    'rls-signup-collision-fresh'
+  )$$,
+  '23505',
+  NULL,
+  'email colliding with an existing users row raises unique_violation'
+);
+
+SELECT is(
+  (SELECT count(*)::int FROM public.agencies WHERE slug = 'rls-signup-collision-fresh'),
+  0,
+  'collision leaves no agency row behind (rolled back)'
+);
+
+-- ── Test 11: authenticated cannot execute ──
 RESET ROLE;
 SELECT set_config('request.jwt.claims',
   '{"sub":"dbeef027-0027-4000-a000-000000000001","role":"authenticated"}', true);
@@ -110,7 +130,7 @@ SELECT throws_ok(
   'authenticated cannot execute create_agency_with_owner'
 );
 
--- ── Test 10: anon cannot execute ──
+-- ── Test 12: anon cannot execute ──
 RESET ROLE;
 SELECT set_config('request.jwt.claims', '{"role":"anon"}', true);
 SET LOCAL ROLE anon;
@@ -125,7 +145,7 @@ SELECT throws_ok(
   'anon cannot execute create_agency_with_owner'
 );
 
--- ── Test 11: PUBLIC has no EXECUTE grant ──
+-- ── Test 13: PUBLIC has no EXECUTE grant ──
 RESET ROLE;
 SELECT is(
   has_function_privilege('public',
