@@ -14,11 +14,15 @@ async function findAuthUserByEmail(
   const perPage = 200
   for (let page = 1; page <= 50; page++) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage })
-    if (error) return null
+    if (error) {
+      console.error('[invitations/accept] listUsers failed:', error.message)
+      return null
+    }
     const match = data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase())
     if (match) return { id: match.id }
     if (data.users.length < perPage) return null
   }
+  console.error('[invitations/accept] findAuthUserByEmail hit page cap without a match')
   return null
 }
 
@@ -146,101 +150,135 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  let userId: string
+  // Set once the membership exists; a later throw must not release the claim.
+  let succeeded = false
 
-  if (!userExists) {
-    // Create auth user via admin (password/fullName already validated above)
-    const { data: authData, error: authError } = await admin.auth.admin.createUser({
-      email: invitation.email,
-      password: password as string,
-      email_confirm: true, // Auto-confirm since they were invited
-    })
+  try {
+    let userId: string
 
-    // Only a freshly created auth user is deleted on a later failure; a reconciled
-    // orphan (auth user with no public.users row) is left in place for the next retry.
-    let createdAuthUser = true
+    if (!userExists) {
+      // Create auth user via admin (password/fullName already validated above)
+      const { data: authData, error: authError } = await admin.auth.admin.createUser({
+        email: invitation.email,
+        password: password as string,
+        email_confirm: true, // Auto-confirm since they were invited
+      })
 
-    if (authError) {
-      const alreadyRegistered =
-        authError.code === 'email_exists' || /already (been )?registered/i.test(authError.message)
-      // Orphaned auth user (earlier cleanup failed): reuse it, but only on an exact email match.
-      const orphan = alreadyRegistered ? await findAuthUserByEmail(admin, invitation.email) : null
-      if (!orphan) {
-        console.error('[invitations/accept] createUser failed:', authError.message)
+      // Only a freshly created auth user is deleted on a later failure; a reconciled
+      // orphan (auth user with no public.users row) is left in place for the next retry.
+      let createdAuthUser = true
+
+      if (authError) {
+        const alreadyRegistered =
+          authError.code === 'email_exists' || /already (been )?registered/i.test(authError.message)
+        // Orphaned auth user (earlier cleanup failed): reuse it, but only on an exact email match.
+        const orphan = alreadyRegistered ? await findAuthUserByEmail(admin, invitation.email) : null
+        if (!orphan) {
+          console.error('[invitations/accept] createUser failed:', authError.message)
+          await releaseClaim()
+          return NextResponse.json({ error: 'Failed to create account' }, { status: 500 })
+        }
+        userId = orphan.id
+        createdAuthUser = false
+        // The orphan may have been pre-registered by someone else: take it over with the
+        // invitee's password so no earlier credential keeps working.
+        const { error: updateError } = await admin.auth.admin.updateUserById(orphan.id, {
+          password: password as string,
+          email_confirm: true,
+        })
+        if (updateError) {
+          console.error(
+            '[invitations/accept] orphan credential update failed:',
+            updateError.message
+          )
+          await releaseClaim()
+          return NextResponse.json({ error: 'Failed to create account' }, { status: 500 })
+        }
+      } else {
+        userId = authData.user.id
+      }
+
+      // Create public.users record
+      const { error: insertError } = await admin.from('users').insert({
+        id: userId,
+        email: invitation.email,
+        full_name: (fullName as string).trim(),
+      })
+
+      if (insertError) {
+        console.error('[invitations/accept] users insert failed:', insertError.message)
+        Sentry.captureException(insertError)
+        if (createdAuthUser) {
+          // Remove the orphan auth user so a retry doesn't hit "already registered"
+          const { error: deleteError } = await admin.auth.admin.deleteUser(userId)
+          if (deleteError) {
+            console.error(
+              '[invitations/accept] orphan auth user cleanup failed:',
+              deleteError.message
+            )
+          }
+        }
         await releaseClaim()
         return NextResponse.json({ error: 'Failed to create account' }, { status: 500 })
       }
-      userId = orphan.id
-      createdAuthUser = false
     } else {
-      userId = authData.user.id
+      userId = existingUsers![0].id
     }
 
-    // Create public.users record
-    const { error: insertError } = await admin.from('users').insert({
-      id: userId,
-      email: invitation.email,
-      full_name: (fullName as string).trim(),
+    // Create membership
+    const { error: membershipError } = await admin.from('memberships').insert({
+      user_id: userId,
+      agency_id: invitation.agency_id,
+      role: invitation.role,
     })
 
-    if (insertError) {
-      console.error('[invitations/accept] users insert failed:', insertError.message)
-      Sentry.captureException(insertError)
-      if (createdAuthUser) {
-        // Remove the orphan auth user so a retry doesn't hit "already registered"
-        const { error: deleteError } = await admin.auth.admin.deleteUser(userId)
-        if (deleteError) {
-          console.error(
-            '[invitations/accept] orphan auth user cleanup failed:',
-            deleteError.message
-          )
-        }
+    if (membershipError) {
+      // Could be duplicate membership (UNIQUE constraint)
+      if (membershipError.code === '23505') {
+        await releaseClaim()
+        return NextResponse.json(
+          { error: 'You are already a member of this agency' },
+          { status: 409 }
+        )
       }
+      console.error('[invitations/accept] membership insert failed:', membershipError.message)
       await releaseClaim()
-      return NextResponse.json({ error: 'Failed to create account' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to add to agency' }, { status: 500 })
     }
-  } else {
-    userId = existingUsers![0].id
-  }
 
-  // Create membership
-  const { error: membershipError } = await admin.from('memberships').insert({
-    user_id: userId,
-    agency_id: invitation.agency_id,
-    role: invitation.role,
-  })
+    succeeded = true
 
-  if (membershipError) {
-    // Could be duplicate membership (UNIQUE constraint)
-    if (membershipError.code === '23505') {
+    // Insert audit log entry (invitation already marked accepted by the atomic claim above)
+    const { data: inviter } = await admin
+      .from('users')
+      .select('full_name')
+      .eq('id', userId)
+      .single()
+
+    const { error: auditError } = await admin.from('audit_log').insert({
+      agency_id: invitation.agency_id,
+      actor_id: userId,
+      actor_name: inviter?.full_name ?? 'Unknown',
+      action: 'invitation_accepted',
+      resource_type: 'membership',
+      resource_id: invitation.id,
+      metadata: { email: invitation.email, role: invitation.role },
+    })
+
+    if (auditError) {
+      // Log but don't fail — membership is already created, audit is non-critical
+      console.error('[invitations/accept] audit_log insert failed:', auditError.message)
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error('[invitations/accept] unexpected failure:', err)
+    if (succeeded) return NextResponse.json({ success: true })
+    try {
       await releaseClaim()
-      return NextResponse.json(
-        { error: 'You are already a member of this agency' },
-        { status: 409 }
-      )
+    } catch (releaseErr) {
+      console.error('[invitations/accept] claim release threw:', releaseErr)
     }
-    console.error('[invitations/accept] membership insert failed:', membershipError.message)
-    await releaseClaim()
-    return NextResponse.json({ error: 'Failed to add to agency' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to process invitation' }, { status: 500 })
   }
-
-  // Insert audit log entry (invitation already marked accepted by the atomic claim above)
-  const { data: inviter } = await admin.from('users').select('full_name').eq('id', userId).single()
-
-  const { error: auditError } = await admin.from('audit_log').insert({
-    agency_id: invitation.agency_id,
-    actor_id: userId,
-    actor_name: inviter?.full_name ?? 'Unknown',
-    action: 'invitation_accepted',
-    resource_type: 'membership',
-    resource_id: invitation.id,
-    metadata: { email: invitation.email, role: invitation.role },
-  })
-
-  if (auditError) {
-    // Log but don't fail — membership is already created, audit is non-critical
-    console.error('[invitations/accept] audit_log insert failed:', auditError.message)
-  }
-
-  return NextResponse.json({ success: true })
 }

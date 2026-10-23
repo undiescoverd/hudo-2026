@@ -27,6 +27,10 @@ interface State {
   duplicateMembership: boolean
   deletedAuthUsers: string[]
   authUsers: Array<{ id: string; email: string }>
+  alwaysAlreadyRegistered: boolean
+  failUpdateUser: boolean
+  throwOnMembership: boolean
+  updatedAuthUsers: Array<{ id: string; password?: string; email_confirm?: boolean }>
 }
 
 let state: State
@@ -45,6 +49,10 @@ function freshState(): State {
     duplicateMembership: false,
     deletedAuthUsers: [],
     authUsers: [],
+    alwaysAlreadyRegistered: false,
+    failUpdateUser: false,
+    throwOnMembership: false,
+    updatedAuthUsers: [],
   }
 }
 
@@ -89,6 +97,10 @@ function fakeFrom(table: string) {
       }
     }
     if (table === 'memberships' && op === 'insert') {
+      if (state.throwOnMembership) {
+        state.throwOnMembership = false
+        throw new Error('network boom')
+      }
       if (state.duplicateMembership) {
         return { data: null, error: { message: 'duplicate', code: '23505' } }
       }
@@ -127,13 +139,18 @@ const fakeClient = {
         if (state.failCreateUser) {
           return { data: { user: null }, error: { message: 'createUser boom' } }
         }
-        if (state.authUsers.some((u) => u.email === email)) {
+        if (state.alwaysAlreadyRegistered || state.authUsers.some((u) => u.email === email)) {
           return {
             data: { user: null },
             error: { message: 'A user with this email address has already been registered' },
           }
         }
         return { data: { user: { id: 'auth-1' } }, error: null }
+      },
+      updateUserById: async (id: string, attrs: { password?: string; email_confirm?: boolean }) => {
+        if (state.failUpdateUser) return { data: null, error: { message: 'update boom' } }
+        state.updatedAuthUsers.push({ id, ...attrs })
+        return { data: null, error: null }
       },
       listUsers: async () => ({ data: { users: state.authUsers }, error: null }),
       deleteUser: async (id: string) => {
@@ -278,12 +295,55 @@ describe('POST /api/invitations/accept — retry after failure', () => {
 
   it('already-registered error for a different auth email is not linked (500, claim released)', async () => {
     state.authUsers.push({ id: 'other-1', email: 'someone-else@example.com' })
-    // createUser reports "already registered" only for a matching email, so force it
-    state.failCreateUser = true
+    // createUser reports "already registered" but no auth user has the invitation email
+    state.alwaysAlreadyRegistered = true
     const res = await call({ token: TOKEN, password: GOOD_PASSWORD, fullName: 'New User' })
     assert.equal(res.status, 500)
     assert.equal(state.users.length, 0)
     assert.equal(state.invitation.accepted_at, null)
+  })
+
+  it('reconciled orphan gets the supplied password and confirmed email', async () => {
+    state.authUsers.push({ id: 'orphan-1', email: 'new@example.com' })
+    const res = await call({ token: TOKEN, password: GOOD_PASSWORD, fullName: 'New User' })
+    assert.equal(res.status, 200)
+    assert.deepEqual(state.updatedAuthUsers, [
+      { id: 'orphan-1', password: GOOD_PASSWORD, email_confirm: true },
+    ])
+  })
+
+  it('orphan credential update error returns 500 and releases the claim; retry succeeds', async () => {
+    state.authUsers.push({ id: 'orphan-1', email: 'new@example.com' })
+    state.failUpdateUser = true
+    const first = await call({ token: TOKEN, password: GOOD_PASSWORD, fullName: 'New User' })
+    assert.equal(first.status, 500)
+    assert.equal(state.invitation.accepted_at, null)
+    assert.equal(state.users.length, 0)
+
+    state.failUpdateUser = false
+    const retry = await call({ token: TOKEN, password: GOOD_PASSWORD, fullName: 'New User' })
+    assert.equal(retry.status, 200)
+    assert.equal(state.memberships, 1)
+  })
+
+  it('reconciled orphan is not deleted when the users insert fails', async () => {
+    state.authUsers.push({ id: 'orphan-1', email: 'new@example.com' })
+    state.failUsersInsert = true
+    const res = await call({ token: TOKEN, password: GOOD_PASSWORD, fullName: 'New User' })
+    assert.equal(res.status, 500)
+    assert.deepEqual(state.deletedAuthUsers, [])
+    assert.equal(state.invitation.accepted_at, null)
+  })
+
+  it('a thrown error after the claim releases it; retry succeeds', async () => {
+    state.throwOnMembership = true
+    const first = await call({ token: TOKEN, password: GOOD_PASSWORD, fullName: 'New User' })
+    assert.equal(first.status, 500)
+    assert.equal(state.invitation.accepted_at, null)
+
+    const retry = await call({ token: TOKEN, password: GOOD_PASSWORD, fullName: 'New User' })
+    assert.equal(retry.status, 200)
+    assert.equal(state.memberships, 1)
   })
 
   it('an already-accepted invitation still returns 410', async () => {
