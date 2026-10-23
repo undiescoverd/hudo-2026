@@ -46,7 +46,7 @@ Legend: ⬜ not started · 🟡 in progress · 🔵 PR open · ✅ merged to `ma
   - Worktree agents symlink `node_modules` and `git add` specific paths only.
 - **Migrations:**
   - Repo runs 0001–0023. Phases 2–4 use **0024–0026**. S4-JOURNEY-001 takes **0027** (`create_agency_with_owner`). This phase's migration is therefore **0028**.
-  - Apply with the `/apply-migration` skill (MCP `apply_migration`) to **both** hudo-dev (`xyeqnjboqimvhdwnyqbt`) and hudo-staging (`egabjtxrrcuzooyclwgw`). Never use the SQL editor.
+  - Apply with the `/apply-migration` skill (`sh scripts/db-push.sh local|staging`, `--dry-run` first; never MCP `apply_migration`) to **both** hudo-dev (`xyeqnjboqimvhdwnyqbt`) and hudo-staging (`egabjtxrrcuzooyclwgw`). Never use the SQL editor.
   - Every new table gets RLS enabled.
 - **Purge functions:**
   - `SECURITY DEFINER`, `SET search_path = public, pg_temp`.

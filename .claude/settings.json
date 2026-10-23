@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // \"\"'); if echo \"$FILE\" | grep -qE 'supabase/migrations/.*\\.sql$'; then echo '{\"systemMessage\":\"Apply via Supabase MCP apply_migration (updates schema_migrations), not the SQL editor — and apply to BOTH hudo-dev and hudo-staging.\"}'; fi"
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // \"\"'); if echo \"$FILE\" | grep -qE 'supabase/migrations/.*\\.sql$'; then echo '{\"systemMessage\":\"Apply via sh scripts/db-push.sh local|staging (supabase db push; --dry-run first) to BOTH hudo-dev and hudo-staging — NOT MCP apply_migration (writes timestamp versions) or the SQL editor. See /apply-migration.\"}'; fi"
           }
         ]
       }

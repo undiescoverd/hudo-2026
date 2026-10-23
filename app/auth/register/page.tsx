@@ -5,11 +5,21 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { validatePassword } from '@/lib/auth-validation'
 
-type FieldError = { fullName?: string; email?: string; password?: string }
+type FieldError = { fullName?: string; agencyName?: string; email?: string; password?: string }
 
-function validate(fullName: string, email: string, password: string): FieldError {
+function validate(
+  fullName: string,
+  agencyName: string,
+  email: string,
+  password: string
+): FieldError {
   const errors: FieldError = {}
   if (!fullName.trim()) errors.fullName = 'Full name is required'
+  if (!agencyName.trim()) {
+    errors.agencyName = 'Agency name is required'
+  } else if (agencyName.trim().length > 100) {
+    errors.agencyName = 'Agency name must be 100 characters or fewer'
+  }
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   if (!email.trim()) {
     errors.email = 'Email is required'
@@ -23,6 +33,7 @@ function validate(fullName: string, email: string, password: string): FieldError
 
 export default function RegisterPage() {
   const [fullName, setFullName] = useState('')
+  const [agencyName, setAgencyName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fieldErrors, setFieldErrors] = useState<FieldError>({})
@@ -34,7 +45,7 @@ export default function RegisterPage() {
     e.preventDefault()
     setServerError(null)
 
-    const errors = validate(fullName, email, password)
+    const errors = validate(fullName, agencyName, email, password)
     setFieldErrors(errors)
     if (Object.keys(errors).length > 0) return
 
@@ -43,11 +54,24 @@ export default function RegisterPage() {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName, email, password }),
+        body: JSON.stringify({ fullName, agencyName, email, password }),
       })
       const data = await res.json()
       if (!res.ok) {
         setServerError(data.error ?? 'Registration failed. Please try again.')
+      } else if (data.session) {
+        // Email confirmation is off: the server-side signUp session is not in the browser,
+        // so sign in through the cookie-setting route, then land on the dashboard.
+        const signIn = await fetch('/api/auth/signin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.trim(), password }),
+        })
+        if (signIn.ok) {
+          window.location.href = '/dashboard'
+          return
+        }
+        setServerError('Account created. Please sign in to continue.')
       } else {
         setSubmitted(true)
       }
@@ -119,6 +143,31 @@ export default function RegisterPage() {
             {fieldErrors.fullName && (
               <p id="fullName-error" className="text-xs text-destructive">
                 {fieldErrors.fullName}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="agencyName" className="text-sm font-medium">
+              Agency name
+            </label>
+            <input
+              id="agencyName"
+              type="text"
+              autoComplete="organization"
+              maxLength={100}
+              value={agencyName}
+              onChange={(e) => setAgencyName(e.target.value)}
+              aria-describedby={fieldErrors.agencyName ? 'agencyName-error' : undefined}
+              className={cn(
+                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                'focus:ring-2 focus:ring-ring focus:ring-offset-2',
+                fieldErrors.agencyName ? 'border-destructive' : 'border-input'
+              )}
+            />
+            {fieldErrors.agencyName && (
+              <p id="agencyName-error" className="text-xs text-destructive">
+                {fieldErrors.agencyName}
               </p>
             )}
           </div>

@@ -651,6 +651,36 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Held back:** LAUNCH-001 (it edits the register page, which conflicts with #180) and DELETE-001 (the archive plan orders Phase 1 #156 first).
 - **Gotcha (if any):** a route handler can get behavioural tests without `mock.module`. Stub global `fetch` for Supabase and Upstash, and wrap the call in `requestAsyncStorage.run` so `cookies()` works. See the #180 and #182 route tests. Prefer this over regex-on-source tests for auth gates. Also, in zsh `"$B:lib/x"` applies the `:l` lowercase modifier; write `"${B}:lib/x"`.
 
+## 2026-10-23 02:14 — Migration 0027 applied to hudo-dev + hudo-staging (psql via pooler)
+
+- **Task:** apply `0027_create_agency_with_owner` (S4-JOURNEY-001) to the live projects
+- **Models:** planner=opus
+- **Outcome:** done (tracking superseded by the repair entry below)
+- **Notes:** applied with psql through the IPv4 session pooler, in one transaction per DB (`\i` the file, then insert the tracking row with the file contents as `statements`), followed by `NOTIFY pgrst, 'reload schema'`. Tracked as name `0027_create_agency_with_owner` under MCP-style timestamp versions: dev `20261023021347`, staging `20261023021359`. Verified on both: SECURITY DEFINER, `search_path=''`, EXECUTE for service_role only.
+- **Gotcha (if any):** the direct host `db.<ref>.supabase.co` is IPv6-only (ECONNREFUSED here). Use `aws-1-eu-west-2.pooler.supabase.com:5432` with user `postgres.<ref>`; `aws-0-…` returns "tenant not found". Percent-encode the password.
+
+## 2026-10-23 — Migration-tracking repair (`db push` usable) + per-migration effect probe
+
+- **Task:** chore/migration-tracking-repair. Make `schema_migrations` on dev and staging track the repo versions `0001`… so `supabase db push` works
+- **Models:** planner=opus, executor=sonnet (`scripts/db-push.sh` + test)
+- **Outcome:** done on both hudo-dev and hudo-staging (hudo-prod untouched).
+- **Notes:**
+  - A read-only effect probe of all 24 files (on both DBs) showed that **0004, 0006, 0008 and 0010 were never applied on either DB**, despite the 2026-06-16 "functionally complete" claim. Staging also lacks 0013's two `guest_links` indexes. Everything else is present, and dev matches staging apart from whitespace in function bodies.
+  - 0015's `REVOKE ALL … FROM PUBLIC` leaves `anon` and `authenticated` able to EXECUTE `increment_guest_link_view` (Supabase grants them directly). Separate follow-up.
+  - Plan (Ian's choice b): repair the verified versions with `migration repair`, apply 0006/0008/0010 (+0013 on staging), and decide 0004 separately. 0004's `deleted_at IS NULL` on `comments_select` likely stops Realtime from delivering soft-delete UPDATEs to other viewers, but CI's pgTAP asserts that filter (`tests/rls/comments.test.sql`).
+  - The process now goes through `scripts/db-push.sh`. MCP `apply_migration` is banned in the skill, the hook text and CLAUDE.md.
+  - **Repair, per DB (same steps on each):**
+    1. Back up into `supabase_migrations.schema_migrations_backup_20261023` (18 rows each).
+    2. `migration repair --status reverted` the 18 MCP timestamp rows.
+    3. `migration repair --status applied` 0001–0005, 0007, 0009, 0011, 0012, 0014–0023 and 0027, plus 0013 on dev only.
+    4. `sh scripts/db-push.sh <env> --include-all`. On dev this applied 0006/0008/0010; on staging it applied 0006/0008/0010/0013. The dry-run listed exactly those files first.
+    5. `NOTIFY pgrst, 'reload schema'`.
+  - **0004 is marked applied but was not run on either DB** (Ian approved). Follow-up is GitHub #187. The 0015 grants follow-up is #186.
+  - **Verified:** on both DBs, `--list` shows local = remote for all 24 files and `--dry-run` reports "Remote database is up to date". The staging re-probe is identical to dev's, including the policy, function, column and index fingerprints.
+  - **PR #185 bot review:** both "AI Code Review" and pullfrog failed with DeepSeek `402 Insufficient Balance`. With no review comment to act on, the bounded `pr-fix` loop was skipped. The required checks (GitGuardian; Lint, Type-check, Build; RLS) are green.
+  - **Not done:** the live smoke test on staging (new-version upload for 0006, reply-to-a-reply rejection for 0008).
+- **Gotcha (if any):** "untracked but idempotent ⇒ effectively applied" was false for 4 of 7 untracked files. Probe each migration's effect before `migration repair --status applied`. Second gotcha: `.claude/settings.local.json` Bash allow-rules only match the _start_ of a command. Run each DB step as one plain command, with no `cd … &&` or `$(…)` prefix and with absolute env-file paths, or it prompts every time.
+
 ## 2026-10-17 23:45 — Guest-link gaps: hide Share for talent; renewals don't count as views
 
 - **Task:** fix/guest-link-share-role-and-view-count, two gaps found mapping Flow 02 (guest review link) in Paper

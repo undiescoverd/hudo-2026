@@ -6,7 +6,7 @@
 
 ---
 
-> **Migration numbering (verified 2026-10-22):** migrations 0001–0023 are in the repo. Wave 1 uses **0024–0026** (deletion plan). S4-JOURNEY-001 uses **0027**. Archive & restore (archive plan Phase 5) moves to **0028**. Apply via the `/apply-migration` flow (MCP `apply_migration` → both hudo-dev + hudo-staging), never the SQL editor.
+> **Migration numbering (verified 2026-10-22):** migrations 0001–0023 are in the repo. Wave 1 uses **0024–0026** (deletion plan). S4-JOURNEY-001 uses **0027**. Archive & restore (archive plan Phase 5) moves to **0028**. Apply via the `/apply-migration` flow (`sh scripts/db-push.sh local|staging`, `--dry-run` first → both hudo-dev + hudo-staging), never MCP `apply_migration` or the SQL editor. Because 0027 is already applied, pushing 0024–0026 later needs `--include-all` (`db push` refuses versions older than the newest remote one) — check the dry-run list first.
 
 ## Tasks
 
@@ -148,13 +148,13 @@ NOTES: S — GitHub #146; plan Phase 4; decision D8. The prod bucket needs the s
 
 ---
 
-- [ ] **S4-JOURNEY-001** — Minimal agency creation at sign-up
+- [x] **S4-JOURNEY-001** — Minimal agency creation at sign-up
 
 TASK_ID: S4-JOURNEY-001
 TITLE: Minimal agency creation at sign-up (agency-name field, atomic RPC, owner lands on /dashboard)
 BRANCH: feat/s4-S4-JOURNEY-001-owner-signup
 MODEL: sonnet
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Register page has an agency-name field; register route rejects a missing name with 400
@@ -193,13 +193,13 @@ NOTES: S — Resend and revoke stay in Sprint 5. Reuse requireAgentRole and INVI
 
 ---
 
-- [ ] **S4-JOURNEY-003** — Invite accept must not burn the token on failure
+- [x] **S4-JOURNEY-003** — Invite accept must not burn the token on failure
 
 TASK_ID: S4-JOURNEY-003
 TITLE: Invite accept retry (validate before claim, release claim on failure)
 BRANCH: feat/s4-S4-JOURNEY-003-accept-retry
 MODEL: sonnet
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - A 400 (missing password or name) does not consume the token; the retry with the same token succeeds
