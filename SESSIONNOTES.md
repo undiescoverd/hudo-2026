@@ -746,3 +746,30 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Dependencies extended:** `S4-ACCESS-001` now waits for REVIEW-001–003 (its note already says it runs after UI changes). `S4-LAUNCH-002` now waits for REVIEW-002, because its smoke flow covers "comment and resolve".
   - **Linear:** this session has no `LINEAR_API_KEY` and the Linear connector failed to connect, so the four issues still need creating, each title starting with its exact task ID. Until then, `sync-check` shows `⚠ ERROR` for them (Failure Log, 2026-06-16 Linear entry).
 - **Gotcha (if any):** a cloud session can push only its designated branch unless the user OKs another. When one PR is already open on it, ask early for a second branch rather than queueing unrelated work behind the merge.
+
+## 2026-10-23 21:40 — S4-REVIEW-002: comment actions (reply, resolve, edit, delete)
+
+- **Task:** S4-REVIEW-002 (#191), branch `feat/s4-S4-REVIEW-002-comment-actions`, built in its own worktree in parallel with S4-REVIEW-004
+- **Models:** planner=opus, executor=sonnet; reviews=hudo-security-reviewer (fit to merge) + sonnet code review (simplify included)
+- **Outcome:** partial. The PR is open. The live Preview check (resolve as agent, reply as talent, reply-to-reply 400) still needs `STAGING_SEED_PASSWORD`.
+- **Notes:**
+  - **What was built:**
+    - Per-comment actions, gated by `getCommentPermissions`: Reply on top-level comments, Resolve for agent+, Edit for the author, Delete for the author or agent+.
+    - The viewer's role comes from a client `memberships` read under RLS, as the upload page does.
+    - A "Comment deleted" placeholder when a deleted comment has replies.
+    - The empty state follows what's actually visible.
+    - The POST route returns 400 "Replies can only be one level deep". The 23514 backstop only applies to replies, and logs.
+  - **Security review: fit to merge.** Its two lows are fixed: a stale Realtime UPDATE can no longer resurrect a deleted comment, and the backstop now logs.
+  - **Code review fixes:**
+    - Space on a focused button no longer toggles playback (`usePlayerShortcuts`).
+    - Optimistic resolve and edit only own their fields, and roll back only if those fields are untouched, so concurrent Realtime updates aren't clobbered.
+    - A 404 on PATCH or DELETE marks the comment deleted.
+    - Focus is kept after save, delete and reply.
+    - Regex-on-source tests were replaced by pure extractions (`runCommentDelete`, `editKeyAction`, `resolveCommentTarget`, `itemReducer`).
+    - `buildThreads` owns visibility.
+  - **Decisions:** resolve stays allowed on replies (resolved state only feeds the per-comment PDF status). Timeline markers show top-level comments only.
+  - **FILES deviation:** `page.tsx` (role wiring), `hooks/usePlayerShortcuts.ts` (Space fix) and the new `components/comments/*` helpers.
+  - **Worker restart:** a restart killed one full-suite run mid-way (exit 137). The worktrees survived, and the re-run is green (1443).
+- **Gotcha (if any):** `GET /comments` omits soft-deleted parents, so a reload orphans their replies; `buildThreads` rebuilds a placeholder parent client-side. Two more:
+  - `tsx --test` can't take explicit bracketed paths (`[videoId]`); run those files with `npx tsx "<path>"`.
+  - Rendering components in Node tests needs `globalThis.React = React`, because tsx compiles JSX to classic `React.createElement`.
