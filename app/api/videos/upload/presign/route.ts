@@ -134,6 +134,37 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // --- Agent-supplied talentId must be a talent member of this agency ---
+  // Agents may assign a video to a talent, but the target must belong to
+  // agencyId with role 'talent' (blocks cross-agency / non-talent / unknown ids).
+
+  const agentTalentId =
+    role !== 'talent' && typeof talentId === 'string' && talentId.trim() ? talentId.trim() : null
+
+  if (agentTalentId) {
+    const { data: talentMembership, error: talentMembershipError } = await admin
+      .from('memberships')
+      .select('user_id')
+      .eq('user_id', agentTalentId)
+      .eq('agency_id', agencyId)
+      .eq('role', 'talent')
+      .maybeSingle()
+
+    if (talentMembershipError) {
+      console.error(
+        '[upload/presign] Failed to verify talent membership:',
+        talentMembershipError.message
+      )
+      return NextResponse.json({ error: 'Failed to verify selected talent' }, { status: 500 })
+    }
+    if (!talentMembership) {
+      return NextResponse.json(
+        { error: 'Selected talent is not a member of this agency' },
+        { status: 400 }
+      )
+    }
+  }
+
   // --- Quota + grace-period check (best-effort; authoritative check in complete route) ---
 
   const { data: agency, error: agencyError } = await admin
@@ -192,12 +223,7 @@ export async function POST(request: NextRequest) {
 
     // Talent can never upload on behalf of someone else — always force
     // resolvedTalentId to the caller, ignoring any body-supplied talentId.
-    const resolvedTalentId =
-      role === 'talent'
-        ? user.id
-        : typeof talentId === 'string' && talentId.trim()
-          ? talentId
-          : user.id
+    const resolvedTalentId = role === 'talent' ? user.id : (agentTalentId ?? user.id)
 
     const { data: newVideo, error: videoError } = await admin
       .from('videos')

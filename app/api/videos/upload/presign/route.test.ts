@@ -227,3 +227,61 @@ describe('presign route — source code invariants', () => {
     assert.match(source, /generateUploadUrl|createMultipartUpload/)
   })
 })
+
+describe('presign route — agent-supplied talentId membership check', () => {
+  let source: string
+
+  before(async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    source = fs.readFileSync(path.resolve(import.meta.dirname ?? __dirname, 'route.ts'), 'utf8')
+  })
+
+  it('queries memberships for user_id = talentId, agency_id = agencyId, role = talent', () => {
+    assert.match(
+      source,
+      /\.from\('memberships'\)\s*\.select\('user_id'\)\s*\.eq\('user_id', agentTalentId\)\s*\.eq\('agency_id', agencyId\)\s*\.eq\('role', 'talent'\)/
+    )
+  })
+
+  it('only applies to non-talent callers that supplied a non-empty talentId', () => {
+    assert.match(
+      source,
+      /role !== 'talent' && typeof talentId === 'string' && talentId\.trim\(\) \? talentId\.trim\(\) : null/
+    )
+    assert.match(source, /if \(agentTalentId\) \{/)
+  })
+
+  it('returns 400 for a non-member / non-talent target', () => {
+    assert.match(
+      source,
+      /if \(!talentMembership\) \{\s*return NextResponse\.json\(\s*\{ error: 'Selected talent is not a member of this agency' \},\s*\{ status: 400 \}/
+    )
+  })
+
+  it('logs and returns 500 when the membership query errors (checked before the 400)', () => {
+    const errIdx = source.indexOf('if (talentMembershipError)')
+    const missIdx = source.indexOf('if (!talentMembership)')
+    assert.ok(errIdx > -1 && missIdx > errIdx)
+    assert.match(source, /Failed to verify talent membership:/)
+    assert.match(source, /Failed to verify selected talent' \}, \{ status: 500 \}/)
+  })
+
+  it('runs before the videos insert (no partial writes)', () => {
+    const checkIdx = source.indexOf(".eq('role', 'talent')")
+    const insertIdx = source.indexOf(".from('videos')\n      .insert")
+    assert.ok(checkIdx > -1 && insertIdx > checkIdx)
+  })
+
+  it('talent callers are still forced to their own id; absent talentId defaults to caller', () => {
+    assert.match(
+      source,
+      /const resolvedTalentId = role === 'talent' \? user\.id : \(agentTalentId \?\? user\.id\)/
+    )
+  })
+
+  it('does not alter the existing-video path (it never writes talent_id)', () => {
+    const retry = source.slice(source.indexOf('// Verify video exists'))
+    assert.doesNotMatch(retry.split('// --- Generate presigned')[0], /talent_id:/)
+  })
+})
