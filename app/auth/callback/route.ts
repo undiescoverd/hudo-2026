@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse, type NextRequest } from 'next/server'
+import { safeRedirect } from '@/lib/auth-validation'
 
 /**
  * GET /auth/callback
@@ -12,14 +13,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function GET(request: NextRequest) {
   const url = new URL(request.url)
   const code = url.searchParams.get('code')
-  // Guard against open redirect: only allow same-origin relative paths.
-  // new URL(absolute, base) ignores the base, so '//evil.com' or 'https://evil.com'
-  // would escape if we didn't strip them here.
-  const rawNext = url.searchParams.get('next') ?? '/'
-  const next =
-    rawNext.startsWith('/') && !rawNext.startsWith('//') && !rawNext.startsWith('/\\')
-      ? rawNext
-      : '/'
+  // Guard against open redirect: only same-origin local paths (see safeRedirect); else '/'.
+  const next = safeRedirect(url.searchParams.get('next'), '/')
 
   if (code) {
     const cookieStore = await cookies()
