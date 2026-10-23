@@ -680,3 +680,26 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **PR #185 bot review:** both "AI Code Review" and pullfrog failed with DeepSeek `402 Insufficient Balance`. With no review comment to act on, the bounded `pr-fix` loop was skipped. The required checks (GitGuardian; Lint, Type-check, Build; RLS) are green.
   - **Not done:** the live smoke test on staging (new-version upload for 0006, reply-to-a-reply rejection for 0008).
 - **Gotcha (if any):** "untracked but idempotent ⇒ effectively applied" was false for 4 of 7 untracked files. Probe each migration's effect before `migration repair --status applied`. Second gotcha: `.claude/settings.local.json` Bash allow-rules only match the _start_ of a command. Run each DB step as one plain command, with no `cd … &&` or `$(…)` prefix and with absolute env-file paths, or it prompts every time.
+
+## 2026-10-24 — S4-JOURNEY-004: middleware moved to project root (PR #188, awaiting live walk + merge)
+
+- **Task:** S4-JOURNEY-004 (RES-221). Also landed PR #185 (merge commit, Ian approved) as handoff step 1.
+- **Models:** planner=opus, executor=sonnet (worktree agent), reviews=hudo-security-reviewer + sonnet code reviewer + 4-angle simplify
+- **Outcome:** partial. PR #188 is open, CI green, task `in_review` (sprint file + Linear). The signed-out live checks passed; the signed-in role walk has not run yet.
+- **Notes:**
+  - `git mv app/middleware.ts middleware.ts`. `next build` now lists `ƒ Middleware 157 kB`, which is the proof Next loads it. `/terms`, `/privacy`, `/dpa` and `/offline` were pre-added to `PUBLIC_PATHS` (Ian's call), so LAUNCH-001 and PWA-001 don't touch middleware.
+  - Review fixes:
+    - Session cookies refreshed by `getUser()` are now copied onto redirect and 403 responses. Before, rotated refresh tokens were dropped.
+    - `?redirect=` keeps the query string.
+    - The role rule is a pure `isForbidden()`.
+  - **Preview signed-out checks (passed):**
+    - `/`, `/dashboard`, `/talent` and `/videos/abc?t=30` return 307 to `/auth/signin?redirect=…` with the query kept.
+    - `/auth/signin`, `/auth/register` and `/guest/invalid` return 200.
+    - A bad guest token returns 307 to `/guest/invalid`, not sign-in.
+    - `POST /api/webhooks/stripe` returns 400 from the app.
+    - No Vercel deployment protection sits in front of the branch Preview.
+  - **Cron returns 500 "Server misconfigured" on Preview:** `CRON_SECRET` isn't set in the Vercel Preview env. The route is reached (not redirected), so it's not this PR.
+  - **Signed-in walk still to do:** `scripts/walk-preview-roles.mjs` on `chore/handoff-s4-next-steps` covers owner, agent, talent and a guest link. Staging has no admin_agent seed user, and a fresh owner sign-up (the #175 loop) needs a new staging user. Both are waiting on Ian.
+  - **Pre-existing open redirect found:** `safeRedirect` (`lib/auth-validation.ts:17`) accepts `/\evil.com`. `app/auth/callback/route.ts` already blocks it. Separate fix pending Ian's OK.
+  - DeepSeek bot reviews still fail with 402, so the pr-fix loop was skipped.
+- **Gotcha (if any):** a matcher exclusion by file extension (`.*\.(png|js|…)$`) lets page paths like `/talent/x.png` skip the auth middleware entirely. Exclude static files by name.
