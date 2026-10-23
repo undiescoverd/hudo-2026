@@ -566,3 +566,87 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Outcome:** done
 - **Notes:** `scripts/check-secrets.sh` scans added lines only (`--staged` / `--range A..B`): credential assignments, provider tokens, `.env*` files; masks values; exit 1 on findings, exit 2 if git diff fails (fails closed). Wired into `.husky/pre-commit`, `.husky/pre-push` (secret scan on `origin/main...<sha>` + foreign-commit check, both before `pnpm build`) and the first step of the CI job (`fetch-depth: 0`). Tuned away false positives: bare `sk_live_` in docs/`startsWith('sk_live_')` (live keys now need a 16+ char body), `LINEAR_API_KEY="$LINEAR_API_KEY"` (values starting with `$` are skipped). Replaced the hardcoded `TestPassword123!` in `playwright-notif-seed.mjs` and `upload-test-seed.mjs` with a per-run random value. Tests: `scripts/check-secrets.test.ts`.
 - **Gotcha (if any):** `scripts/seed-staging.mjs` on main still hardcodes the staging password until PR #154 merges, so a full-history scan reports exactly that one hit. The scan only sees the net diff of a range, so a secret added then removed within the same push is not caught; `git push --no-verify` skips the local hooks (CI is the backstop).
+
+## 2026-10-16 — S4-UPLOADFIX-001: upload bugs B1–B3 (branch feat/s4-S4-UPLOADFIX-001-upload-bugs)
+
+- **Task:** S4-UPLOADFIX-001 (GitHub #149 B1, #150 B2, #151 B3)
+- **Models:** planner=opus, executor=sonnet (worktree), reviewers=hudo-security-reviewer + rls-tenancy-auditor
+- **Outcome:** partial (PR open; `/live-smoke-test` on a Preview URL not yet run)
+- **Notes:** `performUpload` extracted to `lib/upload-client.ts`; retry reuses the first presign's `videoId` (B2); presign 402/429 messages pass through, quota panel only for a message starting "Storage quota exceeded", 429 shows the Retry-After wait (B3); agent-class roles pick a talent from `lib/talent-roster.ts` and `talentId` is sent, talent never sends it (B1). Both reviews: no blocker. 1169 unit tests green, `pnpm build` green.
+- **Gotcha:** the presign route (out of this task's FILES) never checks that an agent-supplied `talentId` is a `talent` member of `agencyId`; the UI picker is not a control. Needs a server-side membership check in a follow-up (security surface). Also `fetchTalentRoster` has no role guard of its own (RLS lets any member read co-members), so callers must gate on `isAgentClassRole`.
+
+## 2026-10-17 — Paper design system: v3 tokens + all components
+
+- **Task:** Port Graphite & Coral v3 tokens into Paper (file "Hudo App", id 01M54FNA831VWNEVWVKAWWCA32) and redraw every components/ React component on top of them.
+- **Models:** planner=opus, executor=sonnet (5 domain pages + dashboard pilot), haiku (font/colour bulk fix)
+- **Outcome:** done. Its pages are Foundations, Primitives, Dashboard, Shell & Notifications, Player & Versions, Comments, Upload, Guest, and Billing & Settings. There are 82 tokens: colour, spacing, type, radius, breakpoint and container.
+- **Notes:** The tokens came from `.figma-prototype/redesign-v3` (PALETTES.coral light). app/globals.css still holds stock shadcn slate. Spacing and type values are the ones the prototype uses; breakpoints are Tailwind defaults. VideoStatusLive and VideoPlayerProvider have no visual output, so each got a note artboard.
+- **Gotcha:** Paper Text nodes do NOT inherit font-family or colour from a parent frame. Setting them on the artboard leaves text at system-ui and #000. Set `font-family: var(--font-sans)` and `color: var(--color-text)` on every text element. We had to bulk-fix 196 font and 88 colour nodes.
+
+## 2026-10-17 — Flow 01 (core review loop) mapped in Paper
+
+- **Task:** Map the core review loop + edge cases in Paper "Hudo App" (new page "Flow · Core review loop")
+- **Models:** planner=opus, executor=opus (design-only; no code changed)
+- **Outcome:** done
+- **Notes:** 11-step Agent/System/Talent swimlane + edge-cases table, every claim checked against code. Gaps found: status changes (changes requested / approved) send no notification; nothing sets `in_review`; unread counts never clear (`comment_reads.last_seen_at` never written); email digest is effectively daily (cron `0 0 * * *`); re-upload on an approved video alerts no one and isn't re-reviewed.
+- **Gotcha (if any):** `batch_window_minutes` (default 15) does NOT control email timing on Hobby — the notifications cron runs once a day, so "15-minute digest" copy would be false.
+
+## 2026-10-17 — Flow 02 (guest review link) mapped in Paper
+
+- **Task:** Map the guest review link flow + edge cases in Paper "Hudo App" (page "Flow · Guest review link")
+- **Models:** planner=opus, executor=opus (design-only; no code changed)
+- **Outcome:** done
+- **Notes:** 9-step Agent/System/Guest swimlane + 14-row edge-cases table, checked against code. Gaps: guest view_count inflates (every playback-url fetch increments, incl. 15-min refreshes); no alert on guest view; Share button rendered for talent but API is agent-only (403); guest replies render flat (parent_id not selected). Also corrected Flow 01: both players auto-refresh the 15-min signed URL (useSignedUrl / useGuestSignedUrl).
+- **Gotcha (if any):** guest links pin `video_version_id` at creation — a later upload is invisible to existing guests, and the links list doesn't show which version a link serves.
+
+## 2026-10-17 — Flow 01/02 open questions decided
+
+- **Task:** Walk Ian through every open question on the Flow 01 (review loop) and Flow 02 (guest link) Paper boards
+- **Models:** planner=opus (design-only; no code changed)
+- **Outcome:** done — all 14 decided, boards updated to "Decided" cards
+- **Notes:** Flow 01: auto In review on first agent open; warn-then-allow approve with open comments; new version on Approved re-opens review; changes requested requires ≥1 open comment; confirm only when leaving Approved; "N open comments on v1" note on v2; talent in 2 agencies = one list + agency label; dropped upload = tab-close warning + part retry + Retry (no resume). Flow 02: guests see NO comments; optional link label (no Hudo email); guests read-only for MVP; expiry presets 24h/3d/7d/Never, default 3d, expired links auto-hide; links show version + "Share v3 instead" nudge; links stop when subscription ends. Also confirmed: uploads have no resume/retry/beforeunload today.
+- **Gotcha (if any):** none
+
+## 2026-10-18 — GitHub issues filed for flow decisions
+
+- **Task:** File issues for the Flow 01/02 decisions + gaps (Ian approved all)
+- **Models:** planner=opus (no code changed)
+- **Outcome:** done — #159–#167 (decisions), #168–#171 (gaps)
+- **Notes:** Each issue has problem, decision, acceptance criteria, code pointers, Paper reference. Flow 01 board corrected: steps 05/10 assumed a status menu on the player, but there is none.
+- **Gotcha (if any):** the video page has no status control — agents can only change status via `components/dashboard/BulkStatusUpdate.tsx` on the dashboard table (now #159).
+
+## 2026-10-18 — Linear drift repair + housekeeping review
+
+- **Task:** Reconnect Linear MCP, reconcile Linear/sprint-4 with real state, review the last few days for stale docs
+- **Models:** planner=opus, executor=opus (docs/tracker only; no code changed)
+- **Outcome:** done
+- **Notes:** Linear had S4-DELETE-001/ERASE-001/SAVER-001 (RES-201..203) as Done though nothing is built → set to Todo; S4-UPLOADFIX-001 (RES-200) → In Review, and `tasks/sprint-4.md` STATUS → in_review (PR #156 open, CI green). Removed the stale `linear-server` MCP entry (retired `/sse` endpoint, 404); the user-scoped `linear` server (`/mcp`) works. CLAUDE.md: S4 marker → in progress; "Comment UI never mounted" marked RESOLVED (#95). GitHub issues left untouched.
+- **Gotcha (if any):** `orchestrate.js sync-check` "merged into release but not done" matches a task ID anywhere in a main commit message — plan PR #153 (which only adds task rows) false-flags all four Wave 1 tasks. Do NOT run `sync-fix` on that output; it would mark unbuilt tasks done.
+
+## 2026-10-23 — JOURNEY-003 review fixes + JOURNEY-001 owner sign-up
+
+- **Task:** S4-JOURNEY-003 (PR #179) review + fixes; S4-JOURNEY-001 build (PR #180)
+- **Models:** planner=opus, executor=sonnet (worktrees), reviewers=hudo-security-reviewer, rls-tenancy-auditor, sonnet code review
+- **Outcome:** partial — both PRs pushed and reviewed; merges, GitGuardian triage and migration 0027 apply left to Ian
+- **Notes:**
+  - **#179:** GitGuardian's 2 hits are a fake test-fixture password from an earlier commit, already replaced at HEAD by a runtime-generated one. It is not used anywhere real, so nothing needs rotating; mark both as false positive.
+  - Review found two real bugs in #179, fixed in 443f24c:
+    - The orphan-reconcile path ignored the supplied password (pre-hijack risk). It now calls `updateUserById(password, email_confirm)`.
+    - A throw after the claim burned the token. It is now wrapped in try/catch with a release.
+  - **#180:** the first commit could delete a pending, _unconfirmed_ account via an unauthenticated re-submit. Fixed in 1713568: an existing `public.users` row returns generic success, the delete is guarded by `created_at`, and the 409 now fires only on `agencies_slug_key`.
+  - The pgTAP for 0027 is unrun locally (no Docker). The migration is not applied.
+  - The Pullfrog/AI Code Review checks fail on every PR because the DeepSeek account is out of credit; this is not a code issue.
+- **Gotcha (if any):** Supabase `signUp` with confirmation ON returns an empty-`identities` user only for an already-_confirmed_ email. An _unconfirmed_ email returns the real existing user, so any "delete the auth user on failure" cleanup must prove this request created it.
+
+## 2026-10-23 — JOURNEY-002 team page, #156 conflict, presign talentId gate
+
+- **Task:** S4-JOURNEY-002 (PR #181); unblock S4-UPLOADFIX-001 (PR #156); presign `talentId` membership fix (PR #182)
+- **Models:** planner=opus, executor=sonnet (worktrees), reviewers=hudo-security-reviewer, sonnet code review
+- **Outcome:** done (PRs open; merges left to Ian)
+- **Notes:**
+  - **#181:** the Team page plus `InviteForm`. `INVITE_PERMISSIONS` moved to `lib/invite-permissions.ts`, because a route module can't export constants. Both reviews: merge.
+  - **#156:** merged `origin/main` into the branch (no force-push). The only conflict was in SESSIONNOTES.
+  - **#182:** the presign route trusted an agent-supplied `talentId` (pre-existing on main; #156 is the first UI that sends it). It now checks for a talent membership in `agencyId`, and returns 400 on a malformed or non-member id. It has behavioural tests that call the real handler. Merge before #156.
+  - JOURNEY-001's CI RLS job applied 0027 and its pgTAP passed.
+  - **Held back:** LAUNCH-001 (it edits the register page, which conflicts with #180) and DELETE-001 (the archive plan orders Phase 1 #156 first).
+- **Gotcha (if any):** a route handler can get behavioural tests without `mock.module`. Stub global `fetch` for Supabase and Upstash, and wrap the call in `requestAsyncStorage.run` so `cookies()` works. See the #180 and #182 route tests. Prefer this over regex-on-source tests for auth gates. Also, in zsh `"$B:lib/x"` applies the `:l` lowercase modifier; write `"${B}:lib/x"`.
