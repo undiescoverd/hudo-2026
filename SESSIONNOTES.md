@@ -567,6 +567,14 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Notes:** `scripts/check-secrets.sh` scans added lines only (`--staged` / `--range A..B`): credential assignments, provider tokens, `.env*` files; masks values; exit 1 on findings, exit 2 if git diff fails (fails closed). Wired into `.husky/pre-commit`, `.husky/pre-push` (secret scan on `origin/main...<sha>` + foreign-commit check, both before `pnpm build`) and the first step of the CI job (`fetch-depth: 0`). Tuned away false positives: bare `sk_live_` in docs/`startsWith('sk_live_')` (live keys now need a 16+ char body), `LINEAR_API_KEY="$LINEAR_API_KEY"` (values starting with `$` are skipped). Replaced the hardcoded `TestPassword123!` in `playwright-notif-seed.mjs` and `upload-test-seed.mjs` with a per-run random value. Tests: `scripts/check-secrets.test.ts`.
 - **Gotcha (if any):** `scripts/seed-staging.mjs` on main still hardcodes the staging password until PR #154 merges, so a full-history scan reports exactly that one hit. The scan only sees the net diff of a range, so a secret added then removed within the same push is not caught; `git push --no-verify` skips the local hooks (CI is the backstop).
 
+## 2026-10-16 — S4-UPLOADFIX-001: upload bugs B1–B3 (branch feat/s4-S4-UPLOADFIX-001-upload-bugs)
+
+- **Task:** S4-UPLOADFIX-001 (GitHub #149 B1, #150 B2, #151 B3)
+- **Models:** planner=opus, executor=sonnet (worktree), reviewers=hudo-security-reviewer + rls-tenancy-auditor
+- **Outcome:** partial (PR open; `/live-smoke-test` on a Preview URL not yet run)
+- **Notes:** `performUpload` extracted to `lib/upload-client.ts`; retry reuses the first presign's `videoId` (B2); presign 402/429 messages pass through, quota panel only for a message starting "Storage quota exceeded", 429 shows the Retry-After wait (B3); agent-class roles pick a talent from `lib/talent-roster.ts` and `talentId` is sent, talent never sends it (B1). Both reviews: no blocker. 1169 unit tests green, `pnpm build` green.
+- **Gotcha:** the presign route (out of this task's FILES) never checks that an agent-supplied `talentId` is a `talent` member of `agencyId`; the UI picker is not a control. Needs a server-side membership check in a follow-up (security surface). Also `fetchTalentRoster` has no role guard of its own (RLS lets any member read co-members), so callers must gate on `isAgentClassRole`.
+
 ## 2026-10-17 — Paper design system: v3 tokens + all components
 
 - **Task:** Port Graphite & Coral v3 tokens into Paper (file "Hudo App", id 01M54FNA831VWNEVWVKAWWCA32) and redraw every components/ React component on top of them.
