@@ -746,3 +746,19 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Dependencies extended:** `S4-ACCESS-001` now waits for REVIEW-001–003 (its note already says it runs after UI changes). `S4-LAUNCH-002` now waits for REVIEW-002, because its smoke flow covers "comment and resolve".
   - **Linear:** this session has no `LINEAR_API_KEY` and the Linear connector failed to connect, so the four issues still need creating, each title starting with its exact task ID. Until then, `sync-check` shows `⚠ ERROR` for them (Failure Log, 2026-06-16 Linear entry).
 - **Gotcha (if any):** a cloud session can push only its designated branch unless the user OKs another. When one PR is already open on it, ask early for a second branch rather than queueing unrelated work behind the merge.
+
+## 2026-10-23 20:44 — Rate limit on `/auth/callback` (follow-up from the #193 security review)
+
+- **Task:** add the Upstash limiter that `/auth/callback` was missing. It was the only auth route without one. The `hudo-security-reviewer` flagged it as a medium on #193.
+- **Models:** planner=opus, executor=sonnet; security review=hudo-security-reviewer
+- **Outcome:** done; PR #195. It was first stacked on #193's head, because #193 adds the test file, then rebased onto `main` after #193 merged.
+- **Notes:**
+  - **Limit:** `auth:callback:ip:<ip>`, 10 per 15 minutes (`AUTH_RATE_WINDOW`). It uses `checkRateLimit(…, 'fail-closed')`, the same as reset-password and invitations, and runs first, before the code is read or exchanged.
+  - **Choice of response:** a plain 429 + `Retry-After`, not a redirect to `/auth/signin?error=rate_limited`. `Retry-After` on a 3xx means "wait before following the redirect", and browsers ignore it. The sign-in page also renders no `?error=` param, not even the existing `error=auth`. A redirect would therefore land the user on a bare form with no reason given.
+  - **Redis outage:** fail-closed, as the policy in `lib/api-helpers.ts` sets for unauthenticated auth routes. The result is a 503 + `Retry-After: 30`.
+  - **Tests:** 6 new cases in `app/auth/callback/route.test.ts`: under the limit (keyed by IP), keyed by the rightmost `x-forwarded-for`, exactly at the limit (still allowed), over the limit (429, code not spent), Upstash down (503, code not spent), and a request with no code. Without the route change, the 5 that need the limiter fail, and the 15 existing cases still pass. The full suite has 1291 passing before the boundary case was added; format, type-check, lint and build are clean.
+  - **Security review:** no blocker, high or medium issue. The reviewer mutation-tested the limiter: moving it after the exchange, making it fail-open, changing the window, making the key global, and removing it were all caught.
+    - Lows fixed: L1, the 429 text said "try the link again", but the PKCE code may expire during the 15-minute wait, so it now also says "or request a new one". L2, changing the limit from 10 to 3 went uncaught, so an at-the-limit case now pins it.
+    - Lows accepted: L3, code-less requests are counted too, the same as reset-password and invitations. L4, completing confirmation and recovery now also depends on Upstash, which is the fail-closed policy.
+    - Pre-existing, for the backlog: `lib/redis.ts` runs INCR and EXPIRE as two calls. If EXPIRE fails after the first INCR, the key has no TTL and that IP stays blocked on every limited route.
+- **Gotcha (if any):** to stub an Upstash outage in a unit test, return a non-2xx response from the fake Upstash endpoint; don't make `fetch` throw. The SDK throws at once on a non-2xx, but it retries a thrown `fetch` 5 times with exponential backoff (about 4 s per test). It also sends even a single `INCR` as a pipeline (`[["incr", key]]`), so stubs must handle both shapes.
