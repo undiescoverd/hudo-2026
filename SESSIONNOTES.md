@@ -681,6 +681,29 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Not done:** the live smoke test on staging (new-version upload for 0006, reply-to-a-reply rejection for 0008).
 - **Gotcha (if any):** "untracked but idempotent ⇒ effectively applied" was false for 4 of 7 untracked files. Probe each migration's effect before `migration repair --status applied`. Second gotcha: `.claude/settings.local.json` Bash allow-rules only match the _start_ of a command. Run each DB step as one plain command, with no `cd … &&` or `$(…)` prefix and with absolute env-file paths, or it prompts every time.
 
+## 2026-10-23 18:10 — Handoff step 4: sync-check false positives (+ 2026-10-23 Linear tidy, logged late)
+
+- **Task:** handoff step 4 (`docs/superpowers/plans/2026-10-23-s4-next-steps-handoff.md` on `chore/handoff-s4-next-steps`). Built on `claude/exciting-goldberg-9o5u0s`, not `chore/sync-check-false-positives`, because this cloud session can only push its designated branch.
+- **Models:** planner=opus, executor=sonnet; review by opus. `orchestrate.js` is tooling, not a security surface. No bot review: the DeepSeek checks are still out of credit (402), so the `pr-fix` loop is skipped.
+- **Outcome:** done (PR open; merge left to Ian)
+- **Notes:**
+  - **Root cause:** `detectGitDrift`'s fallback (`git log <release> -F --grep=<ID>`) matched IDs in commit _bodies_. Plan commit `6b1f049` flagged S4-DELETE-001, ERASE-001 and SAVER-001. S1's `77c58d9` (and `91b02f8`, `064f7b9`) flagged S4-LAUNCH-004.
+  - **Why it mattered:** `.github/workflows/linear-sync-check.yml` runs `sync-fix` at 08:00 UTC whenever sync-check reports drift. `markTaskDone` set those four to **Done in Linear** every morning, undoing manual tidies. The markdown flip was never committed, because the runner doesn't push.
+  - **Fix 1:** the fallback now only counts the ID in a commit _subject_, and ignores `chore` subjects. `4cd81b6 chore(s3): add audit task rows (S3-SEC-005/006)` would have flagged SEC-005 the same way.
+  - **Checked against all 45 tasks on main:** no not_started task matches. 34 of 39 done tasks still match (done tasks aren't candidates anyway).
+  - **Fix 2:** `sync-check` now queries `not_started` tasks too. One counts as drifted only when Linear says **Done**. `sync-fix` pushes it back to **Backlog**: `update-linear-task.sh` gained the Backlog state, which it resolves by name.
+  - **Merged tasks:** `sync-fix` no longer pushes a status for a task that git shows merged. The git loop promotes it to done straight after.
+  - **Review catch:** the first draft also flagged `not_started` + In Progress/In Review. That would have reset every in-flight task to Backlog daily, because `linear-update.yml` moves Linear on feature-branch push and PR open while main's markdown still says `not_started`. It is now limited to Done.
+  - **Tests:** new `orchestrate.test.ts` covers the subject rule, `detectGitDrift` against a temp git repo, and the Linear rule. Full `pnpm test`: 1251 pass. `node orchestrate.js status` output is byte-identical before and after.
+  - **After merge:** the next daily run (or `sync-check` with a Linear key) should show the four as `✗ DRIFTED` (Linear Done), and `sync-fix` should move them to Backlog. Verify from a machine with `LINEAR_API_KEY`.
+  - **Linear tidy of 2026-10-23 (from the handoff; not logged at the time):**
+    - RES-201, 202 and 203 were set back to Backlog.
+    - RES-74–78 and RES-80 were renamed `[dup of …]` and set to Duplicate.
+    - RES-79 (S4-LAUNCH-003) moved to Backlog with no project, as post-alpha work.
+    - Project statuses were corrected, and not-started tasks sit in Backlog.
+    - The daily cron probably re-marked the four false positives Done since then; Fix 2 undoes that.
+- **Gotcha (if any):** on `main`, an in-flight task's markdown is usually still `not_started`, because the `review` bump lives on the feature branch, while Linear says In Progress or In Review. Any markdown-vs-Linear rule for `not_started` must allow that.
+
 ## 2026-10-17 23:45 — Guest-link gaps: hide Share for talent; renewals don't count as views
 
 - **Task:** fix/guest-link-share-role-and-view-count, two gaps found mapping Flow 02 (guest review link) in Paper
