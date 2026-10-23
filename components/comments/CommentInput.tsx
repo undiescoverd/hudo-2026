@@ -1,11 +1,13 @@
 'use client'
 
-import { useCallback, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { COMMENT_BODY_MAX_LENGTH, type Comment } from '@/lib/comments'
 import { formatTimecode } from '@/lib/format-time'
 import { useVideoPlayerContext } from '@/components/player/VideoPlayer'
+import { editKeyAction } from './comment-keys'
+import { TEMP_COMMENT_ID_PREFIX } from './comment-permissions'
 
-interface CommentInputProps {
+export interface CommentInputProps {
   videoId: string
   versionId: string
   agencyId: string
@@ -17,6 +19,93 @@ interface CommentInputProps {
    *  the temp row, so this is a purely cosmetic bridge for the brief window
    *  before that response arrives. */
   currentUserName?: string | null
+  /** Set to post a reply: the comment is sent with `parent_id` and takes the
+   *  parent's timestamp (a reply continues that moment's thread, it is not a
+   *  new anchor on the timeline). */
+  replyTo?: Comment | null
+  /** Reply composer only: called when the user backs out (Cancel or Escape). */
+  onCancel?: () => void
+  /** Reply composer only: called once the reply has been posted. */
+  onPosted?: () => void
+}
+
+/** Where a new comment goes: what kind it is, its timestamps and its parent. */
+export interface CommentTarget {
+  commentType: 'point' | 'range'
+  startSec: number
+  endSec: number | null
+  parentId: string | null
+}
+
+/**
+ * Work out the target of a new comment. A reply is a point comment at its parent's
+ * timestamp (the player's range is ignored). Otherwise it is a range when both
+ * range marks are set and in order, else a point at the current time.
+ */
+export function resolveCommentTarget(input: {
+  replyTo: Comment | null
+  rangeIn: number | null
+  rangeOut: number | null
+  currentTime: number
+}): CommentTarget {
+  const { replyTo, rangeIn, rangeOut, currentTime } = input
+  if (replyTo) {
+    return {
+      commentType: 'point',
+      startSec: replyTo.timestampSeconds,
+      endSec: null,
+      parentId: replyTo.id,
+    }
+  }
+  if (rangeIn !== null && rangeOut !== null && rangeOut > rangeIn) {
+    return { commentType: 'range', startSec: rangeIn, endSec: rangeOut, parentId: null }
+  }
+  return { commentType: 'point', startSec: currentTime, endSec: null, parentId: null }
+}
+
+/** The POST body for the comments collection endpoint. */
+export function buildCommentPayload(
+  input: CommentTarget & { content: string }
+): Record<string, unknown> {
+  return {
+    content: input.content,
+    comment_type: input.commentType,
+    timestamp_seconds: input.startSec,
+    ...(input.endSec !== null ? { end_timestamp_seconds: input.endSec } : {}),
+    ...(input.parentId !== null ? { parent_id: input.parentId } : {}),
+  }
+}
+
+/** The not-yet-saved comment shown while the POST is in flight; a reply nests under its parent at once. */
+export function buildOptimisticComment(
+  input: CommentTarget & {
+    tempId: string
+    nowIso: string
+    versionId: string
+    agencyId: string
+    userId: string
+    content: string
+    authorName: string | null
+  }
+): Comment {
+  return {
+    id: input.tempId,
+    videoVersionId: input.versionId,
+    agencyId: input.agencyId,
+    userId: input.userId,
+    content: input.content,
+    commentType: input.commentType,
+    timestampSeconds: input.startSec,
+    endTimestampSeconds: input.endSec,
+    parentId: input.parentId,
+    resolved: false,
+    resolvedAt: null,
+    resolvedBy: null,
+    deletedAt: null,
+    createdAt: input.nowIso,
+    authorName: input.authorName,
+    authorAvatarUrl: null,
+  }
 }
 
 export function CommentInput({
@@ -27,17 +116,29 @@ export function CommentInput({
   onOptimisticInsert,
   onOptimisticRollback,
   currentUserName,
+  replyTo = null,
+  onCancel,
+  onPosted,
 }: CommentInputProps) {
   const player = useVideoPlayerContext()
   const [body, setBody] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const hasRange =
-    player.rangeIn !== null && player.rangeOut !== null && player.rangeOut > player.rangeIn
-  const commentType: 'point' | 'range' = hasRange ? 'range' : 'point'
-  const startSec = hasRange ? (player.rangeIn as number) : player.currentTime
-  const endSec = hasRange ? (player.rangeOut as number) : null
+  const isReply = replyTo !== null
+  const { commentType, startSec, endSec, parentId } = resolveCommentTarget({
+    replyTo,
+    rangeIn: player.rangeIn,
+    rangeOut: player.rangeOut,
+    currentTime: player.currentTime,
+  })
+  const hasRange = commentType === 'range'
+
+  // A reply composer opens on demand, so put the caret in it.
+  useEffect(() => {
+    if (isReply) textareaRef.current?.focus()
+  }, [isReply])
 
   const trimmed = body.trim()
   const overLimit = trimmed.length > COMMENT_BODY_MAX_LENGTH
@@ -48,26 +149,21 @@ export function CommentInput({
     setError(null)
     setSubmitting(true)
 
-    const tempId = `temp-${crypto.randomUUID()}`
+    const tempId = `${TEMP_COMMENT_ID_PREFIX}${crypto.randomUUID()}`
     const nowIso = new Date().toISOString()
-    const optimistic: Comment = {
-      id: tempId,
-      videoVersionId: versionId,
+    const optimistic = buildOptimisticComment({
+      tempId,
+      nowIso,
+      versionId,
       agencyId,
       userId,
       content: trimmed,
       commentType,
-      timestampSeconds: startSec,
-      endTimestampSeconds: endSec,
-      parentId: null,
-      resolved: false,
-      resolvedAt: null,
-      resolvedBy: null,
-      deletedAt: null,
-      createdAt: nowIso,
+      startSec,
+      endSec,
+      parentId,
       authorName: currentUserName ?? null,
-      authorAvatarUrl: null,
-    }
+    })
 
     const originalBody = body
     onOptimisticInsert(optimistic)
@@ -79,12 +175,9 @@ export function CommentInput({
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content: trimmed,
-            comment_type: commentType,
-            timestamp_seconds: startSec,
-            ...(endSec !== null ? { end_timestamp_seconds: endSec } : {}),
-          }),
+          body: JSON.stringify(
+            buildCommentPayload({ content: trimmed, commentType, startSec, endSec, parentId })
+          ),
         }
       )
 
@@ -105,6 +198,7 @@ export function CommentInput({
       // CommentPanel.handleInsert dedupes by id, so a Realtime echo of the same comment is a no-op.
       onOptimisticInsert(data.comment)
       onOptimisticRollback(tempId)
+      onPosted?.()
     } catch (err) {
       onOptimisticRollback(tempId)
       setError(err instanceof Error ? err.message : 'Failed to post comment')
@@ -119,6 +213,7 @@ export function CommentInput({
     commentType,
     startSec,
     endSec,
+    parentId,
     versionId,
     videoId,
     agencyId,
@@ -126,12 +221,17 @@ export function CommentInput({
     currentUserName,
     onOptimisticInsert,
     onOptimisticRollback,
+    onPosted,
   ])
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    const action = editKeyAction(e.key, e.shiftKey)
+    if (action === 'save') {
       e.preventDefault()
       void submit()
+    } else if (action === 'cancel' && onCancel) {
+      e.preventDefault()
+      onCancel()
     }
   }
 
@@ -139,24 +239,41 @@ export function CommentInput({
     ? `${formatTimecode(startSec)} – ${formatTimecode(endSec as number)}`
     : formatTimecode(startSec)
 
+  const replyLabel = `Reply to ${replyTo?.authorName ?? 'Unknown'}`
+
   return (
-    <div className="border-t border-gray-200 p-3 dark:border-gray-800">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-          {stamp}
-        </span>
-        <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          {commentType}
-        </span>
-      </div>
+    <div
+      className={
+        isReply
+          ? 'mx-3 mb-2 ml-11 rounded-lg border border-gray-200 p-3 dark:border-gray-700'
+          : 'border-t border-gray-200 p-3 dark:border-gray-800'
+      }
+    >
+      {isReply ? (
+        <p className="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400">{replyLabel}</p>
+      ) : (
+        <div className="mb-2 flex items-center gap-2">
+          <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            {stamp}
+          </span>
+          <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            {commentType}
+          </span>
+        </div>
+      )}
 
       <textarea
+        ref={textareaRef}
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={handleKeyDown}
         rows={3}
-        aria-label="Comment"
-        placeholder="Leave a comment… (Enter to send, Shift+Enter for newline)"
+        aria-label={isReply ? replyLabel : 'Comment'}
+        placeholder={
+          isReply
+            ? 'Write a reply… (Enter to send, Shift+Enter for newline, Esc to cancel)'
+            : 'Leave a comment… (Enter to send, Shift+Enter for newline)'
+        }
         className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
       />
 
@@ -166,14 +283,26 @@ export function CommentInput({
         >
           {trimmed.length} / {COMMENT_BODY_MAX_LENGTH}
         </span>
-        <button
-          type="button"
-          disabled={!canSubmit}
-          onClick={() => void submit()}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {submitting ? 'Posting…' : 'Post'}
-        </button>
+        <div className="flex gap-2">
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={submitting}
+              className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800"
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={!canSubmit}
+            onClick={() => void submit()}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting ? 'Posting…' : isReply ? 'Reply' : 'Post'}
+          </button>
+        </div>
       </div>
 
       {error && (

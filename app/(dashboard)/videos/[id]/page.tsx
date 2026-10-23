@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { VideoPlayer } from '@/components/player/VideoPlayer'
@@ -24,6 +24,9 @@ export default function VideoPage({ params }: Props) {
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [agencyId, setAgencyId] = useState<string | null>(null)
+  // The viewer's role in this video's agency; gates which comment actions render
+  // (the API re-checks them). null = not loaded yet, or the lookup failed: no actions.
+  const [role, setRole] = useState<string | null>(null)
   // null = still loading (or not yet retried); passed straight through to
   // VersionSelector so it doesn't issue its own duplicate GET request.
   const [versions, setVersions] = useState<Version[] | null>(null)
@@ -44,7 +47,14 @@ export default function VideoPage({ params }: Props) {
     error: commentsError,
     handleInsert: handleCommentInsert,
     handleOptimisticRollback: handleCommentRollback,
+    resolveComment,
+    editComment,
+    deleteComment,
   } = useVideoComments(params.id, activeVersionId)
+
+  // Timeline markers anchor top-level comments only: a reply continues its parent's
+  // thread (it carries the parent's timestamp) and must not add a second marker.
+  const timelineComments = useMemo(() => comments.filter((c) => c.parentId === null), [comments])
 
   // Fetch the current user id once on mount
   const fetchUser = useCallback(() => {
@@ -97,6 +107,32 @@ export default function VideoPage({ params }: Props) {
     void fetchVersions()
   }, [isValidId, fetchVersions])
 
+  // Role in the video's agency, read from `memberships` under RLS (members can read
+  // their own agency's rows) as the upload page does. Needs both ids, so it runs
+  // after the two bootstrap fetches. On failure the panel just renders without actions.
+  useEffect(() => {
+    if (!isValidId || !userId || !agencyId) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const { data, error } = await createClient()
+          .from('memberships')
+          .select('role')
+          .eq('user_id', userId)
+          .eq('agency_id', agencyId)
+          .single()
+        if (error || !data) throw error ?? new Error('No membership found')
+        if (!cancelled) setRole(typeof data.role === 'string' ? data.role : null)
+      } catch (err) {
+        console.error('[video-page] role fetch failed:', err)
+        if (!cancelled) setRole(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isValidId, userId, agencyId])
+
   if (!isValidId) {
     notFound()
   }
@@ -130,7 +166,7 @@ export default function VideoPage({ params }: Props) {
             <VideoPlayer
               videoId={params.id}
               versionId={activeVersionId ?? undefined}
-              comments={comments}
+              comments={timelineComments}
               className="h-full w-full"
             />
           }
@@ -142,11 +178,15 @@ export default function VideoPage({ params }: Props) {
                 agencyId={agencyId}
                 userId={userId}
                 currentUserName={userName}
+                viewerRole={role}
                 comments={comments}
                 loading={commentsLoading}
                 error={commentsError}
                 onOptimisticInsert={handleCommentInsert}
                 onOptimisticRollback={handleCommentRollback}
+                onResolveComment={resolveComment}
+                onEditComment={editComment}
+                onDeleteComment={deleteComment}
               />
             ) : bootstrapError ? (
               <div className="p-4">
