@@ -2,11 +2,11 @@
 
 **Status: In Progress**
 
-**Gate:** App is walkable end-to-end for every role including talent self-serve upload. Accessibility, PWA, and launch-prep tasks land per sprints-all.md; every sprint ships at least one complete user journey.
+**Gate:** App is walkable end-to-end for every role: owner sign-up creates an agency, owner invites agent and talent, talent uploads, comment/resolve, approve, guest link. Accessibility audit has zero critical or serious violations; staging smoke suite green; a manual walk of owner, agent, talent and guest completes the core loop. Production validation is post-alpha (S4-LAUNCH-003, not a sprint row).
 
 ---
 
-> **Migration numbering (verified 2026-07-05):** existing migrations run 0001–0021. This sprint starts at **0022** (talent-upload RLS) and **0023** (videos realtime publication). Apply via the `/apply-migration` flow (MCP `apply_migration` → both hudo-dev + hudo-staging), never the SQL editor.
+> **Migration numbering (verified 2026-10-22):** migrations 0001–0023 are in the repo. Wave 1 uses **0024–0026** (deletion plan). S4-JOURNEY-001 uses **0027**. Archive & restore (archive plan Phase 5) moves to **0028**. Apply via the `/apply-migration` flow (MCP `apply_migration` → both hudo-dev + hudo-staging), never the SQL editor.
 
 ## Tasks
 
@@ -55,13 +55,13 @@ NOTES: L — Linear RES-199. Storage counts against agency shared quota (talent 
 
 ---
 
-- [ ] **S4-UPLOADFIX-001** — Upload bugs B1–B3
+- [x] **S4-UPLOADFIX-001** — Upload bugs B1–B3
 
 TASK_ID: S4-UPLOADFIX-001
 TITLE: Upload bugs B1-B3 (retry reuses video, real error messages, agent picks talent)
 BRANCH: feat/s4-S4-UPLOADFIX-001-upload-bugs
 MODEL: sonnet
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - B2: retry reuses the first presign's videoId; no new empty draft per retry
@@ -144,4 +144,215 @@ NOTES: S — GitHub #146; plan Phase 4; decision D8. The prod bucket needs the s
 
 ---
 
-> Archive & restore (plan Phase 5, GitHub #147) and agency closure (Phase 6, #148) are post-launch and are not sprint rows yet. Remaining S4 tasks (S4-ACCESS-001/002, S4-PWA-001, S4-LAUNCH-001..004) to be broken out from tasks/sprints-all.md when this wave closes.
+### WAVE 2 — Walkable journeys (added 2026-10-22; decisions made with Ian)
+
+---
+
+- [ ] **S4-JOURNEY-001** — Minimal agency creation at sign-up
+
+TASK_ID: S4-JOURNEY-001
+TITLE: Minimal agency creation at sign-up (agency-name field, atomic RPC, owner lands on /dashboard)
+BRANCH: feat/s4-S4-JOURNEY-001-owner-signup
+MODEL: sonnet
+STATUS: in_review
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - Register page has an agency-name field; register route rejects a missing name with 400
+  - Migration 0027 adds a service_role-only SECURITY DEFINER RPC create_agency_with_owner that inserts the agency and the owner membership in one transaction
+  - Duplicate agency names are handled with a clear error, not a 500
+  - Owner lands on /dashboard with an agency (works whether or not email confirmation returns a session)
+  - Tests for each criterion; pgTAP for the RPC; pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green; supabase test db tests/rls green
+FILES:
+  - app/auth/register/page.tsx (+ test)
+  - app/api/auth/register/route.ts (+ test)
+  - supabase/migrations/0027_create_agency_with_owner.sql
+  - tests/rls/create_agency_with_owner.test.sql
+NOTES: S — Mandatory security review (auth, app/api/) and rls-tenancy-auditor (migration). Use scripts/create-beta-agency.mjs as the reference for agency fields. Archive plan Phase 5 renumbers to 0028.
+
+---
+
+- [x] **S4-JOURNEY-002** — Team page with invite form
+
+TASK_ID: S4-JOURNEY-002
+TITLE: Team page with invite form (settings/team, pending list, bounded roles)
+BRANCH: feat/s4-S4-JOURNEY-002-team-invites
+MODEL: sonnet
+STATUS: done
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - app/(dashboard)/settings/team exists; the form POSTs /api/invitations/send
+  - Role choices are bounded by INVITE_PERMISSIONS (an agent cannot invite an owner)
+  - Read-only pending invitations list for the agency
+  - Settings nav links to Team
+  - Tests for the form and the list; pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green
+FILES:
+  - app/(dashboard)/settings/team/page.tsx (+ test)
+  - components/settings/InviteForm.tsx (+ test)
+  - app/(dashboard)/settings/layout.tsx or the settings nav component
+NOTES: S — Resend and revoke stay in Sprint 5. Reuse requireAgentRole and INVITE_PERMISSIONS from app/api/invitations/send/route.ts. Update docs/flows/inventory.md in the same PR once #175 merges.
+
+---
+
+- [ ] **S4-JOURNEY-003** — Invite accept must not burn the token on failure
+
+TASK_ID: S4-JOURNEY-003
+TITLE: Invite accept retry (validate before claim, release claim on failure)
+BRANCH: feat/s4-S4-JOURNEY-003-accept-retry
+MODEL: sonnet
+STATUS: in_review
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - A 400 (missing password or name) does not consume the token; the retry with the same token succeeds
+  - A createUser 500 releases the claim; the retry succeeds
+  - A duplicate-membership 409 releases the claim; the retry succeeds
+  - A users-insert failure after createUser does not strand the account (auth user removed or handled on retry)
+  - Tests for each criterion; pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green
+FILES:
+  - app/api/invitations/accept/route.ts (+ route.test.ts)
+NOTES: S — Security surface (app/api/, invitations). Mandatory hudo-security-reviewer.
+
+---
+
+- [ ] **S4-JOURNEY-004** — Load the middleware
+
+TASK_ID: S4-JOURNEY-004
+TITLE: Move middleware to project root and open only the public paths
+BRANCH: feat/s4-S4-JOURNEY-004-middleware
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S4-JOURNEY-001, S4-JOURNEY-002, S4-JOURNEY-003
+ACCEPTANCE_CRITERIA:
+  - middleware.ts lives at the project root (app/middleware.ts removed); Next 14 loads it
+  - Signed-out requests to protected pages redirect to sign-in
+  - /api/webhooks/*, /api/cron/*, /guest/*, public auth pages and static assets are not redirected
+  - Role gating runs for the first time; tests cover the matcher and the redirect rules
+  - Live check on a Preview URL before merge (signed-out redirect; guest, webhook and cron reachable)
+FILES:
+  - middleware.ts (new, moved from app/middleware.ts)
+  - app/middleware.ts (deleted)
+  - middleware.test.ts
+NOTES: S — Security surface (auth). Mandatory hudo-security-reviewer. Runs alone after 001–003 merge.
+
+---
+
+- [ ] **S4-LAUNCH-001** — Legal pages
+
+TASK_ID: S4-LAUNCH-001
+TITLE: Terms, privacy and DPA pages with shared footer and links
+BRANCH: feat/s4-S4-LAUNCH-001-legal-pages
+MODEL: haiku
+STATUS: not_started
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - /terms, /privacy and /dpa are public routes (listed in the middleware public paths)
+  - Shared footer on those pages; links from register and the cookie banner
+  - Copy is drafted by the agent from components/billing/DpaAcceptanceModal.tsx and the subprocessor list (Supabase, Cloudflare, Vercel, Stripe, Resend, Upstash, Sentry, PostHog); marked DRAFT until Ian approves
+  - Tests for routes and links; pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green
+FILES:
+  - app/(public)/terms/page.tsx, app/(public)/privacy/page.tsx, app/(public)/dpa/page.tsx (+ tests)
+  - components/layout/LegalFooter.tsx (+ test)
+  - app/auth/register/page.tsx, the cookie banner component
+NOTES: S — Ian reviews the copy before any customer sees it. Human-only: legal review.
+
+---
+
+- [ ] **S4-LAUNCH-004** — Onboarding checklist
+
+TASK_ID: S4-LAUNCH-004
+TITLE: Owner onboarding checklist (invite agent, invite talent, upload), derived from data
+BRANCH: feat/s4-S4-LAUNCH-004-onboarding-checklist
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S4-JOURNEY-001, S4-JOURNEY-002
+ACCEPTANCE_CRITERIA:
+  - Owner-only checklist on /dashboard with three items: invite agent, invite talent, upload a video
+  - Completion is derived from memberships, invitations and videos (no new table, no migration)
+  - Hidden once all three are done; non-owners never see it
+  - Tests for derivation and visibility; pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green
+FILES:
+  - components/dashboard/OnboardingChecklist.tsx (+ test)
+  - lib/onboarding-checklist.ts (+ test)
+  - app/(dashboard)/dashboard/page.tsx
+NOTES: S — Reads data via lib/dashboard.ts patterns; any videos↔video_versions embed must name the FK (Failure Log).
+
+---
+
+- [ ] **S4-PWA-001** — PWA manifest, icons and service worker
+
+TASK_ID: S4-PWA-001
+TITLE: PWA manifest, icons, offline page and shell-only service worker
+BRANCH: feat/s4-S4-PWA-001-pwa
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S4-JOURNEY-004
+ACCEPTANCE_CRITERIA:
+  - app/manifest.ts and public/ icons exist; placeholder icons until Ian supplies brand icons
+  - Service worker caches only the app shell and static assets; never HTML behind login, API responses or signed R2 URLs
+  - /offline page renders without auth
+  - Tests for the cache allowlist and the manifest; pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green
+FILES:
+  - app/manifest.ts, public/icons/*, public/sw.js
+  - app/offline/page.tsx
+  - lib/pwa-cache-rules.ts (+ test)
+NOTES: S — Human-only: brand icons, install check on a real iOS and Android device.
+
+---
+
+- [ ] **S4-ACCESS-001** — axe audit over five page groups
+
+TASK_ID: S4-ACCESS-001
+TITLE: Automated WCAG 2.1 AA audit (axe) and fixes
+BRANCH: feat/s4-S4-ACCESS-001-axe
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S4-JOURNEY-004, S4-DELETE-001, S4-ERASE-001, S4-SAVER-001
+ACCEPTANCE_CRITERIA:
+  - @axe-core/playwright added (flagged in PR for dependency approval)
+  - tests/e2e/a11y.spec.ts scans five page groups: auth, dashboard, video player, comments, guest
+  - Zero critical or serious violations after fixes
+  - pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green
+FILES:
+  - tests/e2e/a11y.spec.ts
+  - package.json, pnpm-lock.yaml
+  - components/** (fixes as needed)
+NOTES: M — Runs after Waves B–C so fixes do not collide with UI changes. Adding a dependency needs flagging first (CLAUDE.md).
+
+---
+
+- [ ] **S4-ACCESS-002** — Screen reader testing
+
+TASK_ID: S4-ACCESS-002
+TITLE: Manual VoiceOver and NVDA pass
+BRANCH: —
+MODEL: human
+STATUS: not_started
+BLOCKED_BY: S4-ACCESS-001
+ACCEPTANCE_CRITERIA:
+  - NVDA (Windows) and VoiceOver (macOS/iOS) walk of the core loop; findings filed as issues
+NOTES: Human-only. Needs Ian or a tester with NVDA.
+
+---
+
+- [ ] **S4-LAUNCH-002** — Staging smoke suite
+
+TASK_ID: S4-LAUNCH-002
+TITLE: Seven-flow smoke suite against staging (register, invite, upload, comment, PDF, guest, upgrade)
+BRANCH: feat/s4-S4-LAUNCH-002-smoke
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S4-JOURNEY-004, S4-LAUNCH-004
+ACCEPTANCE_CRITERIA:
+  - Seven flows: register → agency; invite talent → accept; upload; comment and resolve; PDF export; guest link; upgrade in Stripe test mode
+  - tests/e2e/ extended using existing page objects and fixtures
+  - Workflow fails (not skips) when PLAYWRIGHT_TEST_URL is unset; waits for the Vercel deployment
+  - Cleanup fixture removes test agency data
+  - pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green
+FILES:
+  - tests/e2e/smoke/*.spec.ts
+  - .github/workflows/smoke.yml
+NOTES: M — Human-only: staging Stripe test webhook. Human-only: confirm the Supabase "confirm email" setting on staging.
+
+---
+
+> Archive & restore (archive plan Phase 5) and agency closure (Phase 6) are post-launch and are not sprint rows yet.
+> **S4-LAUNCH-003 (production validation) moved out of Sprint 4** to a post-alpha step. Checklist for that time: unpause hudo-prod, apply 0001–0027, live Stripe catalogue and webhook, R2 CORS `ExposeHeaders: ETag` with exact origin, r2.dev sign-off, Resend domain, Upstash prod, Sentry/PostHog, branch protection.

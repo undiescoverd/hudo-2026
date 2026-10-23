@@ -6,20 +6,9 @@ import { getSiteOrigin } from '@/lib/site-url'
 import { logEvent } from '@/lib/audit'
 import { isGracePeriodExpired } from '@/lib/plan-gates'
 import { checkRateLimit } from '@/lib/api-helpers'
+import { INVITE_PERMISSIONS, VALID_INVITE_ROLES, type InviteRole } from '@/lib/invite-permissions'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-const VALID_INVITE_ROLES = ['admin_agent', 'agent', 'talent'] as const
-type InviteRole = (typeof VALID_INVITE_ROLES)[number]
-
-/**
- * Roles that each membership role is allowed to invite.
- */
-const INVITE_PERMISSIONS: Record<string, InviteRole[]> = {
-  owner: ['admin_agent', 'agent', 'talent'],
-  admin_agent: ['admin_agent', 'agent', 'talent'],
-  agent: ['talent'],
-}
 
 /**
  * POST /api/invitations/send
