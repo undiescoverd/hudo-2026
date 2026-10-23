@@ -225,6 +225,9 @@ export async function POST(
   // (check_violation). Only a reply can trip it, so a 23514 on a top-level insert
   // is some other constraint and stays a 500.
   if (input.parent_id && insertError?.code === '23514') {
+    // Logged so a check violation that is not the depth trigger (and so is mislabelled
+    // here) stays visible instead of being reported to the client as a client error.
+    console.error('[comments:POST] Reply insert hit 23514, returning 400:', insertError)
     return NextResponse.json({ error: REPLY_DEPTH_ERROR }, { status: 400 })
   }
 

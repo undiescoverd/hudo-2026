@@ -566,9 +566,15 @@ describe('comments POST — reply depth (real handler)', () => {
       code: '23514',
       message: 'Replies can only be made to top-level comments (max depth 1)',
     }
+    const logged = mock.method(console, 'error', () => {})
     const res = await post(TOP) // ...but the trigger rejects the insert
+    logged.mock.restore()
     assert.equal(res.status, 400)
     assert.deepEqual(await res.json(), { error: 'Replies can only be one level deep' })
+    // A mislabelled check violation must stay visible in the logs.
+    assert.equal(logged.mock.callCount(), 1)
+    assert.match(String(logged.mock.calls[0].arguments[0]), /\[comments:POST\].*23514/)
+    assert.equal((logged.mock.calls[0].arguments[1] as { code: string }).code, '23514')
   })
 
   it('a 23514 on a top-level insert is some other constraint -> stays a 500', async () => {
