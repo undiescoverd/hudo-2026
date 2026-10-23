@@ -145,7 +145,7 @@ describe('auth callback route — open-redirect guard', () => {
     ['literal backslash (/\\evil.com)', '/\\evil.com'],
     ['protocol-relative (//evil.com)', '//evil.com'],
     ['absolute URL (https://evil.com)', 'https://evil.com'],
-    ['dot-dot normalising to //evil.com', '/..//evil.com'],
+    ['dot-dot whose path normalises to //evil.com (defence in depth)', '/..//evil.com'],
   ] as const) {
     it(`falls back to / on the request origin for ${label}`, async () => {
       const res = await call(`?code=x&next=${next}`)

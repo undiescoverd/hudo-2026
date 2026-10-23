@@ -57,8 +57,9 @@ describe('safeRedirect', () => {
     ['whitespace inside the path', '/videos x'],
     ['NUL control char', '/vid\u0000eos'],
     ['DEL control char', '/vid\u007feos'],
-    ['dot-dot normalising to //evil.com (/..//evil.com)', '/..//evil.com'],
-    ['nested dot-dot normalising to //evil.com', '/x/..//evil.com'],
+    // Same-origin as given, but the path normalises to protocol-relative '//evil.com' (defence in depth)
+    ['dot-dot whose path normalises to //evil.com (/..//evil.com)', '/..//evil.com'],
+    ['nested dot-dot whose path normalises to //evil.com', '/x/..//evil.com'],
     ['bare // (URL parser throws on it)', '//'],
     ['// followed by an invalid host', '//['],
   ] as const) {
