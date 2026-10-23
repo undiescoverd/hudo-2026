@@ -10,13 +10,24 @@ export function validatePassword(password: string): string | null {
   return null
 }
 
+const REDIRECT_BASE = 'http://localhost'
+const REDIRECT_BASE_ORIGIN = new URL(REDIRECT_BASE).origin
+
 /**
- * Validates redirect target is a same-origin path to prevent open redirect attacks.
- * Returns a safe redirect target: the input if it's a valid local path, otherwise '/'.
+ * Validates a redirect target is a same-origin path to prevent open redirect attacks.
+ * Returns the raw target if it is a safe local path, otherwise `fallback`.
+ * Browsers treat `\` as `/` and the URL parser drops tabs/newlines, so `/\evil.com` and
+ * `/\t/evil.com` resolve cross-origin even though they start with a single `/`.
+ * Use the result as-is: never percent-decode it again (`/%2F/evil.com` would become `//evil.com`).
  */
-export function safeRedirect(target: string | null): string {
-  if (!target) return '/videos'
-  // Must start with / and not // (protocol-relative URL)
-  if (target.startsWith('/') && !target.startsWith('//')) return target
-  return '/videos'
+export function safeRedirect(target: string | null, fallback = '/videos'): string {
+  // '//' is protocol-relative; rejecting it up front also avoids `new URL` throwing on '//['.
+  if (!target || !target.startsWith('/') || target.startsWith('//')) return fallback
+  // Backslash, whitespace and control chars (C0 + DEL) are normalised away by URL parsers.
+  if (/[\\\s\x00-\x1f\x7f]/.test(target)) return fallback
+  const parsed = new URL(target, REDIRECT_BASE)
+  // Defence in depth: '/..//evil.com' is same-origin as given, but its normalised path is
+  // '//evil.com', which is protocol-relative if any consumer emits it. Reject; never return `parsed`.
+  if (parsed.origin !== REDIRECT_BASE_ORIGIN || parsed.pathname.startsWith('//')) return fallback
+  return target
 }
