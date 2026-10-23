@@ -677,5 +677,6 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     5. `NOTIFY pgrst, 'reload schema'`.
   - **0004 is marked applied but was not run on either DB** (Ian approved). Follow-up is GitHub #187. The 0015 grants follow-up is #186.
   - **Verified:** on both DBs, `--list` shows local = remote for all 24 files and `--dry-run` reports "Remote database is up to date". The staging re-probe is identical to dev's, including the policy, function, column and index fingerprints.
+  - **PR #185 bot review:** both "AI Code Review" and pullfrog failed with DeepSeek `402 Insufficient Balance`. With no review comment to act on, the bounded `pr-fix` loop was skipped. The required checks (GitGuardian; Lint, Type-check, Build; RLS) are green.
   - **Not done:** the live smoke test on staging (new-version upload for 0006, reply-to-a-reply rejection for 0008).
 - **Gotcha (if any):** "untracked but idempotent ⇒ effectively applied" was false for 4 of 7 untracked files. Probe each migration's effect before `migration repair --status applied`. Second gotcha: `.claude/settings.local.json` Bash allow-rules only match the _start_ of a command. Run each DB step as one plain command, with no `cd … &&` or `$(…)` prefix and with absolute env-file paths, or it prompts every time.
