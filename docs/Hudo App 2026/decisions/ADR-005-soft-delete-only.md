@@ -27,7 +27,11 @@ Comments can only be soft-deleted by setting `deleted_at`. No hard delete is pos
 - No DELETE RLS policy on `comments` — any DELETE attempt by an authenticated client is blocked at DB level
 - `DELETE /api/comments/:id` returns 405 Method Not Allowed
 - Soft-delete arrives as an UPDATE in Supabase Realtime (setting `deleted_at`) — handled in `useRealtimeComments`
-- RLS SELECT policy filters `WHERE deleted_at IS NULL` (migration 0010)
+- The RLS SELECT policy does **not** filter `deleted_at`. App code hides soft-deleted comments: every read of `comments` filters `.is('deleted_at', null)` or checks `deleted_at !== null`
+
+## Note: soft-delete filter is in app code, not RLS (#187)
+
+Migration 0004 added `deleted_at IS NULL` to `comments_select`, but it was never applied to the live DBs. GitHub #187 chose option (b), keeping the live behaviour: `0029_comments_select_keep_soft_deleted` drops the filter so the repo and CI match live. A soft delete is an UPDATE, and Supabase Realtime checks each subscriber's SELECT policy against the new row, so with the filter other viewers would never get the soft-delete event. Accepted trade-off: soft-deleted comment text stays readable to the comment's own agency through direct supabase-js reads and the Realtime payload.
 
 ## Related
 
