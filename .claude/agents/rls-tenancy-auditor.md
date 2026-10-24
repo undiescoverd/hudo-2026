@@ -32,9 +32,22 @@ real, high-confidence problems with `file:line` and the rule violated.
    `video_versions!video_versions_video_id_fkey ( … )`.
 3. **RLS on every table.** Any new table introduced in a migration must `ENABLE ROW LEVEL
    SECURITY` and define policies. Flag a new table with no RLS or no policies.
-4. **Soft-delete filters present.** Where soft-delete columns exist (`deleted_at`, comments
-   per migrations 0004/0010), reads must filter `deleted_at IS NULL`. Flag a query/policy that
-   would surface soft-deleted rows.
+4. **Soft-delete filters present — for `comments`, in app code, not RLS.** The
+   `comments_select` RLS policy intentionally returns soft-deleted rows (GitHub #187 option b,
+   migration 0029). A soft delete is an UPDATE that sets `deleted_at`, and Supabase Realtime
+   checks each subscriber's SELECT policy against the new row, so an RLS filter would stop
+   other viewers receiving the soft-delete event. App code hides them instead. Flag:
+   - an app read of `comments` (`.from('comments')`, a `comments ( … )` or
+     `comments!inner ( … )` embed, a Realtime handler) that neither filters
+     `.is('deleted_at', null)` nor checks `deleted_at !== null`;
+   - any migration or policy change that re-adds `deleted_at IS NULL` to `comments_select` —
+     it breaks Realtime soft-delete delivery.
+
+   Don't flag the policy itself for surfacing soft-deleted rows: soft-deleted comment text
+   staying readable to the comment's own agency via direct supabase-js reads and the Realtime
+   payload is the accepted trade-off. For any other table with a soft-delete column
+   (`deleted_at`), reads must filter `deleted_at IS NULL`; flag a query/policy that would
+   surface soft-deleted rows.
 5. **Never swallow the PostgREST `error` into an empty render.** Flag code that destructures
    `{ data, error }` and ignores `error` (rendering empty/loading) — that is exactly how the
    ambiguous-FK break stayed invisible. The error must be surfaced or thrown.
