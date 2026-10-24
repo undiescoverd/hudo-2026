@@ -32,4 +32,14 @@ describe('RegisterPage — source invariants (S4-JOURNEY-001)', () => {
     assert.match(source, /setSubmitted\(true\)/)
     assert.match(source, /Check your email/)
   })
+
+  it('success screen is neutral and points existing users to sign in / reset password', () => {
+    const start = source.indexOf('if (submitted)')
+    const screen = source.slice(start, source.indexOf('return (', start + 20) + 2000)
+    assert.match(screen, /is new to Hudo/)
+    assert.match(screen, /href="\/auth\/signin"/)
+    assert.match(screen, /href="\/auth\/forgot-password"/)
+    // Must not reveal whether the address already has an account.
+    assert.doesNotMatch(screen, /already (registered|exists|in use)/i)
+  })
 })
