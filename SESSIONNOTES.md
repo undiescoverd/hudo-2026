@@ -746,3 +746,15 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Dependencies extended:** `S4-ACCESS-001` now waits for REVIEW-001–003 (its note already says it runs after UI changes). `S4-LAUNCH-002` now waits for REVIEW-002, because its smoke flow covers "comment and resolve".
   - **Linear:** this session has no `LINEAR_API_KEY` and the Linear connector failed to connect, so the four issues still need creating, each title starting with its exact task ID. Until then, `sync-check` shows `⚠ ERROR` for them (Failure Log, 2026-06-16 Linear entry).
 - **Gotcha (if any):** a cloud session can push only its designated branch unless the user OKs another. When one PR is already open on it, ask early for a second branch rather than queueing unrelated work behind the merge.
+
+## 2026-10-24 — Sign-up "no email" = existing account; neutral success wording; S4-AUTH-001
+
+- **Task:** Ian reported no email after signing up on a staging Preview URL.
+- **Models:** planner=opus (investigation + decisions), no executor needed
+- **Outcome:** done for the wording change; S4-AUTH-001 (#200) specced, not built.
+- **Notes:**
+  - **Root cause:** the address (`ian.jamesvincent@gmail.com`) already had a confirmed account (created 2026-06-15). Supabase sends nothing for an already-registered address, and `app/api/auth/register/route.ts` deliberately answers it like a fresh sign-up (user-enumeration protection), so the page said "Check your email".
+  - **SMTP was fine:** hudo-staging has custom SMTP on (Resend, sender `noreply@hudoapp.com`, domain verified). The 2026-06-16 note above says `noreply@resend.com`; that is out of date.
+  - **Change:** the success screen now says "If <email> is new to Hudo, we sent a confirmation link" and links to sign-in and forgot-password. A test pins the neutral wording.
+  - **Follow-up:** S4-AUTH-001 / #200 emails the existing account's owner (per-address rate limit, constant-time response, mandatory security review).
+- **Gotcha (if any):** "I signed up and got no email" on a known address is not a mail fault: check Supabase Authentication → Users for an existing confirmed row before touching SMTP. Resend → Emails showing no send at all is the tell.

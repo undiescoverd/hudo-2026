@@ -389,6 +389,28 @@ NOTES: S — Decision: #187 comment (2026-10-23). Security surface (RLS): mandat
 
 ---
 
+- [ ] **S4-AUTH-001** — Email the owner of an already-registered address
+
+TASK_ID: S4-AUTH-001
+TITLE: Email the existing account's owner when someone registers with their address (GitHub #200)
+BRANCH: feat/s4-S4-AUTH-001-existing-account-email
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - Registering with an address that already has an account returns the same status and body as a fresh sign-up (no new signal in the response)
+  - The existing address receives one email ("someone tried to register; sign in or reset your password") from the verified hudoapp.com sender, with links to /auth/signin and /auth/forgot-password
+  - At most one such email per address per window (Upstash, new key separate from the register limiter); over the limit still returns the neutral response, sends nothing, and never reveals existence
+  - New and existing branches do not differ measurably in response time; the send survives Vercel freezing the function (not a bare fire-and-forget)
+  - Tests for each criterion, including that the response is identical in both branches; pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green; live Preview check with one existing and one new address, confirmed in Resend → Emails
+FILES:
+  - app/api/auth/register/route.ts (+ test)
+  - lib/email-templates/existing-account.ts (new, follows comments-batch.ts) (+ test); sends via lib/email.ts sendEmail
+  - lib/rate-limit.ts (+ test), only if a new limiter helper is needed
+NOTES: M — Spec: GitHub #200 (decided 2026-10-24). Security surface (app/api/): mandatory hudo-security-reviewer. Register already rate-limits per IP+email via checkAuthRateLimit; this adds a per-address cap on the outbound email only. Instantiate Resend inside the send function, never at module scope (Failure Log, 2026-06-15).
+
+---
+
 - [ ] **S4-ACCESS-001** — axe audit over five page groups
 
 TASK_ID: S4-ACCESS-001
