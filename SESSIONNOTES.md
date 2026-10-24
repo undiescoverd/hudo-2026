@@ -746,3 +746,32 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Dependencies extended:** `S4-ACCESS-001` now waits for REVIEW-001–003 (its note already says it runs after UI changes). `S4-LAUNCH-002` now waits for REVIEW-002, because its smoke flow covers "comment and resolve".
   - **Linear:** this session has no `LINEAR_API_KEY` and the Linear connector failed to connect, so the four issues still need creating, each title starting with its exact task ID. Until then, `sync-check` shows `⚠ ERROR` for them (Failure Log, 2026-06-16 Linear entry).
 - **Gotcha (if any):** a cloud session can push only its designated branch unless the user OKs another. When one PR is already open on it, ask early for a second branch rather than queueing unrelated work behind the merge.
+
+## 2026-10-23 20:55 — S4-REVIEW-004: migration 0029 keeps soft-deleted comments visible to members (#187 option b)
+
+- **Task:** S4-REVIEW-004 (branch `feat/s4-S4-REVIEW-004-comments-select`, built in its own worktree in parallel with S4-REVIEW-002)
+- **Models:** planner=opus, executor=sonnet; RLS audit=rls-tenancy-auditor
+- **Outcome:** partial. The PR is open; applying 0029 to hudo-dev and hudo-staging is left to Ian (no DB credentials in the cloud session).
+- **Notes:**
+  - **What `0029_comments_select_keep_soft_deleted.sql` does:** recreates `comments_select` with the exact 0002 `USING` clause (no `deleted_at IS NULL`). That's what live has, because 0004 was never applied there. 0010 doesn't touch the SELECT policy; it only mentions it in a comment.
+  - **pgTAP Test 13** now checks that a same-agency member (Clara) sees the soft-deleted comment and an other-agency member (Diana) doesn't. Plan is 15. Diana runs first, so Test 14 still runs as Clara.
+  - **No local pgTAP run** (no supabase CLI, Docker daemon unreachable). The executor checked the policy shape and visibility in a scratch Postgres 16 instead; CI's RLS job runs the real file.
+  - **Docs still describe the RLS filter:** `.claude/agents/rls-tenancy-auditor.md` item 4, `docs/Hudo App 2026/tables/comments.md` and `ADR-005-soft-delete-only.md`. They're outside this task's FILES; follow-up task suggested.
+  - **Apply:** `sh scripts/db-push.sh local --dry-run --include-all`, then `staging`. The dry-run should list only 0029. It doesn't change live's policy; it only aligns the tracked history.
+- **Gotcha (if any):** with no RLS `deleted_at` filter on `comments`, app code is the only thing hiding soft-deleted comments. Every new read of `comments` must filter `deleted_at` itself.
+
+## 2026-10-24 04:30 — comments_select follows video visibility; un-delete blocked (migration 0030)
+
+- **Task:** follow-up from the #196 audit of migration 0029 (comments video-scope; number 0030 noted in `tasks/sprint-4.md`)
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** partial. Code, tests and local pgTAP are done. Applying 0029/0030 to hudo-dev and hudo-staging is left to Ian (no DB credentials in the cloud session): `sh scripts/db-push.sh local --dry-run --include-all`, then `staging`. The dry-run should list 0029 (if #196 isn't applied yet) and 0030.
+- **Notes:**
+  - **What `0030_comments_select_video_scope.sql` does:**
+    - Recreates `comments_select` with two branches: agent+ (`owner`/`admin_agent`/`agent`) reads every comment in their agencies; any other member (talent) reads only comments on versions of videos with `videos.talent_id = auth.uid()`. That matches `videos_select_talent` and `video_versions_select`. Still no `deleted_at` filter (#187), so soft-deleted rows stay visible to whoever can see the video.
+    - Adds the `prevent_comment_undelete` BEFORE UPDATE trigger: `deleted_at` non-null to null raises 23514 'Soft-deleted comments cannot be restored'. Without it, `comments_update_own` / `comments_update_agents` let a client undo a soft delete. That was already possible on live since 0002; only databases carrying the never-applied 0004 filter blocked it.
+  - **`tests/rls/comments.test.sql`:** plan 15 to 23. Adds a second talent (Cora) with her own video and a live plus a soft-deleted comment. New assertions cover talent isolation (Clara can't see Cora's live or soft-deleted comment; Cora sees only her 2), agent visibility of soft-deleted rows, both un-delete attempts (talent and agent) and a forward direct soft delete still working. Tests are now numbered one per assertion.
+  - **Test 11 (old numbering) restructured:** it un-deleted C2 as superuser to set up the resolve test. The trigger fires for every role, so that line now fails. Charlie resolves Clara's live comment `c0de0003-...-0099` (Clara's own video) instead. Old Test 13 no longer re-soft-deletes C2 (it stays deleted since Test 8).
+  - **Guard test `lib/comments-read-guard.test.ts`:** scans `app/`, `lib/`, `hooks/` for `.from('comments')` read chains and fails unless each has `.is('deleted_at', null)` or selects `deleted_at`. 7 read chains and 3 write chains on the current tree, all fine. Not an RLS substitute: the API routes read through the service-role client, so app code is the only filter there (the dashboard `comments` embeds use the session client and filter `comments.deleted_at` themselves).
+  - **Local pgTAP (no supabase CLI):** throwaway PG16 cluster with a minimal Supabase scaffold, all migrations in order (26 with 0030, 25 without), then every file in `tests/rls/`. Baseline (no 0030, original test): 15 files, 124 tests, green. With 0030 and the new test: 15 files, 132 tests, green. The new test against the baseline schema fails exactly the 7 talent-isolation and un-delete assertions.
+  - **Not changed here:** `comments_insert` (write path). Aligning it with `comments_select` is a follow-up candidate.
+- **Gotcha (if any):** the un-delete trigger fires for every role, superuser and service_role included, so test fixtures and data repairs can't reset `deleted_at` to NULL. If it's ever genuinely needed, disable the trigger explicitly as postgres (`ALTER TABLE comments DISABLE TRIGGER prevent_comment_undelete`) and re-enable it.
