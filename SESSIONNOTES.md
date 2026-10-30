@@ -762,3 +762,32 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - Lows accepted: L3, code-less requests are counted too, the same as reset-password and invitations. L4, completing confirmation and recovery now also depends on Upstash, which is the fail-closed policy.
     - Pre-existing, for the backlog: `lib/redis.ts` runs INCR and EXPIRE as two calls. If EXPIRE fails after the first INCR, the key has no TTL and that IP stays blocked on every limited route.
 - **Gotcha (if any):** to stub an Upstash outage in a unit test, return a non-2xx response from the fake Upstash endpoint; don't make `fetch` throw. The SDK throws at once on a non-2xx, but it retries a thrown `fetch` 5 times with exponential backoff (about 4 s per test). It also sends even a single `INCR` as a pipeline (`[["incr", key]]`), so stubs must handle both shapes.
+
+## 2026-10-23 20:55 — S4-REVIEW-004: migration 0029 keeps soft-deleted comments visible to members (#187 option b)
+
+- **Task:** S4-REVIEW-004 (branch `feat/s4-S4-REVIEW-004-comments-select`, built in its own worktree in parallel with S4-REVIEW-002)
+- **Models:** planner=opus, executor=sonnet; RLS audit=rls-tenancy-auditor
+- **Outcome:** partial. The PR is open; applying 0029 to hudo-dev and hudo-staging is left to Ian (no DB credentials in the cloud session).
+- **Notes:**
+  - **What `0029_comments_select_keep_soft_deleted.sql` does:** recreates `comments_select` with the exact 0002 `USING` clause (no `deleted_at IS NULL`). That's what live has, because 0004 was never applied there. 0010 doesn't touch the SELECT policy; it only mentions it in a comment.
+  - **pgTAP Test 13** now checks that a same-agency member (Clara) sees the soft-deleted comment and an other-agency member (Diana) doesn't. Plan is 15. Diana runs first, so Test 14 still runs as Clara.
+  - **No local pgTAP run** (no supabase CLI, Docker daemon unreachable). The executor checked the policy shape and visibility in a scratch Postgres 16 instead; CI's RLS job runs the real file.
+  - **Docs still describe the RLS filter:** `.claude/agents/rls-tenancy-auditor.md` item 4, `docs/Hudo App 2026/tables/comments.md` and `ADR-005-soft-delete-only.md`. They're outside this task's FILES; follow-up task suggested.
+  - **Apply:** `sh scripts/db-push.sh local --dry-run --include-all`, then `staging`. The dry-run should list only 0029. It doesn't change live's policy; it only aligns the tracked history.
+- **Gotcha (if any):** with no RLS `deleted_at` filter on `comments`, app code is the only thing hiding soft-deleted comments. Every new read of `comments` must filter `deleted_at` itself.
+
+## 2026-10-30 — PR triage: 4 merged, #188 conflict resolved
+
+- **Task:** audit all 13 open PRs for merge readiness; merge the ready ones; unblock #188 (S4-JOURNEY-004)
+- **Models:** planner=opus; PR audit=sonnet (read-only)
+- **Outcome:** partial. Four PRs merged; #188 is conflict-free and waiting on CI and its signed-in role walk.
+- **Notes:**
+  - **CI:** real CI was green on all 13 PRs. The only red checks were "AI Code Review" and pullfrog, which still fail on DeepSeek `402 Insufficient Balance`. No PR has a Claude Approvals check.
+  - **Merged (squash, Ian approved):** #173 (CSP export), #157 (forgot-password link), #177 (Sprint 5 backlog), #196 (0029, S4-REVIEW-004).
+  - **0029 is not applied yet.** Run `sh scripts/db-push.sh local --dry-run`, then `local`, then the same for `staging`.
+  - **#188:** merged main in. The only conflict was SESSIONNOTES.md, where both sides had appended entries; both are kept, in date order. I confirmed `/auth/forgot-password` (linked from #157) is in the root middleware's public paths. Format, type-check, lint, 1303/1303 unit tests and build all pass.
+  - **Merge order for the rest:**
+    - #199 (0030) is stacked on #196, so it is next in the comments chain; #201 (docs) follows it.
+    - #197, #198 and #158 all edit `app/(dashboard)/videos/[id]/page.tsx` and its test, so the second and third of them to merge will conflict.
+    - #175 needs one doc fix: row F25 should read `#143, #144–#148`.
+- **Gotcha (if any):** nearly every PR appends to SESSIONNOTES.md at the same spot, so every merge after the first conflicts there. Resolve by keeping both sides in timestamp order.
