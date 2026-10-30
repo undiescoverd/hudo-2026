@@ -62,7 +62,7 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 | F22 | Search, filters and activity history | Status filter only | Partial | — | No | Not checked |
 | F23 | Platform admin | not drawn | Not drawn | — | Partial (pages broken) | Not checked |
 | F24 | Billing and subscriptions | Billing overview page | Partial | #142 (pricing draft) | Yes (S3 billing shipped, see discrepancies) | Not checked |
-| F25 | Account deletion and data export | not drawn | Not drawn | #143, #144–#149 | Partial (erasure shipped, deletion not) | Not checked |
+| F25 | Account deletion and data export | not drawn | Not drawn | #143, #144–#148 | Partial (erasure shipped, deletion not) | Not checked |
 | F26 | Google and Apple sign-in | not drawn | Not drawn | — | Partial (disabled placeholder buttons) | Not checked |
 | F27 | System pages: errors, empty states, legal | Flow 05 step 15; Flow 03 step 13; Flow 02 invalid-link | Partial | #171 | Partial | Not checked |
 | G1 | Guest review link (extra) | Flow 02, all steps and edge cases | Drawn | #165, #166, #167, #170 | Yes | Not checked |
