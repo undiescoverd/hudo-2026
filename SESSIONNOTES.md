@@ -747,6 +747,19 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Linear:** this session has no `LINEAR_API_KEY` and the Linear connector failed to connect, so the four issues still need creating, each title starting with its exact task ID. Until then, `sync-check` shows `⚠ ERROR` for them (Failure Log, 2026-06-16 Linear entry).
 - **Gotcha (if any):** a cloud session can push only its designated branch unless the user OKs another. When one PR is already open on it, ask early for a second branch rather than queueing unrelated work behind the merge.
 
+## 2026-10-23 20:55 — S4-REVIEW-004: migration 0029 keeps soft-deleted comments visible to members (#187 option b)
+
+- **Task:** S4-REVIEW-004 (branch `feat/s4-S4-REVIEW-004-comments-select`, built in its own worktree in parallel with S4-REVIEW-002)
+- **Models:** planner=opus, executor=sonnet; RLS audit=rls-tenancy-auditor
+- **Outcome:** partial. The PR is open; applying 0029 to hudo-dev and hudo-staging is left to Ian (no DB credentials in the cloud session).
+- **Notes:**
+  - **What `0029_comments_select_keep_soft_deleted.sql` does:** recreates `comments_select` with the exact 0002 `USING` clause (no `deleted_at IS NULL`). That's what live has, because 0004 was never applied there. 0010 doesn't touch the SELECT policy; it only mentions it in a comment.
+  - **pgTAP Test 13** now checks that a same-agency member (Clara) sees the soft-deleted comment and an other-agency member (Diana) doesn't. Plan is 15. Diana runs first, so Test 14 still runs as Clara.
+  - **No local pgTAP run** (no supabase CLI, Docker daemon unreachable). The executor checked the policy shape and visibility in a scratch Postgres 16 instead; CI's RLS job runs the real file.
+  - **Docs still describe the RLS filter:** `.claude/agents/rls-tenancy-auditor.md` item 4, `docs/Hudo App 2026/tables/comments.md` and `ADR-005-soft-delete-only.md`. They're outside this task's FILES; follow-up task suggested.
+  - **Apply:** `sh scripts/db-push.sh local --dry-run --include-all`, then `staging`. The dry-run should list only 0029. It doesn't change live's policy; it only aligns the tracked history.
+- **Gotcha (if any):** with no RLS `deleted_at` filter on `comments`, app code is the only thing hiding soft-deleted comments. Every new read of `comments` must filter `deleted_at` itself.
+
 ## 2026-10-23 21:40 — S4-REVIEW-002: comment actions (reply, resolve, edit, delete)
 
 - **Task:** S4-REVIEW-002 (#191), branch `feat/s4-S4-REVIEW-002-comment-actions`, built in its own worktree in parallel with S4-REVIEW-004

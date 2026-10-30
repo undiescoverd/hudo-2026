@@ -6,7 +6,7 @@
 
 ---
 
-> **Migration numbering (verified 2026-10-22):** migrations 0001–0023 are in the repo. Wave 1 uses **0024–0026** (deletion plan). S4-JOURNEY-001 uses **0027**. Archive & restore (archive plan Phase 5) moves to **0028**. Apply via the `/apply-migration` flow (`sh scripts/db-push.sh local|staging`, `--dry-run` first → both hudo-dev + hudo-staging), never MCP `apply_migration` or the SQL editor. Because 0027 is already applied, pushing 0024–0026 later needs `--include-all` (`db push` refuses versions older than the newest remote one) — check the dry-run list first.
+> **Migration numbering (verified 2026-10-22):** migrations 0001–0023 are in the repo. Wave 1 uses **0024–0026** (deletion plan). S4-JOURNEY-001 uses **0027**. Archive & restore (archive plan Phase 5) moves to **0028**. S4-REVIEW-004 uses **0029**. Apply via the `/apply-migration` flow (`sh scripts/db-push.sh local|staging`, `--dry-run` first → both hudo-dev + hudo-staging), never MCP `apply_migration` or the SQL editor. Because 0027 is already applied, pushing 0024–0026 later needs `--include-all` (`db push` refuses versions older than the newest remote one) — check the dry-run list first.
 
 ## Tasks
 
@@ -375,7 +375,7 @@ TASK_ID: S4-REVIEW-004
 TITLE: Forward migration dropping the unapplied 0004 soft-delete filter (GitHub #187, option b)
 BRANCH: feat/s4-S4-REVIEW-004-comments-select
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - New forward migration (next free number at build time; 0024–0026 and 0028 are reserved) recreates comments_select without `deleted_at IS NULL`, matching live
