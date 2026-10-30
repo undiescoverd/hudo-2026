@@ -41,6 +41,7 @@ function makeStorage(sizesByPrefix: Record<string, number>): StorageClient {
     completeMultipartUpload: async () => {},
     abortMultipartUpload: async () => {},
     headObject: async () => null,
+    deletePrefix: async () => 0,
   } as StorageClient
 }
 
