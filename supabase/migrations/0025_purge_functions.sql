@@ -10,7 +10,8 @@
 -- Comments are hard-deleted here and nowhere else: a version/video purge
 -- cascades to them. comments.parent_id is NO ACTION, but the cascade is a
 -- single DELETE statement removing parent and reply together, and NO ACTION
--- is checked at statement end, so it is never violated.
+-- is checked at statement end, so it is never violated. A reply on a different
+-- version than its parent holds too: a video purge deletes all versions in one statement.
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION purge_video(
@@ -68,19 +69,39 @@ DECLARE
   v_agency uuid;
   v_key    text;
   v_bytes  bigint;
+  v_queue  boolean;
+  v_why    text;
 BEGIN
-  SELECT video_id, agency_id, r2_key, file_size_bytes
-    INTO v_video, v_agency, v_key, v_bytes
-    FROM video_versions WHERE id = p_version_id FOR UPDATE;
+  -- Lock order matches purge_video (video first, then version) so the two cannot deadlock,
+  -- and the active-version check below cannot race a concurrent "make this version active".
+  SELECT video_id INTO v_video FROM video_versions WHERE id = p_version_id;
   IF NOT FOUND THEN RETURN 0; END IF;  -- idempotent
+  PERFORM 1 FROM videos WHERE id = v_video FOR UPDATE;
+
+  SELECT agency_id, r2_key, file_size_bytes
+    INTO v_agency, v_key, v_bytes
+    FROM video_versions WHERE id = p_version_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN 0; END IF;  -- purged while we waited for the lock
 
   IF EXISTS (SELECT 1 FROM videos WHERE id = v_video AND active_version_id = p_version_id) THEN
     RAISE EXCEPTION 'Cannot delete the current version; delete the video or upload a new version'
       USING ERRCODE = 'P0409';
   END IF;
 
-  INSERT INTO storage_deletions (agency_id, target, is_prefix, bytes, reason)
-    VALUES (v_agency, v_key, false, v_bytes, p_reason);
+  -- Only queue a key that is provably this version's alone: inside its own video prefix and
+  -- not shared with another version (upload/complete replays) or the thumbnail.
+  v_queue := true;
+  IF left(v_key, length(v_agency::text) + length(v_video::text) + 2) <> v_agency || '/' || v_video || '/' THEN
+    v_queue := false; v_why := 'key outside video prefix';
+  ELSIF EXISTS (SELECT 1 FROM video_versions WHERE r2_key = v_key AND id <> p_version_id)
+     OR EXISTS (SELECT 1 FROM videos WHERE thumbnail_r2_key = v_key) THEN
+    v_queue := false; v_why := 'key shared with another version or thumbnail';
+  END IF;
+
+  IF v_queue THEN
+    INSERT INTO storage_deletions (agency_id, target, is_prefix, bytes, reason)
+      VALUES (v_agency, v_key, false, v_bytes, p_reason);
+  END IF;
 
   UPDATE agencies
      SET storage_usage_bytes = GREATEST(storage_usage_bytes - v_bytes, 0)
@@ -88,7 +109,9 @@ BEGIN
 
   INSERT INTO audit_log (agency_id, actor_id, actor_name, action, resource_type, resource_id, metadata)
     VALUES (v_agency, p_actor_id, p_actor_name, 'version_purged', 'video', v_video,
-            jsonb_build_object('reason', p_reason, 'bytes', v_bytes, 'version_id', p_version_id));
+            jsonb_build_object('reason', p_reason, 'bytes', v_bytes, 'version_id', p_version_id,
+                               'key_queued', v_queue)
+            || CASE WHEN v_queue THEN '{}'::jsonb ELSE jsonb_build_object('key_skipped_reason', v_why) END);
 
   DELETE FROM video_versions WHERE id = p_version_id;  -- cascades comments (incl. replies), guest_links
   RETURN v_bytes;

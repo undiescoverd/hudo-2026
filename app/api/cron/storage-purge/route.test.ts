@@ -75,7 +75,7 @@ describe('GET /api/cron/storage-purge', () => {
     const res = await GET(makeRequest(SECRET), deps)
     assert.equal(res.status, 200)
     assert.deepEqual(await res.json(), { drained: { processed: 1, failed: 0, skipped: 0 } })
-    assert.equal(updates.length, 1)
+    assert.equal(updates.length, 2, 'claim + completion writes')
   })
 
   it('returns 500 when the queue cannot be read', async () => {

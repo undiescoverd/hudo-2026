@@ -7,7 +7,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(24);
+SELECT plan(33);
 
 -- ── Setup ──────────────────────────────────────────────────────
 -- Agency A (usage 300): V1 (v1=100, v2=200 active; comment + reply on v1), V3 (talent's second video)
@@ -66,7 +66,7 @@ INSERT INTO guest_links (video_id, agency_id, video_version_id, token_hash, crea
 INSERT INTO audit_log (agency_id, actor_id, actor_name, action, resource_type, resource_id) VALUES
   ('c0ffee25-0000-4000-a000-00000000000c'::uuid, NULL, 'System', 'status_changed', 'video', 'c0ffee25-0000-4000-a000-0000000000a4'::uuid);
 INSERT INTO storage_deletions (agency_id, target, is_prefix, reason) VALUES
-  ('c0ffee25-0000-4000-a000-00000000000c'::uuid, 'c0ffee25-0000-4000-a000-00000000000c/old-key.mp4', false, 'video_purged');
+  ('c0ffee25-0000-4000-a000-00000000000c'::uuid, 'c0ffee25-0000-4000-a000-00000000000c/c0ffee25-0000-4000-a000-0000000000a4/old-key.mp4', false, 'video_purged');
 
 SELECT ok(
   (SELECT count(*) FROM comments WHERE video_version_id = 'c0ffee25-0000-4000-a000-0000000000b1'::uuid) = 2,
@@ -111,14 +111,16 @@ SELECT is((SELECT storage_usage_bytes FROM agencies WHERE id = 'c0ffee25-0000-40
   'counter reached 0 after both purges (not negative on the repeat)');
 
 -- ── purge_talent_in_agency ────────────────────────────────────
-SELECT purge_talent_in_agency('dbeef025-0025-4000-a000-000000000001'::uuid,'c0ffee25-0000-4000-a000-00000000000a'::uuid,NULL,'System');
+SELECT lives_ok($$SELECT purge_talent_in_agency('dbeef025-0025-4000-a000-000000000001'::uuid,'c0ffee25-0000-4000-a000-00000000000a'::uuid,NULL,'System')$$,
+  'purge_talent_in_agency runs');
 SELECT is((SELECT count(*) FROM videos WHERE id = 'c0ffee25-0000-4000-a000-0000000000a3'::uuid), 0::bigint,
   'scoped removal purges the talent''s video in that agency');
 SELECT is((SELECT count(*) FROM videos WHERE id = 'c0ffee25-0000-4000-a000-0000000000a2'::uuid), 1::bigint,
   'scoped removal leaves the other agency''s video intact');
 
 -- counter floors at 0 (drift: usage 5 < 50 bytes freed)
-SELECT purge_video('c0ffee25-0000-4000-a000-0000000000a2'::uuid,'talent_erased',NULL,'System');
+SELECT lives_ok($$SELECT purge_video('c0ffee25-0000-4000-a000-0000000000a2'::uuid,'talent_erased',NULL,'System')$$,
+  'purge_video (drifted counter) runs');
 SELECT is((SELECT storage_usage_bytes FROM agencies WHERE id = 'c0ffee25-0000-4000-a000-00000000000b'::uuid), 0::bigint,
   'counter floors at 0');
 
@@ -132,8 +134,46 @@ SELECT is(
   0::bigint, 'no videos/memberships/audit_log/agency rows left');
 SELECT ok(
   EXISTS(SELECT 1 FROM storage_deletions WHERE target = 'c0ffee25-0000-4000-a000-00000000000c/' AND is_prefix)
-  AND EXISTS(SELECT 1 FROM storage_deletions WHERE target = 'c0ffee25-0000-4000-a000-00000000000c/old-key.mp4'),
+  AND EXISTS(SELECT 1 FROM storage_deletions WHERE target = 'c0ffee25-0000-4000-a000-00000000000c/c0ffee25-0000-4000-a000-0000000000a4/old-key.mp4'),
   'agency prefix queued and earlier queue rows survive the agency delete');
+
+-- ── purge_video_version: unsafe keys are never queued ─────────
+-- V5 (agency D): v1 = legacy out-of-prefix key, v2/v3 share one key (replayed upload/complete), v4 active.
+INSERT INTO agencies (id, name, slug, storage_usage_bytes) VALUES
+  ('c0ffee25-0000-4000-a000-00000000000d'::uuid, 'Purge D', 'rls-purge-d', 1000);
+INSERT INTO memberships (user_id, agency_id, role) VALUES
+  ('dbeef025-0025-4000-a000-000000000001'::uuid, 'c0ffee25-0000-4000-a000-00000000000d'::uuid, 'talent');
+INSERT INTO videos (id, agency_id, talent_id, title) VALUES
+  ('c0ffee25-0000-4000-a000-0000000000a5'::uuid, 'c0ffee25-0000-4000-a000-00000000000d'::uuid, 'dbeef025-0025-4000-a000-000000000001'::uuid, 'V5');
+INSERT INTO video_versions (id, video_id, agency_id, version_number, r2_key, file_size_bytes, uploaded_by) VALUES
+  ('c0ffee25-0000-4000-a000-0000000000d1'::uuid, 'c0ffee25-0000-4000-a000-0000000000a5'::uuid, 'c0ffee25-0000-4000-a000-00000000000d'::uuid, 1,
+   'seed/staging/legacy/v1.mp4', 10, 'dbeef025-0025-4000-a000-000000000001'::uuid),
+  ('c0ffee25-0000-4000-a000-0000000000d2'::uuid, 'c0ffee25-0000-4000-a000-0000000000a5'::uuid, 'c0ffee25-0000-4000-a000-00000000000d'::uuid, 2,
+   'c0ffee25-0000-4000-a000-00000000000d/c0ffee25-0000-4000-a000-0000000000a5/shared.mp4', 20, 'dbeef025-0025-4000-a000-000000000001'::uuid),
+  ('c0ffee25-0000-4000-a000-0000000000d3'::uuid, 'c0ffee25-0000-4000-a000-0000000000a5'::uuid, 'c0ffee25-0000-4000-a000-00000000000d'::uuid, 3,
+   'c0ffee25-0000-4000-a000-00000000000d/c0ffee25-0000-4000-a000-0000000000a5/shared.mp4', 20, 'dbeef025-0025-4000-a000-000000000001'::uuid),
+  ('c0ffee25-0000-4000-a000-0000000000d4'::uuid, 'c0ffee25-0000-4000-a000-0000000000a5'::uuid, 'c0ffee25-0000-4000-a000-00000000000d'::uuid, 4,
+   'c0ffee25-0000-4000-a000-00000000000d/c0ffee25-0000-4000-a000-0000000000a5/v4.mp4', 30, 'dbeef025-0025-4000-a000-000000000001'::uuid);
+UPDATE videos SET active_version_id = 'c0ffee25-0000-4000-a000-0000000000d4'::uuid WHERE id = 'c0ffee25-0000-4000-a000-0000000000a5'::uuid;
+
+SELECT is(purge_video_version('c0ffee25-0000-4000-a000-0000000000d1'::uuid,'version_purged',NULL,'System'), 10::bigint,
+  'out-of-prefix version still purged and counted');
+SELECT is((SELECT count(*) FROM storage_deletions WHERE target = 'seed/staging/legacy/v1.mp4'), 0::bigint,
+  'out-of-prefix key is not queued');
+SELECT is((SELECT metadata->>'key_queued' FROM audit_log WHERE resource_id = 'c0ffee25-0000-4000-a000-0000000000a5'::uuid
+  AND metadata->>'version_id' = 'c0ffee25-0000-4000-a000-0000000000d1' ), 'false',
+  'audit row records key_queued=false');
+
+SELECT is(purge_video_version('c0ffee25-0000-4000-a000-0000000000d2'::uuid,'version_purged',NULL,'System'), 20::bigint, 'shared-key version still purged and counted');
+SELECT is((SELECT count(*) FROM storage_deletions WHERE target LIKE '%/shared.mp4'), 0::bigint,
+  'key shared with another version is not queued');
+SELECT is((SELECT count(*) FROM video_versions WHERE id = 'c0ffee25-0000-4000-a000-0000000000d3'::uuid), 1::bigint,
+  'the other version sharing the key is untouched');
+
+-- 0024 key-shape CHECK
+SELECT throws_ok(
+  $$INSERT INTO storage_deletions(target, is_prefix, reason) VALUES ('seed/staging/x.mp4', false, 'version_purged')$$,
+  '23514', NULL, 'rejects malformed exact key');
 
 -- ── privileges ────────────────────────────────────────────────
 SELECT set_config('request.jwt.claims',

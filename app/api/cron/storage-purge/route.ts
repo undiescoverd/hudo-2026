@@ -7,7 +7,7 @@ export const maxDuration = 60
 
 /**
  * GET /api/cron/storage-purge
- * Vercel cron — daily at 03:00 UTC (Hobby plan: max once/day).
+ * Vercel cron — daily at 01:00 UTC (before the 02:00 storage-reconcile) (Hobby plan: max once/day).
  * Requires Authorization: Bearer <CRON_SECRET>.
  *
  * Drains the storage_deletions queue (R2 objects/prefixes queued by the

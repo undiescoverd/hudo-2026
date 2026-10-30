@@ -36,11 +36,17 @@ function makeRow(partial: Partial<Row> & { id: number; target: string }): Row {
   }
 }
 
-function makeAdmin(rows: Row[]): SupabaseClient {
+interface AdminOpts {
+  /** Return an error message to make this update fail. */
+  updateError?: (patch: Partial<Row>) => string | null
+  countError?: boolean
+}
+
+function makeAdmin(rows: Row[], opts: AdminOpts = {}): SupabaseClient {
   const from = (table: string) => {
     assert.equal(table, 'storage_deletions')
     return {
-      select: (_cols: string, opts?: { count?: string; head?: boolean }) => {
+      select: (_cols: string, selOpts?: { count?: string; head?: boolean }) => {
         const preds: Array<(r: Row) => boolean> = []
         let max = Infinity
         const q = {
@@ -63,7 +69,11 @@ function makeAdmin(rows: Row[]): SupabaseClient {
           },
           then: (resolve: (v: unknown) => void) => {
             const matched = rows.filter((r) => preds.every((p) => p(r)))
-            if (opts?.head) return resolve({ count: matched.length, data: null, error: null })
+            if (selOpts?.head) {
+              if (opts.countError)
+                return resolve({ count: null, data: null, error: { message: 'count boom' } })
+              return resolve({ count: matched.length, data: null, error: null })
+            }
             return resolve({
               data: [...matched]
                 .sort((a, b) => a.enqueued_at.localeCompare(b.enqueued_at))
@@ -77,6 +87,8 @@ function makeAdmin(rows: Row[]): SupabaseClient {
       },
       update: (patch: Partial<Row>) => ({
         eq: async (_col: 'id', id: number) => {
+          const msg = opts.updateError?.(patch) ?? null
+          if (msg) return { error: { message: msg } }
           const row = rows.find((r) => r.id === id)
           if (row) Object.assign(row, patch)
           return { error: null }
@@ -143,7 +155,6 @@ describe('drainStorageDeletions', () => {
     })
     const res = await drainStorageDeletions({ admin: makeAdmin(rows), storage })
     assert.ok(rows[0].completed_at)
-    assert.equal(rows[0].attempts, 0)
     assert.deepEqual(res, { processed: 1, failed: 0, skipped: 0 })
   })
 
@@ -163,28 +174,126 @@ describe('drainStorageDeletions', () => {
     assert.equal(messages.length, 0, 'no Sentry noise before the final attempt')
   })
 
-  it('rows at maxAttempts are not selected, and give-up is reported to Sentry once', async () => {
+  it('rows at maxAttempts are not selected, give-up is reported once, parked rows alert every run', async () => {
     const rows = [
       makeRow({ id: 1, target: 'parked.mp4', attempts: 5 }),
       makeRow({ id: 2, target: 'last-try.mp4', attempts: 4 }),
     ]
     const { storage, calls } = makeStorage({
-      deleteObject: async () => {
+      deleteObject: async (k: string) => {
+        calls.deleteObject.push(k)
         throw new Error('still broken')
       },
     })
     const { sentry, messages } = makeSentry()
     const admin = makeAdmin(rows)
     const first = await drainStorageDeletions({ admin, storage, sentry, maxAttempts: 5 })
-    assert.equal(calls.deleteObject.length, 0, 'parked row untouched')
+    assert.deepEqual(calls.deleteObject, ['last-try.mp4'], 'parked row untouched')
     assert.equal(rows[1].attempts, 5)
     assert.deepEqual(first, { processed: 0, failed: 1, skipped: 2 })
-    assert.equal(messages.length, 1)
+    assert.equal(messages.filter((m) => m.includes('Giving up')).length, 1)
+    assert.equal(messages.filter((m) => m.includes('2 queue row(s) parked')).length, 1)
 
-    // A second run neither retries nor re-reports either row.
+    // A second run neither retries nor re-reports the give-up, but still raises the parked alert.
     const second = await drainStorageDeletions({ admin, storage, sentry, maxAttempts: 5 })
     assert.deepEqual(second, { processed: 0, failed: 0, skipped: 2 })
-    assert.equal(messages.length, 1)
+    assert.equal(messages.filter((m) => m.includes('Giving up')).length, 1)
+    assert.equal(messages.filter((m) => m.includes('2 queue row(s) parked')).length, 2)
+  })
+
+  it('NoSuchBucket (a 404) is a failure, not "already gone"', async () => {
+    const rows = [makeRow({ id: 1, target: 'k.mp4' })]
+    const { storage } = makeStorage({
+      deleteObject: async () => {
+        throw Object.assign(new Error('bucket missing'), {
+          name: 'NoSuchBucket',
+          $metadata: { httpStatusCode: 404 },
+        })
+      },
+    })
+    const res = await drainStorageDeletions({ admin: makeAdmin(rows), storage })
+    assert.equal(rows[0].completed_at, null)
+    assert.equal(rows[0].attempts, 1)
+    assert.deepEqual(res, { processed: 0, failed: 1, skipped: 0 })
+  })
+
+  it('claims (bumps attempts) before the R2 call', async () => {
+    const rows = [makeRow({ id: 1, target: 'k.mp4' })]
+    let attemptsSeenByR2 = -1
+    const { storage } = makeStorage({
+      deleteObject: async () => {
+        attemptsSeenByR2 = rows[0].attempts
+      },
+    })
+    await drainStorageDeletions({ admin: makeAdmin(rows), storage })
+    assert.equal(attemptsSeenByR2, 1)
+  })
+
+  it('a failed claim skips the row without calling R2 and counts it failed', async () => {
+    const rows = [makeRow({ id: 1, target: 'k.mp4' })]
+    const { storage, calls } = makeStorage()
+    const res = await drainStorageDeletions({
+      admin: makeAdmin(rows, { updateError: (p) => ('attempts' in p ? 'claim boom' : null) }),
+      storage,
+    })
+    assert.equal(calls.deleteObject.length, 0)
+    assert.deepEqual(res, { processed: 0, failed: 1, skipped: 0 })
+  })
+
+  it('a failed completion write is logged and counted failed (R2 delete is idempotent)', async () => {
+    const rows = [makeRow({ id: 1, target: 'k.mp4' })]
+    const { storage } = makeStorage()
+    const res = await drainStorageDeletions({
+      admin: makeAdmin(rows, { updateError: (p) => ('completed_at' in p ? 'write boom' : null) }),
+      storage,
+    })
+    assert.equal(rows[0].completed_at, null)
+    assert.deepEqual(res, { processed: 0, failed: 1, skipped: 0 })
+  })
+
+  it('a failed last_error write is reported to Sentry', async () => {
+    const rows = [makeRow({ id: 1, target: 'k.mp4' })]
+    const { storage } = makeStorage({
+      deleteObject: async () => {
+        throw new Error('r2 down')
+      },
+    })
+    const { sentry, messages } = makeSentry()
+    await drainStorageDeletions({
+      admin: makeAdmin(rows, { updateError: (p) => ('last_error' in p ? 'write boom' : null) }),
+      storage,
+      sentry,
+    })
+    assert.ok(messages.some((m) => m.includes('Could not record failure')))
+  })
+
+  it('throws when the parked-row count query fails', async () => {
+    const { storage } = makeStorage()
+    await assert.rejects(
+      () => drainStorageDeletions({ admin: makeAdmin([], { countError: true }), storage }),
+      /count boom/
+    )
+  })
+
+  it('stops starting new rows once the deadline passes', async () => {
+    const rows = [1, 2, 3].map((id) => makeRow({ id, target: `k${id}.mp4` }))
+    const { storage, calls } = makeStorage()
+    let t = 0
+    // started=0, then each loop check advances the clock by 6ms; deadline 10ms => only row 1 runs.
+    const now = () => {
+      const v = t
+      t += 6
+      return v
+    }
+    const res = await drainStorageDeletions({
+      admin: makeAdmin(rows),
+      storage,
+      deadlineMs: 10,
+      now,
+    })
+    assert.equal(res.processed, 1)
+    assert.deepEqual(calls.deleteObject, ['k1.mp4'])
+    assert.equal(rows[1].attempts, 0, 'unstarted rows are not claimed')
   })
 
   it('honours batchSize', async () => {

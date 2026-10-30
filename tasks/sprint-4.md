@@ -90,7 +90,7 @@ ACCEPTANCE_CRITERIA:
   - Migration 0025 adds purge_video_version / purge_video / purge_talent_in_agency / purge_agency (SECURITY DEFINER, service_role only), each one transaction: queue R2 keys, lower storage_usage_bytes (floor 0), audit_log row, delete rows
   - Purging twice is a no-op; deleting the active version is refused; malformed prefixes are rejected
   - Queue drainer deletes by prefix; an already-gone key counts as done
-  - Daily cron /api/cron/storage-purge (CRON_SECRET, 0 3 * * *) drains the queue
+  - Daily cron /api/cron/storage-purge (CRON_SECRET, 0 1 * * *) drains the queue
   - pgTAP + unit tests for each; reviewers (code, security, RLS) run and logged in SESSIONNOTES.md
 FILES:
   - supabase/migrations/0024_storage_deletions_and_cascades.sql

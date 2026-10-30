@@ -53,6 +53,11 @@ CREATE TABLE IF NOT EXISTS storage_deletions (
   -- A prefix is exactly "{uuid}/" or "{uuid}/{uuid}/": it can never match a sibling tenant/video.
   CONSTRAINT storage_deletions_prefix_shape CHECK (
     NOT is_prefix OR target ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?$'
+  ),
+  -- Defence in depth: an exact key is always "{agency}/{video}/{file}" (generateR2Key, thumbnails).
+  -- purge_video_version never queues anything else; this stops a stray row deleting a legacy/foreign key.
+  CONSTRAINT storage_deletions_key_shape CHECK (
+    is_prefix OR target ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[^/]+(/[^/]+)*$'
   )
 );
 
