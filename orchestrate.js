@@ -700,6 +700,15 @@ function listReleaseRefs() {
 }
 
 /**
+ * True if a commit subject shows `taskId` was actually built and merged. Only the
+ * subject counts: bodies of plan/spec commits list future task IDs, and `chore`
+ * commits add sprint rows or bump status without building anything.
+ */
+function subjectShowsTaskMerged(subject, taskId) {
+  return subject.includes(taskId) && !/^chore\b/.test(subject);
+}
+
+/**
  * Detect tasks whose branch (or task ID) is reachable from a release ref but whose
  * markdown status is not `done`. Returns array of { id, branch, mergedIn, evidence }.
  */
@@ -739,11 +748,12 @@ function detectGitDrift(tasks) {
     // Fallback: task ID present in release-ref history
     if (!mergedIn) {
       for (const release of releaseRefs) {
-        const log = gitSafe(['log', release, '--oneline', '-F', `--grep=${t.id}`]);
-        if (log) {
-          const firstLine = log.split('\n')[0];
+        // --grep matches the whole message; narrow it, then require the ID in the subject
+        const log = gitSafe(['log', release, '--format=%h %s', '-F', `--grep=${t.id}`]);
+        const line = log.split('\n').find(l => subjectShowsTaskMerged(l.slice(l.indexOf(' ') + 1), t.id));
+        if (line) {
           mergedIn = release;
-          evidence = `task id in ${release} history: ${firstLine}`;
+          evidence = `task id in ${release} history: ${line}`;
           break;
         }
       }
@@ -757,18 +767,33 @@ function detectGitDrift(tasks) {
   return drifted;
 }
 
+// Map markdown status → expected Linear state name
+const statusToLinear = {
+  'not_started': 'Backlog',
+  'in_progress': 'In Progress',
+  'in_review':   'In Review',
+  'done':        'Done',
+  'blocked':     'Blocked',
+};
+
+/**
+ * True if a task's Linear state contradicts its markdown status. A `not_started`
+ * task only drifts when Linear says Done: In Progress / In Review are normal while
+ * its feature branch is open (the status bump lives on the branch, and
+ * linear-update.yml moves Linear on push and PR open). Every other status must
+ * match its `statusToLinear` name.
+ */
+function linearDrifted(markdownStatus, linearState) {
+  const actual = String(linearState).toLowerCase();
+  if (markdownStatus === 'not_started') return actual === 'done';
+  const expected = statusToLinear[markdownStatus];
+  return expected !== undefined && actual !== expected.toLowerCase();
+}
+
 function cmdSyncCheck() {
   const { tasks } = loadAllTasks();
 
-  // Map markdown status → expected Linear state name
-  const statusToLinear = {
-    'in_progress': 'In Progress',
-    'in_review':   'In Review',
-    'done':        'Done',
-    'blocked':     'Blocked',
-  };
-
-  // Only check tasks that have a meaningful status
+  // Only check tasks that have a mapped status
   const checkable = tasks.filter(t => statusToLinear[t.status]);
 
   console.log('\n' + bold('=== Linear Sync Check ===') + '\n');
@@ -798,7 +823,7 @@ function cmdSyncCheck() {
         continue;
       }
 
-      const inSync = actualLinear.toLowerCase() === expectedLinear.toLowerCase();
+      const inSync = !linearDrifted(t.status, actualLinear);
       if (inSync) {
         results.push({ id: t.id, markdown: t.status, expected: expectedLinear, actual: actualLinear, status: 'ok' });
         console.log(
@@ -863,7 +888,9 @@ function cmdSyncFix() {
   let fixed = 0;
   let failed = 0;
 
-  const drifted = results.filter(r => r.status === 'drifted');
+  // Tasks merged into a release ref are promoted to done below; don't push them back first
+  const mergedIds = new Set((gitDrift || []).map(g => g.id));
+  const drifted = results.filter(r => r.status === 'drifted' && !mergedIds.has(r.id));
   for (const r of drifted) {
     // Map expected Linear name back to orchestrator status for syncLinear()
     const reverseMap = {
@@ -871,6 +898,7 @@ function cmdSyncFix() {
       'In Review':   'in_review',
       'Done':        'done',
       'Blocked':     'blocked',
+      'Backlog':     'not_started',
     };
     const orchStatus = reverseMap[r.expected];
     if (!orchStatus) {
@@ -922,21 +950,22 @@ function cmdSyncFix() {
 
 // ─── CLI entry point ──────────────────────────────────────────────────────────
 
-const [,, command, ...args] = process.argv;
+if (require.main === module) {
+  const [,, command, ...args] = process.argv;
 
-switch (command) {
-  case 'status':               cmdStatus();                    break;
-  case 'next':                 cmdNext();                      break;
-  case 'prompt':               cmdPrompt(args[0]);             break;
-  case 'start':                cmdStart(args[0]);              break;
-  case 'review':               cmdReview(args[0]);             break;
-  case 'done':                 cmdDone(args[0]);               break;
-  case 'gate':                 cmdGate(args[0]);               break;
-  case 'blocked':              cmdBlocked(args[0], args[1]);   break;
-  case 'sync-check':           cmdSyncCheck();                 break;
-  case 'sync-fix':             cmdSyncFix();                   break;
-  default:
-    console.log(`
+  switch (command) {
+    case 'status':               cmdStatus();                    break;
+    case 'next':                 cmdNext();                      break;
+    case 'prompt':               cmdPrompt(args[0]);             break;
+    case 'start':                cmdStart(args[0]);              break;
+    case 'review':               cmdReview(args[0]);             break;
+    case 'done':                 cmdDone(args[0]);               break;
+    case 'gate':                 cmdGate(args[0]);               break;
+    case 'blocked':              cmdBlocked(args[0], args[1]);   break;
+    case 'sync-check':           cmdSyncCheck();                 break;
+    case 'sync-fix':             cmdSyncFix();                   break;
+    default:
+      console.log(`
 Usage: node orchestrate.js <command> [args]
 
 Commands:
@@ -951,4 +980,7 @@ Commands:
   sync-check                 — Compare markdown task statuses with Linear (read-only)
   sync-fix                   — Push markdown statuses to Linear for any drifted tasks
 `);
+  }
 }
+
+module.exports = { subjectShowsTaskMerged, linearDrifted, detectGitDrift };

@@ -681,6 +681,85 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Not done:** the live smoke test on staging (new-version upload for 0006, reply-to-a-reply rejection for 0008).
 - **Gotcha (if any):** "untracked but idempotent ⇒ effectively applied" was false for 4 of 7 untracked files. Probe each migration's effect before `migration repair --status applied`. Second gotcha: `.claude/settings.local.json` Bash allow-rules only match the _start_ of a command. Run each DB step as one plain command, with no `cd … &&` or `$(…)` prefix and with absolute env-file paths, or it prompts every time.
 
+## 2026-10-23 18:10 — Handoff step 4: sync-check false positives (+ 2026-10-23 Linear tidy, logged late)
+
+- **Task:** handoff step 4 (`docs/superpowers/plans/2026-10-23-s4-next-steps-handoff.md` on `chore/handoff-s4-next-steps`). Built on `claude/exciting-goldberg-9o5u0s`, not `chore/sync-check-false-positives`, because this cloud session can only push its designated branch.
+- **Models:** planner=opus, executor=sonnet; review by opus. `orchestrate.js` is tooling, not a security surface. No bot review: the DeepSeek checks are still out of credit (402), so the `pr-fix` loop is skipped.
+- **Outcome:** done (PR open; merge left to Ian)
+- **Notes:**
+  - **Root cause:** `detectGitDrift`'s fallback (`git log <release> -F --grep=<ID>`) matched IDs in commit _bodies_. Plan commit `6b1f049` flagged S4-DELETE-001, ERASE-001 and SAVER-001. S1's `77c58d9` (and `91b02f8`, `064f7b9`) flagged S4-LAUNCH-004.
+  - **Why it mattered:** `.github/workflows/linear-sync-check.yml` runs `sync-fix` at 08:00 UTC whenever sync-check reports drift. `markTaskDone` set those four to **Done in Linear** every morning, undoing manual tidies. The markdown flip was never committed, because the runner doesn't push.
+  - **Fix 1:** the fallback now only counts the ID in a commit _subject_, and ignores `chore` subjects. `4cd81b6 chore(s3): add audit task rows (S3-SEC-005/006)` would have flagged SEC-005 the same way.
+  - **Checked against all 45 tasks on main:** no not_started task matches. 34 of 39 done tasks still match (done tasks aren't candidates anyway).
+  - **Fix 2:** `sync-check` now queries `not_started` tasks too. One counts as drifted only when Linear says **Done**. `sync-fix` pushes it back to **Backlog**: `update-linear-task.sh` gained the Backlog state, which it resolves by name.
+  - **Merged tasks:** `sync-fix` no longer pushes a status for a task that git shows merged. The git loop promotes it to done straight after.
+  - **Review catch:** the first draft also flagged `not_started` + In Progress/In Review. That would have reset every in-flight task to Backlog daily, because `linear-update.yml` moves Linear on feature-branch push and PR open while main's markdown still says `not_started`. It is now limited to Done.
+  - **Tests:** new `orchestrate.test.ts` covers the subject rule, `detectGitDrift` against a temp git repo, and the Linear rule. Full `pnpm test`: 1251 pass. `node orchestrate.js status` output is byte-identical before and after.
+  - **After merge:** the next daily run (or `sync-check` with a Linear key) should show the four as `✗ DRIFTED` (Linear Done), and `sync-fix` should move them to Backlog. Verify from a machine with `LINEAR_API_KEY`.
+  - **Linear tidy of 2026-10-23 (from the handoff; not logged at the time):**
+    - RES-201, 202 and 203 were set back to Backlog.
+    - RES-74–78 and RES-80 were renamed `[dup of …]` and set to Duplicate.
+    - RES-79 (S4-LAUNCH-003) moved to Backlog with no project, as post-alpha work.
+    - Project statuses were corrected, and not-started tasks sit in Backlog.
+    - The daily cron probably re-marked the four false positives Done since then; Fix 2 undoes that.
+- **Gotcha (if any):** on `main`, an in-flight task's markdown is usually still `not_started`, because the `review` bump lives on the feature branch, while Linear says In Progress or In Review. Any markdown-vs-Linear rule for `not_started` must allow that.
+
+## 2026-10-23 20:00 — Open-redirect fix (sign-in + email callback); #189 merged; step 3 specs filed
+
+- **Task:** fix the open redirect noted in PR #188 (`safeRedirect`); handoff step 3 (spec the S4 gate gaps)
+- **Models:** planner=opus, executor=sonnet; security review=hudo-security-reviewer
+- **Outcome:** partial. The fix is done: the security review found it fit to merge, and PR #193 waits on Ian's merge. The step 3 GitHub issues are filed; the sprint rows and Linear issues are not done yet.
+- **Notes:**
+  - **#189 (sync-check fix)** was squash-merged as `6000ff1` on Ian's go-ahead. Its branch was restarted from `origin/main` for this work.
+  - **The open redirect was in two places:**
+    - `safeRedirect` (sign-in, `window.location.href`) accepted `/\evil.com`.
+    - `app/auth/callback/route.ts` had its own guard that blocked `/\` but not control characters. `searchParams.get` decodes `%09`/`%0A`, and the URL parser strips them, so `?next=/%09/evil.com` led to `new URL(next, origin)` = `https://evil.com`, an open redirect after email confirmation or recovery.
+  - **Fix:** one hardened `safeRedirect(target, fallback = '/videos')`.
+    - It rejects `//`, backslashes, whitespace and C0/DEL control characters.
+    - It then requires the WHATWG-parsed origin to equal the base, and the parsed pathname not to start with `//`.
+    - It returns the **raw** target: `/..//evil.com` normalises to `//evil.com`, so returning the normalised URL would itself be an open redirect.
+    - The callback now uses `safeRedirect(next, '/')`.
+  - **Tests:** 48 redirect tests (signin `safeRedirect` cases plus a new behavioural `app/auth/callback/route.test.ts` with Supabase stubbed at `fetch`). 17 of them fail against the old code. The full suite has 1286 passing.
+  - **Container restart mid-run:** the Sonnet executor's edits survived, but its final report and validation were lost, so Opus re-ran all the checks.
+  - **Step 3:** Ian accepted all of round 1 (Q1–Q9) and all of round 2 (resolve agent+ only; current edit/delete rules; nested reply mapped to 400; no notification for agent new-version uploads).
+    - Filed #190 (new version upload), #191 (comment actions) and #192 (talent resubmit), and recorded option (b) plus its trade-off on #187.
+    - The sprint rows `S4-REVIEW-001`–`004` are drafted but not committed. They need their own branch, and this session can only push one.
+    - Their Linear issues can't be created here: there's no `LINEAR_API_KEY` and the Linear connector failed to connect.
+  - **Security review:** no blocker, high or medium issue in the diff. A fuzz run (every Unicode scalar in four positions, behind 12 path prefixes, resolved against two bases; about 45.6M accepted values) found 0 cross-origin results.
+    - Lows L1 (wording around the `/..//` check, which is defence in depth) and L2 (note that the result must never be percent-decoded again) are fixed in the follow-up commit.
+    - The medium, already on main: `/auth/callback` has no Upstash rate limiter. It's queued as a separate task card.
+- **Gotcha (if any):** a redirect guard that checks string prefixes (`startsWith('/') && !startsWith('//')`) is bypassable. Browsers treat `\` as `/` and drop tab/CR/LF, and `searchParams.get` decodes `%09` first. Validate with `new URL(t, base).origin` and return the raw target, never the normalised one.
+
+## 2026-10-23 20:25 — #193 merged; S4-REVIEW-001–004 sprint rows (handoff step 3)
+
+- **Task:** handoff step 3, adding the sprint rows for the gate gaps Ian specced on 2026-10-23
+- **Models:** planner=opus (rows written by opus from the agreed specs; no code)
+- **Outcome:** partial. The rows are in a PR. Their Linear issues aren't created yet, because this session has no Linear access.
+- **Notes:**
+  - **#193 (open-redirect fix)** was squash-merged as `3107320` on Ian's go-ahead once the required checks were green. The DeepSeek bots fail on every PR (402).
+  - **Ian approved a second branch,** `chore/s4-review-rows`, cut from `origin/main`.
+  - **New rows in `tasks/sprint-4.md`:**
+    - `S4-REVIEW-001`: new version upload (#190)
+    - `S4-REVIEW-002`: comment actions (#191)
+    - `S4-REVIEW-003`: talent resubmit (#192), blocked by 001
+    - `S4-REVIEW-004`: forward migration for #187 option (b)
+  - **Dependencies extended:** `S4-ACCESS-001` now waits for REVIEW-001–003 (its note already says it runs after UI changes). `S4-LAUNCH-002` now waits for REVIEW-002, because its smoke flow covers "comment and resolve".
+  - **Linear:** this session has no `LINEAR_API_KEY` and the Linear connector failed to connect, so the four issues still need creating, each title starting with its exact task ID. Until then, `sync-check` shows `⚠ ERROR` for them (Failure Log, 2026-06-16 Linear entry).
+- **Gotcha (if any):** a cloud session can push only its designated branch unless the user OKs another. When one PR is already open on it, ask early for a second branch rather than queueing unrelated work behind the merge.
+
+## 2026-10-23 20:55 — S4-REVIEW-004: migration 0029 keeps soft-deleted comments visible to members (#187 option b)
+
+- **Task:** S4-REVIEW-004 (branch `feat/s4-S4-REVIEW-004-comments-select`, built in its own worktree in parallel with S4-REVIEW-002)
+- **Models:** planner=opus, executor=sonnet; RLS audit=rls-tenancy-auditor
+- **Outcome:** partial. The PR is open; applying 0029 to hudo-dev and hudo-staging is left to Ian (no DB credentials in the cloud session).
+- **Notes:**
+  - **What `0029_comments_select_keep_soft_deleted.sql` does:** recreates `comments_select` with the exact 0002 `USING` clause (no `deleted_at IS NULL`). That's what live has, because 0004 was never applied there. 0010 doesn't touch the SELECT policy; it only mentions it in a comment.
+  - **pgTAP Test 13** now checks that a same-agency member (Clara) sees the soft-deleted comment and an other-agency member (Diana) doesn't. Plan is 15. Diana runs first, so Test 14 still runs as Clara.
+  - **No local pgTAP run** (no supabase CLI, Docker daemon unreachable). The executor checked the policy shape and visibility in a scratch Postgres 16 instead; CI's RLS job runs the real file.
+  - **Docs still describe the RLS filter:** `.claude/agents/rls-tenancy-auditor.md` item 4, `docs/Hudo App 2026/tables/comments.md` and `ADR-005-soft-delete-only.md`. They're outside this task's FILES; follow-up task suggested.
+  - **Apply:** `sh scripts/db-push.sh local --dry-run --include-all`, then `staging`. The dry-run should list only 0029. It doesn't change live's policy; it only aligns the tracked history.
+- **Gotcha (if any):** with no RLS `deleted_at` filter on `comments`, app code is the only thing hiding soft-deleted comments. Every new read of `comments` must filter `deleted_at` itself.
+
 ## 2026-10-24 — S4-JOURNEY-004: middleware moved to project root (PR #188, awaiting live walk + merge)
 
 - **Task:** S4-JOURNEY-004 (RES-221). Also landed PR #185 (merge commit, Ian approved) as handoff step 1.

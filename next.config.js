@@ -69,5 +69,10 @@ module.exports = withSentryConfig(nextConfig, {
   authToken: process.env.SENTRY_AUTH_TOKEN,
 })
 
-// Exported for the CSP regression test (next.config.test.ts). Not used by Next.js.
-module.exports.CSP_DIRECTIVES = CSP_DIRECTIVES
+// Exported for the CSP regression test (next.config.test.ts). Non-enumerable so
+// Next's config validator (which iterates own enumerable keys) doesn't flag it
+// as an unrecognized config option; direct property access still works.
+Object.defineProperty(module.exports, 'CSP_DIRECTIVES', {
+  value: CSP_DIRECTIVES,
+  enumerable: false,
+})
