@@ -16,6 +16,8 @@ export type AuditAction =
   | 'billing_plan_changed'
   | 'billing_payment_failed'
   | 'user_erased'
+  | 'video_purged'
+  | 'version_purged'
 
 /**
  * Valid resource_type values as defined in 0001_initial_schema.sql.
