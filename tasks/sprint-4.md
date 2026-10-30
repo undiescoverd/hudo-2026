@@ -83,7 +83,7 @@ TASK_ID: S4-DELETE-001
 TITLE: Delete path foundation (storage_deletions queue, purge functions, R2 prefix delete, daily cron)
 BRANCH: feat/s4-S4-DELETE-001-delete-path
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Migration 0024 fixes the three blocking FKs (notifications, guest_links.video_version_id, videos.active_version_id) and adds the storage_deletions queue with RLS

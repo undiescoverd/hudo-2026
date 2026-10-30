@@ -24,7 +24,7 @@
 |---|---|---|---|---|
 | 0 · Tracking (issues + sprint rows) | S4 | ✅ merged (#153) | `chore/archive-deletion-plan-v2` | umbrella #143; sub-issues #144–#148; bugs #149–#151 |
 | 1 · Upload bugs B1–B3 | S4 | ✅ merged (#156; server-side talentId gate in #182) | `feat/s4-S4-UPLOADFIX-001-upload-bugs` | S4-UPLOADFIX-001 · RES-200 · #149 #150 #151 |
-| 2 · Delete path foundation | S4 | ⬜ | — | S4-DELETE-001 · RES-201 · #144 · migrations 0024–0025 |
+| 2 · Delete path foundation | S4 | 🟡 built locally, not pushed (0024–0025, drainer, cron); apply to dev+staging, reviewers, PR and live check still to do | `feat/s4-S4-DELETE-001-delete-path` | S4-DELETE-001 · RES-201 · #144 · migrations 0024–0025 |
 | 3 · GDPR erasure | S4 | ⬜ | — | S4-ERASE-001 · RES-202 · #145 |
 | 4 · Space savers | S4 | ⬜ | — | S4-SAVER-001 · RES-203 · #146 · migration 0026 |
 | 5 · Archive & restore | post-launch | ⬜ | — | #147 · migration 0028 (no sprint row yet) |
@@ -38,6 +38,7 @@ Legend: ⬜ not started · 🟡 in progress · 🔵 PR open · ✅ merged to `ma
 - 2026-10-14 · opus · planning · Spec + plan written from the grilling session (Q1–Q20). Waiting on the user to review the plan before Phase 0. Plan display names (Phase 7) still open.
 - 2026-10-15 · sonnet · 0.1 · User approved the spec + plan. Filed umbrella #143, sub-issues #144–#148, bugs #149–#151; added S4-UPLOADFIX-001, S4-DELETE-001, S4-ERASE-001, S4-SAVER-001 to tasks/sprint-4.md with Linear RES-200..203. Next: merge this branch, then start Phase 1 (S4-UPLOADFIX-001).
 - 2026-10-16 · opus · 0.1 · First PR #152 was closed: its branch had been cut from `chore/unify-dashboard-routes` and carried two unrelated commits, one with a hardcoded dev password (since rotated; see CLAUDE.md Failure Log). Re-opened as PR #153 from `chore/archive-deletion-plan-v2`, which has only the plan commits. Next: merge #153, then Phase 1.
+- 2026-10-30 · sonnet · 2.1–2.4 · Built Phase 2 locally on `feat/s4-S4-DELETE-001-delete-path` (not pushed). Real FK inventory: only the four plan FKs blocked cascades (notifications.video_id/comment_id, guest_links.video_version_id, videos.active_version_id); everything else already CASCADE. Migrations are 0024/0025 as reserved (the "0028" note in Global Constraints is stale). Deviations: `purge_*` no longer manually null `active_version_id` (the FK is SET NULL); the authenticated-reads-queue test asserts 42501 not count 0 (privileges are revoked, not just RLS). Validated in a scratch PG16 with a pgTAP-compatible shim (real pgTAP could not be installed). Next: run reviewers, apply 0024/0025 to dev+staging via /apply-migration, open PR, Step 7 live check.
 
 ## Global Constraints
 - **Every agent rule in CLAUDE.md applies:**
@@ -159,14 +160,14 @@ Edge cases the spec implies that are most likely to bite. Each line has a test i
 - Produces table `storage_deletions(id bigint, agency_id uuid null, target text, is_prefix boolean, bytes bigint, reason text, enqueued_at, attempts int, last_error text, completed_at)`.
 - `reason ∈ {'version_purged','video_purged','talent_erased','agency_closed','empty_draft','retention_expired'}`.
 
-- [ ] **Step 1: Check the real constraint names** on dev with `execute_sql`:
+- [x] **Step 1: Check the real constraint names** on dev with `execute_sql`: *(derived from the migration files in a scratch Postgres instead; hudo-dev was not queried)*
   ```sql
   SELECT conname, conrelid::regclass, confdeltype FROM pg_constraint
   WHERE contype='f' AND conrelid::regclass::text IN ('notifications','guest_links','videos')
   ORDER BY 2,1;
   ```
   Expected: `notifications_video_id_fkey`, `notifications_comment_id_fkey`, `guest_links_video_version_id_fkey`, `videos_active_version_id_fkey`, all with `confdeltype = 'a'` (no action). If the names differ, use the real ones below.
-- [ ] **Step 2: Write the failing pgTAP test** `tests/rls/storage_deletions.test.sql`. Use the setup style of `tests/rls/storage_quota_rpc.test.sql`: agency, users, video, version, a notification on the video, and a guest link pinned to the version. Tests:
+- [x] **Step 2: Write the failing pgTAP test** `tests/rls/storage_deletions.test.sql`. Use the setup style of `tests/rls/storage_quota_rpc.test.sql`: agency, users, video, version, a notification on the video, and a guest link pinned to the version. Tests:
   ```sql
   SELECT plan(7);
   SELECT has_table('public','storage_deletions','queue table exists');
@@ -185,8 +186,8 @@ Edge cases the spec implies that are most likely to bite. Each line has a test i
   SELECT * FROM finish(); ROLLBACK;
   ```
   Use fixed uuids in the `c0ffee24-…` / `dbeef024-…` style.
-- [ ] **Step 3:** Run `supabase test db tests/rls`. Expect FAIL (no table; delete raises FK violation).
-- [ ] **Step 4: Write the migration:**
+- [x] **Step 3:** Run `supabase test db tests/rls`. Expect FAIL (no table; delete raises FK violation).
+- [x] **Step 4: Write the migration:**
   ```sql
   -- 0024_storage_deletions_and_cascades.sql
   -- Spec: docs/superpowers/specs/2026-10-14-archive-deletion-gdpr-design.md (D7)
@@ -229,9 +230,9 @@ Edge cases the spec implies that are most likely to bite. Each line has a test i
   -- No policies on purpose: only service_role (which bypasses RLS) touches this table.
   REVOKE ALL ON storage_deletions FROM anon, authenticated;
   ```
-- [ ] **Step 5:** Run pgTAP. Expect PASS (7/7), and the existing RLS suite stays green.
-- [ ] **Step 6:** Apply to dev + staging with `/apply-migration`. Verify with the Step 1 query (`confdeltype` is `c`/`n`).
-- [ ] **Step 7:** Commit: `feat(db): storage_deletions queue + cascade FKs for purges (0024)`.
+- [x] **Step 5:** Run pgTAP. Expect PASS (7/7), and the existing RLS suite stays green.
+- [ ] **Step 6:** Apply to dev + staging with `/apply-migration`. Verify with the Step 1 query (`confdeltype` is `c`/`n`). *(NOT DONE in the build session: left to the user / PR phase)*
+- [x] **Step 7:** Commit: `feat(db): storage_deletions queue + cascade FKs for purges (0024)`.
 
 ### Task 2.2: Migration 0025 — purge functions
 **Files:**
@@ -244,7 +245,7 @@ Edge cases the spec implies that are most likely to bite. Each line has a test i
 - `purge_talent_in_agency(p_talent_id uuid, p_agency_id uuid, p_actor_id uuid, p_actor_name text)`. Calls `purge_video(…, 'talent_erased', …)` for each matching video.
 - `purge_agency(p_agency_id uuid)`. Queues the prefix `{agency}/`, then `DELETE FROM agencies`. Everything else cascades, including `audit_log` (D14).
 
-- [ ] **Step 1: Failing pgTAP** `tests/rls/purge_functions.test.sql`. Setup: agency (usage 300), video V1 with versions 100 + 200 bytes (active = v2), a comment + reply on v1, and video V2 in a second agency for the same talent. Tests:
+- [x] **Step 1: Failing pgTAP** `tests/rls/purge_functions.test.sql`. Setup: agency (usage 300), video V1 with versions 100 + 200 bytes (active = v2), a comment + reply on v1, and video V2 in a second agency for the same talent. Tests:
   ```sql
   SELECT plan(12);
   -- refuses active version
@@ -274,8 +275,8 @@ Edge cases the spec implies that are most likely to bite. Each line has a test i
   - `purge_talent_in_agency` touches only that agency's videos;
   - `purge_agency` leaves no `videos`/`memberships`/`audit_log` rows for the agency and queues `'<agency>/'`;
   - the agency's `storage_deletions` rows survive the agency delete.
-- [ ] **Step 2:** Run. Expect FAIL.
-- [ ] **Step 3: Write the migration:**
+- [x] **Step 2:** Run. Expect FAIL.
+- [x] **Step 3: Write the migration:**
   ```sql
   -- 0025_purge_functions.sql — the single delete path (spec D7). service_role only.
   CREATE OR REPLACE FUNCTION purge_video(p_video_id uuid, p_reason text, p_actor_id uuid, p_actor_name text)
@@ -350,9 +351,9 @@ Edge cases the spec implies that are most likely to bite. Each line has a test i
     END LOOP;
   END $$;
   ```
-- [ ] **Step 4:** Add `'video_purged' | 'version_purged'` to `AuditAction` in `lib/audit.ts`, and to the valid-values comment in a new migration comment (don't edit 0001).
-- [ ] **Step 5:** Run pgTAP. Expect PASS. Run the `rls-tenancy-auditor` and `hudo-security-reviewer` agents on the diff.
-- [ ] **Step 6:** Apply to dev + staging. Commit: `feat(db): purge functions — one delete path for version/video/talent/agency (0025)`.
+- [x] **Step 4:** Add `'video_purged' | 'version_purged'` to `AuditAction` in `lib/audit.ts`, and to the valid-values comment in a new migration comment (don't edit 0001).
+- [x] **Step 5:** Run pgTAP. Expect PASS. Run the `rls-tenancy-auditor` and `hudo-security-reviewer` agents on the diff.
+- [ ] **Step 6:** Apply to dev + staging. Commit: `feat(db): purge functions — one delete path for version/video/talent/agency (0025)`. *(NOT DONE in the build session: left to the user / PR phase)*
 
 ### Task 2.3: R2 prefix delete + queue drainer
 **Files:**
@@ -367,16 +368,16 @@ Edge cases the spec implies that are most likely to bite. Each line has a test i
   - for each row: prefix → `deletePrefix`, key → `deleteObject`;
   - success → `completed_at = now()`; failure → `attempts + 1`, `last_error`.
 
-- [ ] **Step 1: Failing tests** in `lib/storage-purge.test.ts`, with a stubbed admin client + storage (follow the `makeStorage` pattern in `app/api/cron/storage-reconcile/route.test.ts`):
+- [x] **Step 1: Failing tests** in `lib/storage-purge.test.ts`, with a stubbed admin client + storage (follow the `makeStorage` pattern in `app/api/cron/storage-reconcile/route.test.ts`):
   - a prefix row calls `deletePrefix('a/v/')` and is marked complete;
   - a key row calls `deleteObject` and is marked complete;
   - **already-deleted counts as done:** `deleteObject` throwing `{ name: 'NoSuchKey' }` → marked complete, not failed;
   - another error → `attempts` incremented, `last_error` set, `failed: 1`;
   - rows at `maxAttempts` aren't selected, and are reported to Sentry once (`Sentry.captureMessage`, like `lib/storage-reconcile.ts`).
-- [ ] **Step 2:** Run `pnpm exec tsx --test lib/storage-purge.test.ts`. Expect FAIL.
-- [ ] **Step 3:** Implement `deletePrefix` (S3 SDK `DeleteObjectsCommand` with `Quiet: true`) and `drainStorageDeletions`.
-- [ ] **Step 4:** Run. Expect PASS. Run `pnpm test` (the whole suite stays green after the stub updates).
-- [ ] **Step 5:** Commit: `feat(storage): deletePrefix + storage_deletions drainer`.
+- [x] **Step 2:** Run `pnpm exec tsx --test lib/storage-purge.test.ts`. Expect FAIL.
+- [x] **Step 3:** Implement `deletePrefix` (S3 SDK `DeleteObjectsCommand` with `Quiet: true`) and `drainStorageDeletions`.
+- [x] **Step 4:** Run. Expect PASS. Run `pnpm test` (the whole suite stays green after the stub updates).
+- [x] **Step 5:** Commit: `feat(storage): deletePrefix + storage_deletions drainer`.
 
 ### Task 2.4: Daily cron `/api/cron/storage-purge`
 **Files:**
@@ -387,23 +388,23 @@ Edge cases the spec implies that are most likely to bite. Each line has a test i
 - Consumes `drainStorageDeletions`.
 - Later phases add `purgeEmptyDrafts` (Phase 4) and `purgeExpiredArchive` (Phase 5) to `runStoragePurge` in `lib/storage-purge.ts`; the route calls only `runStoragePurge(deps)`.
 
-- [ ] **Step 1: Failing route tests**, copying `storage-reconcile/route.test.ts`:
+- [x] **Step 1: Failing route tests**, copying `storage-reconcile/route.test.ts`:
   - a missing `CRON_SECRET` gives 500;
   - a wrong bearer gives 401;
   - the right bearer gives 200 with the drainer's result JSON.
-- [ ] **Step 2:** Run. Expect FAIL.
-- [ ] **Step 3:**
+- [x] **Step 2:** Run. Expect FAIL.
+- [x] **Step 3:**
   - Implement the route: an auth block copied from storage-reconcile, `maxDuration = 60`, export only `GET` + `maxDuration`.
   - Add `runStoragePurge(deps)` to `lib/storage-purge.ts`. For now it returns `{ drained: await drainStorageDeletions(deps) }`.
   - Add `{ "path": "/api/cron/storage-purge", "schedule": "0 3 * * *" }` to `vercel.json`, and document it in `docs/ops/cron-schedule.md`.
-- [ ] **Step 4:** Run tests, then `pnpm build` (catches invalid route exports).
-- [ ] **Step 5:** Edit CLAUDE.md → Critical Architecture Rules. Replace the comments bullet with:
+- [x] **Step 4:** Run tests, then `pnpm build` (catches invalid route exports).
+- [x] **Step 5:** Edit CLAUDE.md → Critical Architecture Rules. Replace the comments bullet with:
 
   > **Comments soft-delete only** (`deleted_at`). No API endpoint hard-deletes a single comment. Comments are hard-deleted only by the purge functions (0025), together with their version/video.
 
   Add: **"All deletes go through the purge functions + `storage_deletions` queue. Never call `storage.deleteObject` or `DELETE FROM videos` directly."**
-- [ ] **Step 6:** Commit: `feat(cron): daily storage-purge drains the R2 deletion queue`. Open the PR (Phase 2 = one PR), run the reviewers, and follow `pr-fix`.
-- [ ] **Step 7: Live check on staging.**
+- [x] **Step 6:** Commit: `feat(cron): daily storage-purge drains the R2 deletion queue`. Open the PR (Phase 2 = one PR), run the reviewers, and follow `pr-fix`.
+- [ ] **Step 7: Live check on staging.** *(NOT DONE in the build session: left to the user / PR phase)*
   1. Upload a throwaway video.
   2. Call `purge_video` via MCP `execute_sql` as service role.
   3. Trigger the cron with `curl -H "Authorization: Bearer $CRON_SECRET" <preview>/api/cron/storage-purge`.
