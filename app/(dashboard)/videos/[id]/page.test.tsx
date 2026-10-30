@@ -85,6 +85,19 @@ describe('VideoPage — source invariants', () => {
     assert.match(source, /activeVersionId && userId && agencyId \? \(/)
   })
 
+  it('passes the role from the versions response to GuestShareButton (which gates itself)', () => {
+    assert.match(source, /<GuestShareButton videoId=\{params\.id\} role=\{role\} \/>/)
+    assert.match(source, /const \[role, setRole\] = useState<string \| null>\(null\)/)
+    assert.match(source, /if \(data\.role\) setRole\(data\.role\)/)
+  })
+
+  it('warns when the versions response has no role (contract break is visible, not silent)', () => {
+    assert.match(
+      source,
+      /console\.warn\('\[video-page\] versions response missing role; hiding Share'\)/
+    )
+  })
+
   it('passes comments to VideoPlayer so CommentTimeline markers render', () => {
     assert.match(source, /<VideoPlayer[\s\S]*?comments=\{comments\}/)
   })
