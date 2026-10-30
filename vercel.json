@@ -18,6 +18,10 @@
     {
       "path": "/api/cron/storage-reconcile",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/storage-purge",
+      "schedule": "0 1 * * *"
     }
   ]
 }

@@ -759,3 +759,29 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Docs still describe the RLS filter:** `.claude/agents/rls-tenancy-auditor.md` item 4, `docs/Hudo App 2026/tables/comments.md` and `ADR-005-soft-delete-only.md`. They're outside this task's FILES; follow-up task suggested.
   - **Apply:** `sh scripts/db-push.sh local --dry-run --include-all`, then `staging`. The dry-run should list only 0029. It doesn't change live's policy; it only aligns the tracked history.
 - **Gotcha (if any):** with no RLS `deleted_at` filter on `comments`, app code is the only thing hiding soft-deleted comments. Every new read of `comments` must filter `deleted_at` itself.
+
+## 2026-10-30 10:00 — S4-DELETE-001: delete path foundation (0024 queue + cascades, 0025 purge functions, drainer, cron)
+
+- **Task:** S4-DELETE-001 (#144), branch `feat/s4-S4-DELETE-001-delete-path`, draft PR
+- **Models:** planner=opus, executor=sonnet; reviews=sonnet code reviewer + hudo-security-reviewer + rls-tenancy-auditor
+- **Outcome:** partial. Code, tests and docs are done and the PR is open. Still to do: apply 0024/0025 to hudo-dev and hudo-staging, and the Task 2.4 Step 7 live check.
+- **Notes:**
+  - **FK audit:** only four FKs blocked a purge. Checked against `pg_constraint` on a scratch DB with every migration applied.
+    - `notifications_video_id_fkey`, `notifications_comment_id_fkey` and `guest_links_video_version_id_fkey` went from NO ACTION to CASCADE.
+    - `videos_active_version_id_fkey` went from NO ACTION to SET NULL.
+    - Every other FK onto agencies, videos and video_versions was already CASCADE.
+    - `comments.parent_id` stays NO ACTION. The cascade removes parent and reply in one statement, so it is never violated (tested).
+  - **Reviews: no blocker or high.** Fixed in `8cfa948`:
+    - **Drainer treated any 404 as "already gone".** `NoSuchBucket` is a 404 too, so a misconfigured bucket would have silently marked every row done. Now only `NoSuchKey`/`NotFound` count.
+    - **A prefix slower than `maxDuration` looped forever.** It never reached `maxAttempts`. The fix claims `attempts` before each R2 call and gives each run a 45 s budget.
+    - **Unchecked update errors.** Every bookkeeping update is now checked. A Sentry alert fires every run while any row is parked, because parked erasure rows mean personal data is still in R2.
+    - **`purge_video_version` lock order.** It locks the version, then the video, the reverse of `purge_video`, so the two could deadlock. It also had a race on the active-version check. It now takes the video lock first.
+    - **Shared or foreign keys.** `/upload/complete` has no idempotency guard, so a replay gives two versions one `r2_key`. `purge_video_version` now queues a key only if it is inside the video's own prefix and not shared with another version or the thumbnail. A `storage_deletions_key_shape` CHECK backs that up.
+    - **Schedule.** Purge moved to `0 1 * * *`, before `storage-reconcile` at 02:00. The purge lowers the counter at once, so a purge after reconcile caused a false drift alert every night.
+  - **Not fixed here (follow-up):** an `/upload/complete` running at the same time as a purge leaves the counter too high. `increment_storage_usage` runs in its own transaction after `create_video_version`, and reconcile only alerts, so nothing corrects it. This predates the PR, so it is a separate task.
+  - **Validation:**
+    - **Real pgTAP 1.3.5:** all 17 `tests/rls` files pass on a scratch Postgres 16 with a Supabase stub, including `purge_functions` 33/33 and `storage_deletions` 9/9. pgTAP is plain SQL, so it loads from the source tarball (`sed` on `sql/pgtap.sql.in`) without `make`.
+    - **Unit:** 1317/1317.
+    - **Format, type-check, lint and build:** all clean.
+  - **Apply:** 0027 and 0029 are already applied, so 0024/0025 need `--include-all`. Run `sh scripts/db-push.sh local --dry-run --include-all`; it should list 0024, 0025 and 0029 if 0029 isn't applied yet. Then the same for `staging`.
+- **Gotcha (if any):** `/tmp/claude-0` is root-owned mode 700, so a postgres-owned cluster can't live in the scratchpad. Use `/var/tmp`. To run real pgTAP without a package, generate it: `sed -e 's,MODULE_PATHNAME,$libdir/pgtap,g' -e 's,__OS__,linux,g' -e 's,__VERSION__,1.3,g' sql/pgtap.sql.in > pgtap.sql`, then `psql -f pgtap.sql`.

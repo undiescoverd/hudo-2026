@@ -3,6 +3,7 @@ import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
@@ -83,6 +84,14 @@ export interface StorageClient {
    * Paginates automatically using ListObjectsV2. Returns 0 for an empty prefix.
    */
   sumSizesUnderPrefix(prefix: string): Promise<number>
+
+  /**
+   * Delete every object under `prefix` (ListObjectsV2 + DeleteObjects in batches
+   * of <= 1000). Returns the number of objects deleted; 0 for an empty prefix.
+   * Throws if `prefix` does not end in '/' (so `a/v1` can never match `a/v10`)
+   * or if R2 reports a per-key failure.
+   */
+  deletePrefix(prefix: string): Promise<number>
 }
 
 /**
@@ -281,6 +290,45 @@ export function createStorageClient(overrides?: {
       } while (continuationToken !== undefined)
 
       return total
+    },
+
+    async deletePrefix(prefix: string): Promise<number> {
+      if (!prefix.endsWith('/')) {
+        throw new Error(`deletePrefix: prefix must end with '/' (got "${prefix}")`)
+      }
+      let deleted = 0
+      let continuationToken: string | undefined
+
+      do {
+        const list = await client.send(
+          new ListObjectsV2Command({
+            Bucket: bucket,
+            Prefix: prefix,
+            ContinuationToken: continuationToken,
+          })
+        )
+        const keys = (list.Contents ?? []).flatMap((o) => (o.Key ? [{ Key: o.Key }] : []))
+        // A ListObjectsV2 page holds at most 1000 keys, which is also the DeleteObjects cap.
+        for (let i = 0; i < keys.length; i += 1000) {
+          const batch = keys.slice(i, i + 1000)
+          const res = await client.send(
+            new DeleteObjectsCommand({
+              Bucket: bucket,
+              Delete: { Objects: batch, Quiet: true },
+            })
+          )
+          if (res.Errors && res.Errors.length > 0) {
+            const first = res.Errors[0]
+            throw new Error(
+              `deletePrefix: ${res.Errors.length} key(s) failed (${first.Code}: ${first.Message})`
+            )
+          }
+          deleted += batch.length
+        }
+        continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined
+      } while (continuationToken !== undefined)
+
+      return deleted
     },
   }
 }
