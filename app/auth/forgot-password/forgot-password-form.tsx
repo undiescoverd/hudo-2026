@@ -1,10 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// Set by the sign-in page's "Forgot password?" link.
+const PREFILL_EMAIL_KEY = 'hudo:prefill-email'
 
 export default function ForgotPasswordForm() {
   const [email, setEmail] = useState('')
@@ -12,6 +15,20 @@ export default function ForgotPasswordForm() {
   const [serverError, setServerError] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  // Read after mount (not during render) to avoid a hydration mismatch.
+  // Prefill only — never auto-submits.
+  useEffect(() => {
+    try {
+      const prefill = sessionStorage.getItem(PREFILL_EMAIL_KEY)
+      if (prefill) {
+        setEmail(prefill)
+        sessionStorage.removeItem(PREFILL_EMAIL_KEY)
+      }
+    } catch {
+      // storage unavailable — leave the field empty
+    }
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

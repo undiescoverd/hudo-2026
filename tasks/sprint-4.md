@@ -6,7 +6,7 @@
 
 ---
 
-> **Migration numbering (verified 2026-10-22):** migrations 0001–0023 are in the repo. Wave 1 uses **0024–0026** (deletion plan). S4-JOURNEY-001 uses **0027**. Archive & restore (archive plan Phase 5) moves to **0028**. Apply via the `/apply-migration` flow (`sh scripts/db-push.sh local|staging`, `--dry-run` first → both hudo-dev + hudo-staging), never MCP `apply_migration` or the SQL editor. Because 0027 is already applied, pushing 0024–0026 later needs `--include-all` (`db push` refuses versions older than the newest remote one) — check the dry-run list first.
+> **Migration numbering (verified 2026-10-22):** migrations 0001–0023 are in the repo. Wave 1 uses **0024–0026** (deletion plan). S4-JOURNEY-001 uses **0027**. Archive & restore (archive plan Phase 5) moves to **0028**. S4-REVIEW-004 uses **0029**. Apply via the `/apply-migration` flow (`sh scripts/db-push.sh local|staging`, `--dry-run` first → both hudo-dev + hudo-staging), never MCP `apply_migration` or the SQL editor. Because 0027 is already applied, pushing 0024–0026 later needs `--include-all` (`db push` refuses versions older than the newest remote one) — check the dry-run list first.
 
 ## Tasks
 
@@ -83,14 +83,14 @@ TASK_ID: S4-DELETE-001
 TITLE: Delete path foundation (storage_deletions queue, purge functions, R2 prefix delete, daily cron)
 BRANCH: feat/s4-S4-DELETE-001-delete-path
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Migration 0024 fixes the three blocking FKs (notifications, guest_links.video_version_id, videos.active_version_id) and adds the storage_deletions queue with RLS
   - Migration 0025 adds purge_video_version / purge_video / purge_talent_in_agency / purge_agency (SECURITY DEFINER, service_role only), each one transaction: queue R2 keys, lower storage_usage_bytes (floor 0), audit_log row, delete rows
   - Purging twice is a no-op; deleting the active version is refused; malformed prefixes are rejected
   - Queue drainer deletes by prefix; an already-gone key counts as done
-  - Daily cron /api/cron/storage-purge (CRON_SECRET, 0 3 * * *) drains the queue
+  - Daily cron /api/cron/storage-purge (CRON_SECRET, 0 1 * * *) drains the queue
   - pgTAP + unit tests for each; reviewers (code, security, RLS) run and logged in SESSIONNOTES.md
 FILES:
   - supabase/migrations/0024_storage_deletions_and_cascades.sql
@@ -219,7 +219,7 @@ TASK_ID: S4-JOURNEY-004
 TITLE: Move middleware to project root and open only the public paths
 BRANCH: feat/s4-S4-JOURNEY-004-middleware
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: S4-JOURNEY-001, S4-JOURNEY-002, S4-JOURNEY-003
 ACCEPTANCE_CRITERIA:
   - middleware.ts lives at the project root (app/middleware.ts removed); Next 14 loads it
@@ -375,7 +375,7 @@ TASK_ID: S4-REVIEW-004
 TITLE: Forward migration dropping the unapplied 0004 soft-delete filter (GitHub #187, option b)
 BRANCH: feat/s4-S4-REVIEW-004-comments-select
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - New forward migration (next free number at build time; 0024–0026 and 0028 are reserved) recreates comments_select without `deleted_at IS NULL`, matching live
