@@ -213,13 +213,13 @@ NOTES: S — Security surface (app/api/, invitations). Mandatory hudo-security-r
 
 ---
 
-- [ ] **S4-JOURNEY-004** — Load the middleware
+- [x] **S4-JOURNEY-004** — Load the middleware
 
 TASK_ID: S4-JOURNEY-004
 TITLE: Move middleware to project root and open only the public paths
 BRANCH: feat/s4-S4-JOURNEY-004-middleware
 MODEL: sonnet
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: S4-JOURNEY-001, S4-JOURNEY-002, S4-JOURNEY-003
 ACCEPTANCE_CRITERIA:
   - middleware.ts lives at the project root (app/middleware.ts removed); Next 14 loads it
