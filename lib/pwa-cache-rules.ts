@@ -10,6 +10,16 @@
  * reads public/sw.js and asserts the shared constants match, so drift fails CI.
  */
 
+/**
+ * Cache name = CACHE_PREFIX + CACHE_VERSION. Bump CACHE_VERSION (here AND in
+ * public/sw.js) whenever the shell changes (offline page, icons, manifest).
+ */
+export const CACHE_PREFIX = 'hudo-shell-'
+export const CACHE_VERSION = 'v1'
+
+/** Max cached /_next/static entries; oldest evicted first. */
+export const MAX_STATIC_ENTRIES = 60
+
 /** Public pages/files precached at install. /offline renders without auth. */
 export const SHELL_URLS = [
   '/offline',
@@ -39,6 +49,7 @@ export function isCacheable({ url, method, origin }: CacheCandidate): boolean {
   }
   if (u.origin !== origin) return false
   if (u.hostname.endsWith('cloudflarestorage.com')) return false
+  if (u.search) return false // no query strings: avoids per-URL cache bloat and signed URLs
   if (u.pathname.startsWith('/api/')) return false
   if (/x-amz-signature/i.test(u.search)) return false
   if ((SHELL_URLS as readonly string[]).includes(u.pathname)) return true

@@ -2,7 +2,15 @@ import { before, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { isCacheable, SHELL_URLS, STATIC_PREFIXES } from './pwa-cache-rules'
+import vm from 'node:vm'
+import {
+  isCacheable,
+  CACHE_PREFIX,
+  CACHE_VERSION,
+  MAX_STATIC_ENTRIES,
+  SHELL_URLS,
+  STATIC_PREFIXES,
+} from './pwa-cache-rules'
 import manifest from '../app/manifest'
 import type * as MiddlewareModule from '../middleware'
 
@@ -48,17 +56,65 @@ test('denies non-GET, cross-origin, signed R2 URLs, malformed', () => {
   assert.equal(isCacheable({ url: 'not a url', method: 'GET', origin }), false)
 })
 
+const swSource = readFileSync(join(__dirname, '../public/sw.js'), 'utf8')
+
 test('public/sw.js mirrors the allowlist constants', () => {
-  const sw = readFileSync(join(__dirname, '../public/sw.js'), 'utf8')
   const arr = (name: string) => {
-    const m = sw.match(new RegExp(`const ${name} = \\[([^\\]]*)\\]`))
+    const m = swSource.match(new RegExp(`const ${name} = \\[([^\\]]*)\\]`))
     assert.ok(m, name)
     return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1])
   }
   assert.deepEqual(arr('SHELL_URLS'), [...SHELL_URLS])
   assert.deepEqual(arr('STATIC_PREFIXES'), [...STATIC_PREFIXES])
-  assert.match(sw, /cloudflarestorage\.com/)
-  assert.match(sw, /\/api\//)
+  assert.match(swSource, new RegExp(`const CACHE_PREFIX = '${CACHE_PREFIX}'`))
+  assert.match(swSource, new RegExp(`const CACHE_VERSION = '${CACHE_VERSION}'`))
+  assert.match(swSource, new RegExp(`const MAX_STATIC_ENTRIES = ${MAX_STATIC_ENTRIES}\\b`))
+})
+
+test('CACHE_VERSION is pinned (bump deliberately when the shell changes)', () => {
+  assert.equal(CACHE_VERSION, 'v1')
+})
+
+// Same case table runs against lib/pwa-cache-rules.ts and the real public/sw.js.
+const CASES: Array<[string, string, string, boolean]> = [
+  ['shell /offline', '/offline', 'GET', true],
+  ['manifest', '/manifest.webmanifest', 'GET', true],
+  ['icon', '/icons/icon-192.png', 'GET', true],
+  ['static chunk', '/_next/static/chunks/main-abc.js', 'GET', true],
+  ['non-GET', '/offline', 'POST', false],
+  ['api', '/api/videos/1/playback-url', 'GET', false],
+  ['page', '/dashboard', 'GET', false],
+  ['root', '/', 'GET', false],
+  ['query on static', '/_next/static/a.js?v=1', 'GET', false],
+  ['query on shell', '/offline?x=1', 'GET', false],
+  ['x-amz-signature', '/icons/a.png?X-Amz-Signature=zz', 'GET', false],
+  ['cross-origin', 'https://cdn.example.com/_next/static/a.js', 'GET', false],
+  ['R2 host', 'https://acct.r2.cloudflarestorage.com/b/k.mp4?X-Amz-Signature=a', 'GET', false],
+  [
+    'R2 host static-looking path',
+    'https://acct.r2.cloudflarestorage.com/icons/a.png',
+    'GET',
+    false,
+  ],
+]
+
+function loadSwIsCacheable(): (r: { url: string; method: string }) => boolean {
+  const sandbox: Record<string, unknown> = {
+    URL,
+    self: { location: { origin }, addEventListener() {} },
+  }
+  vm.createContext(sandbox)
+  vm.runInContext(swSource, sandbox)
+  return sandbox.isCacheable as (r: { url: string; method: string }) => boolean
+}
+
+test('sw.js isCacheable and lib isCacheable agree on the case table', () => {
+  const swIsCacheable = loadSwIsCacheable()
+  for (const [name, path, method, expected] of CASES) {
+    const url = path.startsWith('http') ? path : origin + path
+    assert.equal(isCacheable({ url, method, origin }), expected, `lib: ${name}`)
+    assert.equal(swIsCacheable({ url, method }), expected, `sw: ${name}`)
+  }
 })
 
 test('manifest has installable fields and icons exist', () => {
