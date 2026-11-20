@@ -283,7 +283,7 @@ TASK_ID: S4-PWA-001
 TITLE: PWA manifest, icons, offline page and shell-only service worker
 BRANCH: feat/s4-S4-PWA-001-pwa
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: S4-JOURNEY-004
 ACCEPTANCE_CRITERIA:
   - app/manifest.ts and public/ icons exist; placeholder icons until Ian supplies brand icons
