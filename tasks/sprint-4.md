@@ -241,7 +241,7 @@ TASK_ID: S4-LAUNCH-001
 TITLE: Terms, privacy and DPA pages with shared footer and links
 BRANCH: feat/s4-S4-LAUNCH-001-legal-pages
 MODEL: haiku
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - /terms, /privacy and /dpa are public routes (listed in the middleware public paths)
