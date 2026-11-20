@@ -43,7 +43,8 @@ sh scripts/check-secrets.sh   # secret scan of staged changes (also runs in pre-
 - **PostHog script must not load** (not just be blocked) before cookie consent.
 - **Rate limiting via Upstash Redis** on all auth, upload, comment, and guest endpoints. Always return 429 + `Retry-After`.
 - **Version numbers via Postgres RPC** (`create_video_version`) — not app logic — to prevent race conditions.
-- **Comments soft-delete only** (`deleted_at`). No hard delete via any API endpoint.
+- **Comments soft-delete only** (`deleted_at`). No API endpoint hard-deletes a single comment. Comments are hard-deleted only by the purge functions (0025), together with their version/video.
+- **All deletes go through the purge functions + `storage_deletions` queue.** Never call `storage.deleteObject` or `DELETE FROM videos` directly.
 
 ## Project Structure
 
@@ -64,6 +65,7 @@ sh scripts/check-secrets.sh   # secret scan of staged changes (also runs in pre-
 - After opening a PR, start the bounded review-fix loop by reading **`.claude/skills/pr-fix/SKILL.md`** and following it (it invokes `ralph-loop:ralph-loop` with the prompt from `.claude/pr-fix-loop.md`, a completion-promise, and `max-iterations`). **Never invoke `ralph-loop:ralph-loop` with unbounded defaults** — any Ralph loop you start MUST pass both a finite `--max-iterations` **and** a `--completion-promise`, or it runs forever and can't be stopped manually.
 - Before committing, run `pnpm format:check && pnpm type-check && pnpm lint` to catch CI issues locally
 - Do not start a task while any `BLOCKED_BY` task is not `done`
+- **Flow inventory:** any PR that adds or changes a user flow updates its row in `docs/flows/inventory.md` (Designed / Specced / Built / Verified) in the same PR. Paper "Hudo App" flow boards are the design source.
 - After completing work, update CLAUDE.md with any learnings. If anything broke or surprised you, add an entry to the **Failure Log** section before closing the session — never defer it.
 
 ## Model & Workflow Rule
