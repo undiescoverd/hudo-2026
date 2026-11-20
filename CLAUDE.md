@@ -43,7 +43,8 @@ sh scripts/check-secrets.sh   # secret scan of staged changes (also runs in pre-
 - **PostHog script must not load** (not just be blocked) before cookie consent.
 - **Rate limiting via Upstash Redis** on all auth, upload, comment, and guest endpoints. Always return 429 + `Retry-After`.
 - **Version numbers via Postgres RPC** (`create_video_version`) — not app logic — to prevent race conditions.
-- **Comments soft-delete only** (`deleted_at`). No hard delete via any API endpoint.
+- **Comments soft-delete only** (`deleted_at`). No API endpoint hard-deletes a single comment. Comments are hard-deleted only by the purge functions (0025), together with their version/video.
+- **All deletes go through the purge functions + `storage_deletions` queue.** Never call `storage.deleteObject` or `DELETE FROM videos` directly.
 
 ## Project Structure
 
