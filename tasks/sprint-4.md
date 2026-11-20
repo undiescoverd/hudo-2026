@@ -83,14 +83,14 @@ TASK_ID: S4-DELETE-001
 TITLE: Delete path foundation (storage_deletions queue, purge functions, R2 prefix delete, daily cron)
 BRANCH: feat/s4-S4-DELETE-001-delete-path
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Migration 0024 fixes the three blocking FKs (notifications, guest_links.video_version_id, videos.active_version_id) and adds the storage_deletions queue with RLS
   - Migration 0025 adds purge_video_version / purge_video / purge_talent_in_agency / purge_agency (SECURITY DEFINER, service_role only), each one transaction: queue R2 keys, lower storage_usage_bytes (floor 0), audit_log row, delete rows
   - Purging twice is a no-op; deleting the active version is refused; malformed prefixes are rejected
   - Queue drainer deletes by prefix; an already-gone key counts as done
-  - Daily cron /api/cron/storage-purge (CRON_SECRET, 0 3 * * *) drains the queue
+  - Daily cron /api/cron/storage-purge (CRON_SECRET, 0 1 * * *) drains the queue
   - pgTAP + unit tests for each; reviewers (code, security, RLS) run and logged in SESSIONNOTES.md
 FILES:
   - supabase/migrations/0024_storage_deletions_and_cascades.sql
@@ -219,7 +219,7 @@ TASK_ID: S4-JOURNEY-004
 TITLE: Move middleware to project root and open only the public paths
 BRANCH: feat/s4-S4-JOURNEY-004-middleware
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: S4-JOURNEY-001, S4-JOURNEY-002, S4-JOURNEY-003
 ACCEPTANCE_CRITERIA:
   - middleware.ts lives at the project root (app/middleware.ts removed); Next 14 loads it
