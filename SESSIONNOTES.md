@@ -747,6 +747,42 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Linear:** this session has no `LINEAR_API_KEY` and the Linear connector failed to connect, so the four issues still need creating, each title starting with its exact task ID. Until then, `sync-check` shows `⚠ ERROR` for them (Failure Log, 2026-06-16 Linear entry).
 - **Gotcha (if any):** a cloud session can push only its designated branch unless the user OKs another. When one PR is already open on it, ask early for a second branch rather than queueing unrelated work behind the merge.
 
+## 2026-10-23 20:55 — S4-REVIEW-004: migration 0029 keeps soft-deleted comments visible to members (#187 option b)
+
+- **Task:** S4-REVIEW-004 (branch `feat/s4-S4-REVIEW-004-comments-select`, built in its own worktree in parallel with S4-REVIEW-002)
+- **Models:** planner=opus, executor=sonnet; RLS audit=rls-tenancy-auditor
+- **Outcome:** partial. The PR is open; applying 0029 to hudo-dev and hudo-staging is left to Ian (no DB credentials in the cloud session).
+- **Notes:**
+  - **What `0029_comments_select_keep_soft_deleted.sql` does:** recreates `comments_select` with the exact 0002 `USING` clause (no `deleted_at IS NULL`). That's what live has, because 0004 was never applied there. 0010 doesn't touch the SELECT policy; it only mentions it in a comment.
+  - **pgTAP Test 13** now checks that a same-agency member (Clara) sees the soft-deleted comment and an other-agency member (Diana) doesn't. Plan is 15. Diana runs first, so Test 14 still runs as Clara.
+  - **No local pgTAP run** (no supabase CLI, Docker daemon unreachable). The executor checked the policy shape and visibility in a scratch Postgres 16 instead; CI's RLS job runs the real file.
+  - **Docs still describe the RLS filter:** `.claude/agents/rls-tenancy-auditor.md` item 4, `docs/Hudo App 2026/tables/comments.md` and `ADR-005-soft-delete-only.md`. They're outside this task's FILES; follow-up task suggested.
+  - **Apply:** `sh scripts/db-push.sh local --dry-run --include-all`, then `staging`. The dry-run should list only 0029. It doesn't change live's policy; it only aligns the tracked history.
+- **Gotcha (if any):** with no RLS `deleted_at` filter on `comments`, app code is the only thing hiding soft-deleted comments. Every new read of `comments` must filter `deleted_at` itself.
+
+## 2026-10-24 — S4-JOURNEY-004: middleware moved to project root (PR #188, awaiting live walk + merge)
+
+- **Task:** S4-JOURNEY-004 (RES-221). Also landed PR #185 (merge commit, Ian approved) as handoff step 1.
+- **Models:** planner=opus, executor=sonnet (worktree agent), reviews=hudo-security-reviewer + sonnet code reviewer + 4-angle simplify
+- **Outcome:** partial. PR #188 is open, CI green, task `in_review` (sprint file + Linear). The signed-out live checks passed; the signed-in role walk has not run yet.
+- **Notes:**
+  - `git mv app/middleware.ts middleware.ts`. `next build` now lists `ƒ Middleware 157 kB`, which is the proof Next loads it. `/terms`, `/privacy`, `/dpa` and `/offline` were pre-added to `PUBLIC_PATHS` (Ian's call), so LAUNCH-001 and PWA-001 don't touch middleware.
+  - Review fixes:
+    - Session cookies refreshed by `getUser()` are now copied onto redirect and 403 responses. Before, rotated refresh tokens were dropped.
+    - `?redirect=` keeps the query string.
+    - The role rule is a pure `isForbidden()`.
+  - **Preview signed-out checks (passed):**
+    - `/`, `/dashboard`, `/talent` and `/videos/abc?t=30` return 307 to `/auth/signin?redirect=…` with the query kept.
+    - `/auth/signin`, `/auth/register` and `/guest/invalid` return 200.
+    - A bad guest token returns 307 to `/guest/invalid`, not sign-in.
+    - `POST /api/webhooks/stripe` returns 400 from the app.
+    - No Vercel deployment protection sits in front of the branch Preview.
+  - **Cron returns 500 "Server misconfigured" on Preview:** `CRON_SECRET` isn't set in the Vercel Preview env. The route is reached (not redirected), so it's not this PR.
+  - **Signed-in walk still to do:** `scripts/walk-preview-roles.mjs` on `chore/handoff-s4-next-steps` covers owner, agent, talent and a guest link. Staging has no admin_agent seed user, and a fresh owner sign-up (the #175 loop) needs a new staging user. Both are waiting on Ian.
+  - **Pre-existing open redirect found:** `safeRedirect` (`lib/auth-validation.ts:17`) accepts `/\evil.com`. `app/auth/callback/route.ts` already blocks it. Separate fix pending Ian's OK.
+  - DeepSeek bot reviews still fail with 402, so the pr-fix loop was skipped.
+- **Gotcha (if any):** a matcher exclusion by file extension (`.*\.(png|js|…)$`) lets page paths like `/talent/x.png` skip the auth middleware entirely. Exclude static files by name.
+
 ## 2026-10-24 — Sign-up "no email" = existing account; neutral success wording; S4-AUTH-001
 
 - **Task:** Ian reported no email after signing up on a staging Preview URL.
@@ -758,3 +794,29 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Change:** the success screen now says "If <email> is new to Hudo, we sent a confirmation link" and links to sign-in and forgot-password. A test pins the neutral wording.
   - **Follow-up:** S4-AUTH-001 / #200 emails the existing account's owner (per-address rate limit, constant-time response, mandatory security review).
 - **Gotcha (if any):** "I signed up and got no email" on a known address is not a mail fault: check Supabase Authentication → Users for an existing confirmed row before touching SMTP. Resend → Emails showing no send at all is the tell.
+
+## 2026-10-30 10:00 — S4-DELETE-001: delete path foundation (0024 queue + cascades, 0025 purge functions, drainer, cron)
+
+- **Task:** S4-DELETE-001 (#144), branch `feat/s4-S4-DELETE-001-delete-path`, draft PR
+- **Models:** planner=opus, executor=sonnet; reviews=sonnet code reviewer + hudo-security-reviewer + rls-tenancy-auditor
+- **Outcome:** partial. Code, tests and docs are done and the PR is open. Still to do: apply 0024/0025 to hudo-dev and hudo-staging, and the Task 2.4 Step 7 live check.
+- **Notes:**
+  - **FK audit:** only four FKs blocked a purge. Checked against `pg_constraint` on a scratch DB with every migration applied.
+    - `notifications_video_id_fkey`, `notifications_comment_id_fkey` and `guest_links_video_version_id_fkey` went from NO ACTION to CASCADE.
+    - `videos_active_version_id_fkey` went from NO ACTION to SET NULL.
+    - Every other FK onto agencies, videos and video_versions was already CASCADE.
+    - `comments.parent_id` stays NO ACTION. The cascade removes parent and reply in one statement, so it is never violated (tested).
+  - **Reviews: no blocker or high.** Fixed in `8cfa948`:
+    - **Drainer treated any 404 as "already gone".** `NoSuchBucket` is a 404 too, so a misconfigured bucket would have silently marked every row done. Now only `NoSuchKey`/`NotFound` count.
+    - **A prefix slower than `maxDuration` looped forever.** It never reached `maxAttempts`. The fix claims `attempts` before each R2 call and gives each run a 45 s budget.
+    - **Unchecked update errors.** Every bookkeeping update is now checked. A Sentry alert fires every run while any row is parked, because parked erasure rows mean personal data is still in R2.
+    - **`purge_video_version` lock order.** It locks the version, then the video, the reverse of `purge_video`, so the two could deadlock. It also had a race on the active-version check. It now takes the video lock first.
+    - **Shared or foreign keys.** `/upload/complete` has no idempotency guard, so a replay gives two versions one `r2_key`. `purge_video_version` now queues a key only if it is inside the video's own prefix and not shared with another version or the thumbnail. A `storage_deletions_key_shape` CHECK backs that up.
+    - **Schedule.** Purge moved to `0 1 * * *`, before `storage-reconcile` at 02:00. The purge lowers the counter at once, so a purge after reconcile caused a false drift alert every night.
+  - **Not fixed here (follow-up):** an `/upload/complete` running at the same time as a purge leaves the counter too high. `increment_storage_usage` runs in its own transaction after `create_video_version`, and reconcile only alerts, so nothing corrects it. This predates the PR, so it is a separate task.
+  - **Validation:**
+    - **Real pgTAP 1.3.5:** all 17 `tests/rls` files pass on a scratch Postgres 16 with a Supabase stub, including `purge_functions` 33/33 and `storage_deletions` 9/9. pgTAP is plain SQL, so it loads from the source tarball (`sed` on `sql/pgtap.sql.in`) without `make`.
+    - **Unit:** 1317/1317.
+    - **Format, type-check, lint and build:** all clean.
+  - **Apply:** 0027 and 0029 are already applied, so 0024/0025 need `--include-all`. Run `sh scripts/db-push.sh local --dry-run --include-all`; it should list 0024, 0025 and 0029 if 0029 isn't applied yet. Then the same for `staging`.
+- **Gotcha (if any):** `/tmp/claude-0` is root-owned mode 700, so a postgres-owned cluster can't live in the scratchpad. Use `/var/tmp`. To run real pgTAP without a package, generate it: `sed -e 's,MODULE_PATHNAME,$libdir/pgtap,g' -e 's,__OS__,linux,g' -e 's,__VERSION__,1.3,g' sql/pgtap.sql.in > pgtap.sql`, then `psql -f pgtap.sql`.
