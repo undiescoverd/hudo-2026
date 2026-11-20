@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { grantConsent, denyConsent } from '@/lib/posthog'
 
 export function CookieConsentBanner() {
@@ -30,7 +31,10 @@ export function CookieConsentBanner() {
       <div className="mx-auto flex max-w-screen-xl items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">
           We use cookies to improve your experience. By accepting, you allow us to collect anonymous
-          usage data.
+          usage data.{' '}
+          <Link href="/privacy" className="underline underline-offset-4 hover:text-foreground">
+            Privacy Policy
+          </Link>
         </p>
         <div className="flex shrink-0 gap-2">
           <button

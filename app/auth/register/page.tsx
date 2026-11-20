@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { validatePassword } from '@/lib/auth-validation'
+import { LegalFooter } from '@/components/layout/LegalFooter'
 
 type FieldError = { fullName?: string; agencyName?: string; email?: string; password?: string }
 
@@ -107,138 +108,153 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold">Create your account</h1>
-          <p className="text-sm text-muted-foreground">
-            Already have an account?{' '}
-            <Link
-              href="/auth/signin"
-              className="underline underline-offset-4 hover:text-foreground"
+    <>
+      <main className="flex min-h-screen items-center justify-center p-4">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold">Create your account</h1>
+            <p className="text-sm text-muted-foreground">
+              Already have an account?{' '}
+              <Link
+                href="/auth/signin"
+                className="underline underline-offset-4 hover:text-foreground"
+              >
+                Sign in
+              </Link>
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} noValidate className="space-y-4">
+            <div className="space-y-1">
+              <label htmlFor="fullName" className="text-sm font-medium">
+                Full name
+              </label>
+              <input
+                id="fullName"
+                type="text"
+                autoComplete="name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                aria-describedby={fieldErrors.fullName ? 'fullName-error' : undefined}
+                className={cn(
+                  'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                  'focus:ring-2 focus:ring-ring focus:ring-offset-2',
+                  fieldErrors.fullName ? 'border-destructive' : 'border-input'
+                )}
+              />
+              {fieldErrors.fullName && (
+                <p id="fullName-error" className="text-xs text-destructive">
+                  {fieldErrors.fullName}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <label htmlFor="agencyName" className="text-sm font-medium">
+                Agency name
+              </label>
+              <input
+                id="agencyName"
+                type="text"
+                autoComplete="organization"
+                maxLength={100}
+                value={agencyName}
+                onChange={(e) => setAgencyName(e.target.value)}
+                aria-describedby={fieldErrors.agencyName ? 'agencyName-error' : undefined}
+                className={cn(
+                  'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                  'focus:ring-2 focus:ring-ring focus:ring-offset-2',
+                  fieldErrors.agencyName ? 'border-destructive' : 'border-input'
+                )}
+              />
+              {fieldErrors.agencyName && (
+                <p id="agencyName-error" className="text-xs text-destructive">
+                  {fieldErrors.agencyName}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <label htmlFor="email" className="text-sm font-medium">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+                className={cn(
+                  'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                  'focus:ring-2 focus:ring-ring focus:ring-offset-2',
+                  fieldErrors.email ? 'border-destructive' : 'border-input'
+                )}
+              />
+              {fieldErrors.email && (
+                <p id="email-error" className="text-xs text-destructive">
+                  {fieldErrors.email}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <label htmlFor="password" className="text-sm font-medium">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                aria-describedby={fieldErrors.password ? 'password-error' : 'password-hint'}
+                className={cn(
+                  'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                  'focus:ring-2 focus:ring-ring focus:ring-offset-2',
+                  fieldErrors.password ? 'border-destructive' : 'border-input'
+                )}
+              />
+              {fieldErrors.password ? (
+                <p id="password-error" className="text-xs text-destructive">
+                  {fieldErrors.password}
+                </p>
+              ) : (
+                <p id="password-hint" className="text-xs text-muted-foreground">
+                  Min 8 characters with uppercase, lowercase, and a number.
+                </p>
+              )}
+            </div>
+
+            {serverError && (
+              <p role="alert" className="text-sm text-destructive">
+                {serverError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              Sign in
+              {loading ? 'Creating account…' : 'Create account'}
+            </button>
+          </form>
+
+          <p className="text-center text-xs text-muted-foreground">
+            By creating an account you agree to our{' '}
+            <Link href="/terms" className="underline underline-offset-4 hover:text-foreground">
+              Terms of Service
+            </Link>{' '}
+            and{' '}
+            <Link href="/privacy" className="underline underline-offset-4 hover:text-foreground">
+              Privacy Policy
             </Link>
+            .
           </p>
         </div>
-
-        <form onSubmit={handleSubmit} noValidate className="space-y-4">
-          <div className="space-y-1">
-            <label htmlFor="fullName" className="text-sm font-medium">
-              Full name
-            </label>
-            <input
-              id="fullName"
-              type="text"
-              autoComplete="name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              aria-describedby={fieldErrors.fullName ? 'fullName-error' : undefined}
-              className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
-                'focus:ring-2 focus:ring-ring focus:ring-offset-2',
-                fieldErrors.fullName ? 'border-destructive' : 'border-input'
-              )}
-            />
-            {fieldErrors.fullName && (
-              <p id="fullName-error" className="text-xs text-destructive">
-                {fieldErrors.fullName}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="agencyName" className="text-sm font-medium">
-              Agency name
-            </label>
-            <input
-              id="agencyName"
-              type="text"
-              autoComplete="organization"
-              maxLength={100}
-              value={agencyName}
-              onChange={(e) => setAgencyName(e.target.value)}
-              aria-describedby={fieldErrors.agencyName ? 'agencyName-error' : undefined}
-              className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
-                'focus:ring-2 focus:ring-ring focus:ring-offset-2',
-                fieldErrors.agencyName ? 'border-destructive' : 'border-input'
-              )}
-            />
-            {fieldErrors.agencyName && (
-              <p id="agencyName-error" className="text-xs text-destructive">
-                {fieldErrors.agencyName}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="email" className="text-sm font-medium">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              aria-describedby={fieldErrors.email ? 'email-error' : undefined}
-              className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
-                'focus:ring-2 focus:ring-ring focus:ring-offset-2',
-                fieldErrors.email ? 'border-destructive' : 'border-input'
-              )}
-            />
-            {fieldErrors.email && (
-              <p id="email-error" className="text-xs text-destructive">
-                {fieldErrors.email}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="password" className="text-sm font-medium">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              aria-describedby={fieldErrors.password ? 'password-error' : 'password-hint'}
-              className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
-                'focus:ring-2 focus:ring-ring focus:ring-offset-2',
-                fieldErrors.password ? 'border-destructive' : 'border-input'
-              )}
-            />
-            {fieldErrors.password ? (
-              <p id="password-error" className="text-xs text-destructive">
-                {fieldErrors.password}
-              </p>
-            ) : (
-              <p id="password-hint" className="text-xs text-muted-foreground">
-                Min 8 characters with uppercase, lowercase, and a number.
-              </p>
-            )}
-          </div>
-
-          {serverError && (
-            <p role="alert" className="text-sm text-destructive">
-              {serverError}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {loading ? 'Creating account…' : 'Create account'}
-          </button>
-        </form>
-      </div>
-    </main>
+      </main>
+      <LegalFooter />
+    </>
   )
 }

@@ -32,4 +32,15 @@ describe('RegisterPage — source invariants (S4-JOURNEY-001)', () => {
     assert.match(source, /setSubmitted\(true\)/)
     assert.match(source, /Check your email/)
   })
+
+  it('links to the Terms and Privacy pages from the form (S4-LAUNCH-001)', () => {
+    assert.match(source, /<Link href="\/terms"/)
+    assert.match(source, /<Link href="\/privacy"/)
+    assert.match(source, /you agree to our/)
+  })
+
+  it('renders the shared LegalFooter below the form (S4-LAUNCH-001)', () => {
+    assert.match(source, /import \{ LegalFooter \} from '@\/components\/layout\/LegalFooter'/)
+    assert.match(source, /<LegalFooter \/>/)
+  })
 })
