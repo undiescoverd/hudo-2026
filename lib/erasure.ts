@@ -1,4 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/nextjs'
+import { sendEmail } from '@/lib/email'
+import { renderErasureConfirmationEmail } from '@/lib/email-templates/erasure-confirmation'
+import { renderMemberRemovedReceiptEmail } from '@/lib/email-templates/member-removed-receipt'
 
 /** Denormalised display name written to users.full_name and audit_log.actor_name on erasure. */
 export const DELETED_USER_NAME = 'Deleted User'
@@ -96,6 +100,22 @@ export async function eraseUser(
 
     const agencyIds = (memberships ?? []).map((m) => m.agency_id as string)
 
+    // 1b. Permanently delete the target's videos in every agency they belong
+    //     to (D12, D13 self-erasure) via the single purge path. Runs BEFORE the
+    //     tombstone and is idempotent (purge_video returns 0 for a missing
+    //     video), so a retry after a partial failure recovers cleanly.
+    for (const agencyId of agencyIds) {
+      const { error: purgeError } = await admin.rpc('purge_talent_in_agency', {
+        p_talent_id: targetUserId,
+        p_agency_id: agencyId,
+        p_actor_id: null,
+        p_actor_name: 'GDPR erasure',
+      })
+      if (purgeError) {
+        return { ok: false, step: 'purge_talent_videos', message: purgeError.message }
+      }
+    }
+
     // 2. Tombstone the users row (UPDATE, never DELETE — see file header).
     const { error: tombstoneError } = await admin
       .from('users')
@@ -191,6 +211,156 @@ export async function eraseUser(
       ok: false,
       step: 'unexpected',
       message: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+export type RemoveMemberResult = ErasureResult & { accountErased?: boolean }
+
+/**
+ * removeMemberWithData — agency-scoped removal (D13). Deletes the person's
+ * videos in THAT agency only (via purge_talent_in_agency), removes that
+ * membership, and erases the account only if no membership remains. A talent
+ * in two agencies removed by one keeps their videos, membership and account in
+ * the other. Idempotent; never throws.
+ */
+export async function removeMemberWithData(
+  admin: SupabaseClient,
+  targetUserId: string,
+  agencyId: string,
+  actor: { id: string; name: string }
+): Promise<RemoveMemberResult> {
+  try {
+    const { error: purgeError } = await admin.rpc('purge_talent_in_agency', {
+      p_talent_id: targetUserId,
+      p_agency_id: agencyId,
+      p_actor_id: actor.id,
+      p_actor_name: actor.name,
+    })
+    if (purgeError) {
+      return { ok: false, step: 'purge_talent_videos', message: purgeError.message }
+    }
+
+    const { error: deleteError } = await admin
+      .from('memberships')
+      .delete()
+      .eq('user_id', targetUserId)
+      .eq('agency_id', agencyId)
+    if (deleteError) {
+      return { ok: false, step: 'delete_membership', message: deleteError.message }
+    }
+
+    const { data: remaining, error: remainingError } = await admin
+      .from('memberships')
+      .select('agency_id')
+      .eq('user_id', targetUserId)
+    if (remainingError) {
+      return { ok: false, step: 'count_remaining_memberships', message: remainingError.message }
+    }
+
+    if ((remaining ?? []).length > 0) {
+      return { ok: true, agencyIds: [agencyId], accountErased: false }
+    }
+
+    const erased = await eraseUser(admin, targetUserId)
+    if (!erased.ok) return erased
+    return { ok: true, agencyIds: [agencyId], accountErased: true }
+  } catch (err) {
+    return {
+      ok: false,
+      step: 'unexpected',
+      message: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+type SendFn = (params: {
+  to: string | string[]
+  subject: string
+  html: string
+  text?: string
+}) => Promise<unknown>
+
+/**
+ * sendErasureEmails — D15. Confirmation to the erased person; on a scoped
+ * removal (agencyId set) also a receipt to the agency's other owners.
+ * The target's email/name MUST be captured before the tombstone and passed in.
+ * An email failure is logged + sent to Sentry and NEVER propagates — the
+ * erasure has already happened and must not be reported as failed.
+ */
+export async function sendErasureEmails(
+  admin: SupabaseClient,
+  params: {
+    target: { id: string; email: string | null; fullName: string | null }
+    agencyId: string | null
+    accountErased: boolean
+  },
+  send: SendFn = sendEmail
+): Promise<void> {
+  const { target, agencyId, accountErased } = params
+  const fail = (what: string, err: unknown) => {
+    console.error(`[erasure:email] ${what} failed:`, err instanceof Error ? err.message : err)
+    Sentry.captureException(err)
+  }
+
+  let agencyName: string | null = null
+  if (agencyId) {
+    try {
+      const { data } = await admin.from('agencies').select('name').eq('id', agencyId).single()
+      agencyName = (data as { name?: string } | null)?.name ?? null
+    } catch (err) {
+      fail('agency lookup', err)
+    }
+  }
+
+  if (target.email) {
+    try {
+      const mail = renderErasureConfirmationEmail({
+        recipientName: target.fullName?.trim() || 'there',
+        agencyName,
+        accountErased,
+      })
+      await send({ to: target.email, ...mail })
+    } catch (err) {
+      fail('confirmation', err)
+    }
+  }
+
+  if (agencyId) {
+    try {
+      const { data: owners, error: ownersError } = await admin
+        .from('memberships')
+        .select('user_id')
+        .eq('agency_id', agencyId)
+        .eq('role', 'owner')
+      if (ownersError) throw new Error(ownersError.message)
+      const ownerIds = (owners ?? [])
+        .map((o) => o.user_id as string)
+        .filter((id) => id !== target.id)
+      if (ownerIds.length === 0) return
+
+      const { data: users, error: usersError } = await admin
+        .from('users')
+        .select('id, email, full_name')
+        .in('id', ownerIds)
+      if (usersError) throw new Error(usersError.message)
+
+      for (const owner of (users ?? []) as { email: string | null; full_name: string | null }[]) {
+        if (!owner.email || owner.email.endsWith('@erased.invalid')) continue
+        try {
+          const mail = renderMemberRemovedReceiptEmail({
+            ownerName: owner.full_name?.trim() || 'there',
+            agencyName: agencyName ?? 'your agency',
+            removedName: target.fullName?.trim() || 'A member',
+            accountErased,
+          })
+          await send({ to: [owner.email], ...mail })
+        } catch (err) {
+          fail('owner receipt', err)
+        }
+      }
+    } catch (err) {
+      fail('owner receipt lookup', err)
     }
   }
 }

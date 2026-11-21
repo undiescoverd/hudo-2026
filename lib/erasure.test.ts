@@ -14,6 +14,8 @@ import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
 import {
   eraseUser,
+  removeMemberWithData,
+  sendErasureEmails,
   canEraseUser,
   DELETED_USER_NAME,
   tombstoneEmail,
@@ -96,7 +98,8 @@ function makeAdmin(
   overrides: AdminOverrides = {},
   deleteUserResult: { error: { message: string; status?: number; code?: string } | null } = {
     error: null,
-  }
+  },
+  rpcError: { message: string } | null = null
 ) {
   const tableConfigs: Record<string, TableConfig> = {
     memberships: { selectData: [{ agency_id: AGENCY_A, role: 'agent' }] },
@@ -111,10 +114,18 @@ function makeAdmin(
   const chainsByTable: Record<string, ReturnType<typeof makeChain>[]> = {}
   const fromCalls: string[] = []
   const deleteUserMock = mock.fn(async () => deleteUserResult)
+  const order: string[] = []
+  const rpcCalls: { fn: string; args: Record<string, unknown> }[] = []
 
   const admin = {
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      order.push(`rpc:${fn}`)
+      rpcCalls.push({ fn, args })
+      return { data: 0, error: rpcError }
+    },
     from: (table: string) => {
       fromCalls.push(table)
+      order.push(`from:${table}`)
       const chain = makeChain(tableConfigs[table] ?? {})
       chainsByTable[table] = chainsByTable[table] ?? []
       chainsByTable[table].push(chain)
@@ -123,7 +134,7 @@ function makeAdmin(
     auth: { admin: { deleteUser: deleteUserMock } },
   }
 
-  return { admin, chainsByTable, fromCalls, deleteUserMock }
+  return { admin, chainsByTable, fromCalls, deleteUserMock, order, rpcCalls }
 }
 
 // ---------------------------------------------------------------------------
@@ -450,5 +461,251 @@ describe('lib/erasure — per-step failure short-circuits', () => {
     assert.strictEqual(result.ok, false)
     if (!result.ok) assert.strictEqual(result.step, 'delete_comment_reads')
     assert.strictEqual(deleteUserMock.mock.calls.length, 0, 'deleteUser must not be called')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// S4-ERASE-001 — video purge, agency-scoped removal, emails
+// ---------------------------------------------------------------------------
+
+const ACTOR = { id: CALLER_ID, name: 'Olivia Owner' }
+
+describe('lib/erasure — eraseUser purges the talent videos everywhere (D12, D13 self)', () => {
+  it('calls purge_talent_in_agency once per membership agency, before the tombstone', async () => {
+    const { admin, order, rpcCalls } = makeAdmin({
+      memberships: {
+        selectData: [
+          { agency_id: AGENCY_A, role: 'talent' },
+          { agency_id: AGENCY_B, role: 'talent' },
+        ],
+      },
+    })
+    const result = await eraseUser(admin as never, TARGET_ID)
+
+    assert.strictEqual(result.ok, true)
+    assert.deepStrictEqual(
+      rpcCalls.map((c) => [c.fn, c.args.p_agency_id]),
+      [
+        ['purge_talent_in_agency', AGENCY_A],
+        ['purge_talent_in_agency', AGENCY_B],
+      ]
+    )
+    for (const c of rpcCalls) {
+      assert.strictEqual(c.args.p_talent_id, TARGET_ID)
+      assert.strictEqual(c.args.p_actor_id, null)
+      assert.strictEqual(c.args.p_actor_name, 'GDPR erasure')
+    }
+    const lastRpc = order.lastIndexOf('rpc:purge_talent_in_agency')
+    assert.ok(lastRpc > -1 && lastRpc < order.indexOf('from:users'), 'purge must precede tombstone')
+  })
+
+  it('an rpc error stops erasure at purge_talent_videos (no tombstone, no auth delete)', async () => {
+    const { admin, chainsByTable, deleteUserMock } = makeAdmin(
+      {},
+      { error: null },
+      { message: 'boom' }
+    )
+    const result = await eraseUser(admin as never, TARGET_ID)
+
+    assert.deepStrictEqual(result, { ok: false, step: 'purge_talent_videos', message: 'boom' })
+    assert.strictEqual(chainsByTable.users, undefined)
+    assert.strictEqual(deleteUserMock.mock.calls.length, 0)
+  })
+
+  it('zero memberships means no rpc call', async () => {
+    const { admin, rpcCalls } = makeAdmin({ memberships: { selectData: [] } })
+    const result = await eraseUser(admin as never, TARGET_ID)
+    assert.strictEqual(result.ok, true)
+    assert.strictEqual(rpcCalls.length, 0)
+  })
+})
+
+describe('lib/erasure — removeMemberWithData (D13 agency-scoped)', () => {
+  it('scoped removal leaves the other agency intact: rpc for A only, account kept', async () => {
+    const { admin, rpcCalls, chainsByTable, deleteUserMock } = makeAdmin({
+      // first select = remaining memberships after the scoped delete
+      memberships: { selectData: [{ agency_id: AGENCY_B, role: 'talent' }] },
+    })
+    const result = await removeMemberWithData(admin as never, TARGET_ID, AGENCY_A, ACTOR)
+
+    assert.deepStrictEqual(result, { ok: true, agencyIds: [AGENCY_A], accountErased: false })
+    assert.strictEqual(rpcCalls.length, 1)
+    assert.strictEqual(rpcCalls[0].args.p_agency_id, AGENCY_A)
+    assert.strictEqual(rpcCalls[0].args.p_actor_id, ACTOR.id)
+    assert.strictEqual(rpcCalls[0].args.p_actor_name, ACTOR.name)
+
+    const del = chainsByTable.memberships.find((c) =>
+      c.calls.some((x: ChainCall) => x.method === 'delete')
+    )
+    const eqs = del!.calls.filter((c: ChainCall) => c.method === 'eq').map((c: ChainCall) => c.args)
+    assert.deepStrictEqual(eqs, [
+      ['user_id', TARGET_ID],
+      ['agency_id', AGENCY_A],
+    ])
+    assert.strictEqual(deleteUserMock.mock.calls.length, 0, 'account must not be erased')
+    assert.strictEqual(chainsByTable.users, undefined, 'users row must not be tombstoned')
+  })
+
+  it('a target only in this agency has the whole account erased (accountErased: true)', async () => {
+    const { admin, deleteUserMock, chainsByTable } = makeAdmin({
+      memberships: { selectData: [] },
+    })
+    const result = await removeMemberWithData(admin as never, TARGET_ID, AGENCY_A, ACTOR)
+
+    assert.deepStrictEqual(result, { ok: true, agencyIds: [AGENCY_A], accountErased: true })
+    assert.strictEqual(deleteUserMock.mock.calls.length, 1)
+    assert.ok(chainsByTable.users, 'users row tombstoned')
+  })
+
+  it('purge rpc error stops before the membership is deleted', async () => {
+    const { admin, chainsByTable } = makeAdmin({}, { error: null }, { message: 'nope' })
+    const result = await removeMemberWithData(admin as never, TARGET_ID, AGENCY_A, ACTOR)
+    assert.deepStrictEqual(result, { ok: false, step: 'purge_talent_videos', message: 'nope' })
+    assert.strictEqual(chainsByTable.memberships, undefined)
+  })
+
+  it('membership delete failure is reported', async () => {
+    const { admin } = makeAdmin({ memberships: { deleteError: { message: 'fk' } } })
+    const result = await removeMemberWithData(admin as never, TARGET_ID, AGENCY_A, ACTOR)
+    assert.deepStrictEqual(result, { ok: false, step: 'delete_membership', message: 'fk' })
+  })
+})
+
+describe('lib/erasure — comments on others videos show "Deleted User" after erasure', () => {
+  it('eraseUser never touches comments; rowToComment surfaces the tombstoned name with text kept', async () => {
+    const { admin, fromCalls } = makeAdmin()
+    await eraseUser(admin as never, TARGET_ID)
+    assert.ok(!fromCalls.includes('comments'), 'comments rows must be left untouched')
+
+    const { rowToComment } = await import('./comments.js')
+    const c = rowToComment({
+      id: 'c1',
+      user_id: TARGET_ID,
+      content: 'keep my words',
+      users: { full_name: DELETED_USER_NAME, avatar_url: null },
+    })
+    assert.strictEqual(c.authorName, 'Deleted User')
+    assert.strictEqual(c.content, 'keep my words')
+  })
+})
+
+describe('lib/erasure — sendErasureEmails (D15)', () => {
+  const target = { id: TARGET_ID, email: 'tal@example.com', fullName: 'Tal Ent' }
+
+  function makeEmailAdmin() {
+    return {
+      from: (table: string) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const chain: any = {
+          select: () => chain,
+          eq: () => chain,
+          in: () => chain,
+          neq: () => chain,
+          single: async () => ({ data: { name: 'Acme Talent' }, error: null }),
+          then: (resolve: (v: unknown) => unknown) =>
+            resolve(
+              table === 'memberships'
+                ? { data: [{ user_id: 'o1' }, { user_id: TARGET_ID }], error: null }
+                : { data: [{ id: 'o1', email: 'owner@example.com' }], error: null }
+            ),
+        }
+        return chain
+      },
+    }
+  }
+
+  it('self erasure sends the confirmation only, to the target', async () => {
+    const sent: { to: unknown; subject: string }[] = []
+    await sendErasureEmails(
+      makeEmailAdmin() as never,
+      { target, agencyId: null, accountErased: true },
+      async (m) => void sent.push(m as never)
+    )
+    assert.deepStrictEqual(
+      sent.map((s) => s.to),
+      ['tal@example.com']
+    )
+  })
+
+  it('scoped removal sends confirmation to the target and a receipt to the owners (not the target)', async () => {
+    const sent: { to: unknown; subject: string }[] = []
+    await sendErasureEmails(
+      makeEmailAdmin() as never,
+      { target, agencyId: AGENCY_A, accountErased: false },
+      async (m) => void sent.push(m as never)
+    )
+    assert.deepStrictEqual(
+      sent.map((s) => s.to),
+      ['tal@example.com', ['owner@example.com']]
+    )
+  })
+
+  it('an email that throws never throws out of sendErasureEmails, and later emails still send', async () => {
+    let calls = 0
+    await assert.doesNotReject(
+      sendErasureEmails(
+        makeEmailAdmin() as never,
+        { target, agencyId: AGENCY_A, accountErased: false },
+        async () => {
+          calls++
+          throw new Error('resend down')
+        }
+      )
+    )
+    assert.strictEqual(calls, 2)
+  })
+
+  it('a null target email skips the confirmation without throwing', async () => {
+    const sent: unknown[] = []
+    await sendErasureEmails(
+      makeEmailAdmin() as never,
+      { target: { ...target, email: null }, agencyId: null, accountErased: true },
+      async (m) => void sent.push(m)
+    )
+    assert.strictEqual(sent.length, 0)
+  })
+})
+
+describe('lib/erasure — canEraseUser scoped to a single agency (D13)', () => {
+  const inA = (ms: MembershipRecord[]) => ms.filter((m) => m.agency_id === AGENCY_A)
+
+  it('an admin_agent cannot remove an owner of that agency', () => {
+    assert.strictEqual(
+      canEraseUser(
+        CALLER_ID,
+        TARGET_ID,
+        [{ agency_id: AGENCY_A, role: 'admin_agent' }],
+        [{ agency_id: AGENCY_A, role: 'owner' }]
+      ),
+      false
+    )
+  })
+
+  it('a plain agent cannot remove anyone', () => {
+    assert.strictEqual(
+      canEraseUser(
+        CALLER_ID,
+        TARGET_ID,
+        [{ agency_id: AGENCY_A, role: 'agent' }],
+        [{ agency_id: AGENCY_A, role: 'talent' }]
+      ),
+      false
+    )
+  })
+
+  it('an owner of A can remove a talent from A even though the talent is also in B (B filtered out)', () => {
+    const caller: MembershipRecord[] = [{ agency_id: AGENCY_A, role: 'owner' }]
+    const target: MembershipRecord[] = [
+      { agency_id: AGENCY_A, role: 'talent' },
+      { agency_id: AGENCY_B, role: 'talent' },
+    ]
+    assert.strictEqual(canEraseUser(CALLER_ID, TARGET_ID, inA(caller), inA(target)), true)
+  })
+
+  it('an owner of A cannot scope a removal to agency B (no membership in scope -> denied)', () => {
+    const inB = (ms: MembershipRecord[]) => ms.filter((m) => m.agency_id === AGENCY_B)
+    const caller: MembershipRecord[] = [{ agency_id: AGENCY_A, role: 'owner' }]
+    const target: MembershipRecord[] = [{ agency_id: AGENCY_B, role: 'talent' }]
+    assert.strictEqual(canEraseUser(CALLER_ID, TARGET_ID, inB(caller), inB(target)), false)
   })
 })
