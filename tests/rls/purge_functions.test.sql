@@ -7,7 +7,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(33);
+SELECT plan(42);
 
 -- ── Setup ──────────────────────────────────────────────────────
 -- Agency A (usage 300): V1 (v1=100, v2=200 active; comment + reply on v1), V3 (talent's second video)
@@ -174,6 +174,39 @@ SELECT is((SELECT count(*) FROM video_versions WHERE id = 'c0ffee25-0000-4000-a0
 SELECT throws_ok(
   $$INSERT INTO storage_deletions(target, is_prefix, reason) VALUES ('seed/staging/x.mp4', false, 'version_purged')$$,
   '23514', NULL, 'rejects malformed exact key');
+
+-- ── purge_empty_drafts (0026) ─────────────────────────────────
+-- Agency E: old empty draft (purged), fresh empty draft (kept), old draft WITH a version (kept),
+-- old non-draft video without versions (kept).
+INSERT INTO agencies (id, name, slug, storage_usage_bytes) VALUES
+  ('c0ffee25-0000-4000-a000-00000000000e'::uuid, 'Purge E', 'rls-purge-e', 77);
+INSERT INTO memberships (user_id, agency_id, role) VALUES
+  ('dbeef025-0025-4000-a000-000000000001'::uuid, 'c0ffee25-0000-4000-a000-00000000000e'::uuid, 'talent');
+INSERT INTO videos (id, agency_id, talent_id, title, status, created_at) VALUES
+  ('c0ffee25-0000-4000-a000-0000000000e1'::uuid, 'c0ffee25-0000-4000-a000-00000000000e'::uuid, 'dbeef025-0025-4000-a000-000000000001'::uuid, 'old empty', 'draft', now() - interval '2 days'),
+  ('c0ffee25-0000-4000-a000-0000000000e2'::uuid, 'c0ffee25-0000-4000-a000-00000000000e'::uuid, 'dbeef025-0025-4000-a000-000000000001'::uuid, 'fresh empty', 'draft', now() - interval '1 hour'),
+  ('c0ffee25-0000-4000-a000-0000000000e3'::uuid, 'c0ffee25-0000-4000-a000-00000000000e'::uuid, 'dbeef025-0025-4000-a000-000000000001'::uuid, 'old with version', 'draft', now() - interval '2 days'),
+  ('c0ffee25-0000-4000-a000-0000000000e4'::uuid, 'c0ffee25-0000-4000-a000-00000000000e'::uuid, 'dbeef025-0025-4000-a000-000000000001'::uuid, 'old non-draft', 'pending_review', now() - interval '2 days');
+INSERT INTO video_versions (id, video_id, agency_id, version_number, r2_key, file_size_bytes, uploaded_by) VALUES
+  ('c0ffee25-0000-4000-a000-0000000000f1'::uuid, 'c0ffee25-0000-4000-a000-0000000000e3'::uuid, 'c0ffee25-0000-4000-a000-00000000000e'::uuid, 1,
+   'c0ffee25-0000-4000-a000-00000000000e/c0ffee25-0000-4000-a000-0000000000e3/v1.mp4', 5, 'dbeef025-0025-4000-a000-000000000001'::uuid);
+
+SELECT is(purge_empty_drafts(), 1::integer, 'returns the number of purged drafts');
+SELECT is((SELECT count(*) FROM videos WHERE id = 'c0ffee25-0000-4000-a000-0000000000e1'::uuid), 0::bigint, '2-day-old empty draft is purged');
+SELECT is((SELECT count(*) FROM videos WHERE id = 'c0ffee25-0000-4000-a000-0000000000e2'::uuid), 1::bigint, '1-hour-old empty draft stays (upload may be in progress)');
+SELECT is((SELECT count(*) FROM videos WHERE id = 'c0ffee25-0000-4000-a000-0000000000e3'::uuid), 1::bigint, 'old draft with a version stays');
+SELECT is((SELECT count(*) FROM videos WHERE id = 'c0ffee25-0000-4000-a000-0000000000e4'::uuid), 1::bigint, 'old non-draft video stays');
+SELECT is((SELECT count(*) FROM storage_deletions
+  WHERE target = 'c0ffee25-0000-4000-a000-00000000000e/c0ffee25-0000-4000-a000-0000000000e1/' AND is_prefix AND reason = 'empty_draft'),
+  1::bigint, 'the draft''s R2 prefix is queued with reason empty_draft');
+SELECT is(purge_empty_drafts(), 0::integer, 'idempotent: second run purges nothing');
+SELECT is(purge_empty_drafts(interval '30 minutes'), 1::integer, 'p_older_than is honoured (fresh draft now eligible)');
+
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef025-0025-4000-a000-000000000001","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok($$SELECT purge_empty_drafts()$$, '42501', NULL, 'authenticated cannot execute purge_empty_drafts');
+RESET ROLE;
 
 -- ── privileges ────────────────────────────────────────────────
 SELECT set_config('request.jwt.claims',
