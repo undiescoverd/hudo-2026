@@ -77,20 +77,20 @@ NOTES: S — GitHub #149 (B1), #150 (B2), #151 (B3); plan Phase 1. Verify the me
 
 ---
 
-- [ ] **S4-DELETE-001** — Delete path foundation
+- [x] **S4-DELETE-001** — Delete path foundation
 
 TASK_ID: S4-DELETE-001
 TITLE: Delete path foundation (storage_deletions queue, purge functions, R2 prefix delete, daily cron)
 BRANCH: feat/s4-S4-DELETE-001-delete-path
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Migration 0024 fixes the three blocking FKs (notifications, guest_links.video_version_id, videos.active_version_id) and adds the storage_deletions queue with RLS
   - Migration 0025 adds purge_video_version / purge_video / purge_talent_in_agency / purge_agency (SECURITY DEFINER, service_role only), each one transaction: queue R2 keys, lower storage_usage_bytes (floor 0), audit_log row, delete rows
   - Purging twice is a no-op; deleting the active version is refused; malformed prefixes are rejected
   - Queue drainer deletes by prefix; an already-gone key counts as done
-  - Daily cron /api/cron/storage-purge (CRON_SECRET, 0 3 * * *) drains the queue
+  - Daily cron /api/cron/storage-purge (CRON_SECRET, 0 1 * * *) drains the queue
   - pgTAP + unit tests for each; reviewers (code, security, RLS) run and logged in SESSIONNOTES.md
 FILES:
   - supabase/migrations/0024_storage_deletions_and_cascades.sql
@@ -213,13 +213,13 @@ NOTES: S — Security surface (app/api/, invitations). Mandatory hudo-security-r
 
 ---
 
-- [ ] **S4-JOURNEY-004** — Load the middleware
+- [x] **S4-JOURNEY-004** — Load the middleware
 
 TASK_ID: S4-JOURNEY-004
 TITLE: Move middleware to project root and open only the public paths
 BRANCH: feat/s4-S4-JOURNEY-004-middleware
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-JOURNEY-001, S4-JOURNEY-002, S4-JOURNEY-003
 ACCEPTANCE_CRITERIA:
   - middleware.ts lives at the project root (app/middleware.ts removed); Next 14 loads it
@@ -329,7 +329,7 @@ TASK_ID: S4-REVIEW-002
 TITLE: Comment actions: reply, resolve, edit, delete (GitHub #191)
 BRANCH: feat/s4-S4-REVIEW-002-comment-actions
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Each comment shows only the viewer's allowed actions: Reply (top-level only, any member), Resolve/Unresolve (agent+), Edit (author), Delete (author; agent+ on any)
@@ -369,13 +369,13 @@ NOTES: S — Spec: GitHub #192 (decided 2026-10-23). Resubmit is upload-only (no
 
 ---
 
-- [ ] **S4-REVIEW-004** — Align comments_select with live
+- [x] **S4-REVIEW-004** — Align comments_select with live
 
 TASK_ID: S4-REVIEW-004
 TITLE: Forward migration dropping the unapplied 0004 soft-delete filter (GitHub #187, option b)
 BRANCH: feat/s4-S4-REVIEW-004-comments-select
 MODEL: sonnet
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - New forward migration (next free number at build time; 0024–0026 and 0028 are reserved) recreates comments_select without `deleted_at IS NULL`, matching live

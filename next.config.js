@@ -12,6 +12,9 @@ const CSP_DIRECTIVES = [
   // 'unsafe-eval' required in dev for Next.js React Fast Refresh (HMR)
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval' https://eu-assets.i.posthog.com" : ''}`,
   "style-src 'self' 'unsafe-inline'",
+  // Service worker (/sw.js). Without this it falls back to script-src; explicit
+  // so a future tightening of script-src can't silently kill the PWA.
+  "worker-src 'self'",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://*.i.posthog.com https://*.posthog.com https://*.r2.cloudflarestorage.com",
   "img-src 'self' data: blob:",
   "media-src 'self' blob: https://*.r2.cloudflarestorage.com",
@@ -69,5 +72,10 @@ module.exports = withSentryConfig(nextConfig, {
   authToken: process.env.SENTRY_AUTH_TOKEN,
 })
 
-// Exported for the CSP regression test (next.config.test.ts). Not used by Next.js.
-module.exports.CSP_DIRECTIVES = CSP_DIRECTIVES
+// Exported for the CSP regression test (next.config.test.ts). Non-enumerable so
+// Next's config validator (which iterates own enumerable keys) doesn't flag it
+// as an unrecognized config option; direct property access still works.
+Object.defineProperty(module.exports, 'CSP_DIRECTIVES', {
+  value: CSP_DIRECTIVES,
+  enumerable: false,
+})

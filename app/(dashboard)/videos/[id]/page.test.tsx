@@ -85,8 +85,22 @@ describe('VideoPage — source invariants', () => {
     assert.match(source, /activeVersionId && userId && agencyId \? \(/)
   })
 
-  it('passes comments to VideoPlayer so CommentTimeline markers render', () => {
-    assert.match(source, /<VideoPlayer[\s\S]*?comments=\{comments\}/)
+  it('passes the role from the versions response to GuestShareButton (which gates itself)', () => {
+    assert.match(source, /<GuestShareButton videoId=\{params\.id\} role=\{role\} \/>/)
+    assert.match(source, /const \[role, setRole\] = useState<string \| null>\(null\)/)
+    assert.match(source, /if \(data\.role\) setRole\(data\.role\)/)
+  })
+
+  it('warns when the versions response has no role (contract break is visible, not silent)', () => {
+    assert.match(
+      source,
+      /console\.warn\('\[video-page\] versions response missing role; hiding Share'\)/
+    )
+  })
+
+  it('passes top-level comments to VideoPlayer so CommentTimeline markers render (replies add none)', () => {
+    assert.match(source, /<VideoPlayer[\s\S]*?comments=\{timelineComments\}/)
+    assert.match(source, /comments\.filter\(\(c\) => c\.parentId === null\)/)
   })
 
   it('sources comments from the shared useVideoComments hook (single fetch)', () => {
@@ -101,5 +115,34 @@ describe('VideoPage — source invariants', () => {
     assert.match(source, /<CommentPanel[\s\S]*?comments=\{comments\}/)
     assert.match(source, /<CommentPanel[\s\S]*?onOptimisticInsert=\{handleCommentInsert\}/)
     assert.match(source, /<CommentPanel[\s\S]*?onOptimisticRollback=\{handleCommentRollback\}/)
+  })
+})
+
+describe('VideoPage — comment actions wiring (S4-REVIEW-002)', () => {
+  let source: string
+
+  before(() => {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url))
+    source = fs.readFileSync(path.resolve(currentDir, 'page.tsx'), 'utf8')
+  })
+
+  it("takes the viewer's role from the versions response only (one source, no second lookup)", () => {
+    // The versions endpoint returns the caller's role in this agency (it already
+    // checks the membership). A second `memberships` read would race it on the same state.
+    assert.match(source, /if \(data\.role\) setRole\(data\.role\)/)
+    assert.doesNotMatch(source, /\.from\('memberships'\)/)
+    assert.equal(source.match(/setRole\(/g)?.length, 1)
+  })
+
+  it('leaves the role null (no actions) until the versions response provides it', () => {
+    assert.match(source, /const \[role, setRole\] = useState<string \| null>\(null\)/)
+  })
+
+  it('passes the role and the three comment actions from the hook to CommentPanel', () => {
+    assert.match(source, /<CommentPanel[\s\S]*?viewerRole=\{role\}/)
+    assert.match(source, /<CommentPanel[\s\S]*?onResolveComment=\{resolveComment\}/)
+    assert.match(source, /<CommentPanel[\s\S]*?onEditComment=\{editComment\}/)
+    assert.match(source, /<CommentPanel[\s\S]*?onDeleteComment=\{deleteComment\}/)
+    assert.match(source, /resolveComment,\s*editComment,\s*deleteComment,\s*\} = useVideoComments/)
   })
 })
