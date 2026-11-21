@@ -4,13 +4,22 @@ import { getStorage } from '@/lib/storage'
 import { hashGuestToken, verifyGuestToken } from '@/lib/guest-tokens'
 import { checkRateLimit } from '@/lib/api-helpers'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { isGuestPlaybackRenewal } from '@/lib/guest-playback'
 
 /**
  * GET /api/guest/:token/playback-url
  *
  * Public endpoint — no Supabase Auth required.
  * Returns a 15-minute signed R2 URL for video playback.
- * Increments view_count and sets last_viewed_at on each successful call.
+ * Increments view_count and sets last_viewed_at on each successful call,
+ * EXCEPT signed-URL renewals (`?renew=1`, sent by GuestPlayer before expiry)
+ * so one uninterrupted watch counts once. A page load / reload still counts.
+ *
+ * view_count is an engagement signal, not an audit metric. Accepted trade-off
+ * (product decision, PR #158): `renew` is client-supplied, so a token holder
+ * can suppress their own views (always send it) or count extra (omit it), the
+ * same as reloading the page already allows. The flag grants no access:
+ * renewals still pass rate limiting, token validation and signing above.
  *
  * Security:
  * - Token validation identical to /api/guest/:token (timing-safe).
@@ -111,10 +120,13 @@ export async function GET(request: NextRequest, { params }: { params: { token: s
   }
 
   // Atomic increment via RPC — prevents lost updates under concurrent playback.
-  const { error: rpcError } = await admin.rpc('increment_guest_link_view', { p_id: link.id })
-  if (rpcError) {
-    console.error('[guest:playback-url] Failed to update view stats:', rpcError.message)
-    Sentry.captureException(rpcError)
+  // Renewals of an in-progress watch are not a new view, so they skip it.
+  if (!isGuestPlaybackRenewal(request.nextUrl.searchParams)) {
+    const { error: rpcError } = await admin.rpc('increment_guest_link_view', { p_id: link.id })
+    if (rpcError) {
+      console.error('[guest:playback-url] Failed to update view stats:', rpcError.message)
+      Sentry.captureException(rpcError)
+    }
   }
 
   return NextResponse.json({

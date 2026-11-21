@@ -151,3 +151,9 @@ test('middleware lets signed-out requests reach the legal pages (/terms, /privac
     assert.equal(res.status, 200, path)
   }
 })
+
+test('middleware serves /offline without auth (no sign-in redirect)', async () => {
+  const res = await middleware(new NextRequest('http://localhost/offline'))
+  assert.equal(res.headers.get('location'), null)
+  assert.equal(res.status, 200)
+})
