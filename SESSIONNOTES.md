@@ -904,3 +904,15 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - run the live Preview checks (Preview is now behind Vercel SSO).
   - **Linear:** no `LINEAR_API_KEY` here, so `orchestrate.js done` could not sync. The daily `sync-fix` job will push the new statuses.
 - **Gotcha (if any):** two sessions given the same backlog will build the same tasks. Check `gh pr list` / open PRs for a task ID before starting it, and push to a fresh branch name if the task branch already exists on origin.
+
+## 2026-11-21 16:00 — S4-DESIGN-001 design v3 foundation
+
+- **Task:** S4-DESIGN-001 (part of #217): tokens, fonts, palette remap, app shell, StatusPill, Button
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done (PR open, not merged)
+- **Notes:**
+  - v3 tokens live in `app/globals.css`; the shadcn HSL vars point at them. The default `gray`/`blue`/`red`/`green`/`amber`/`yellow` scales are remapped in `tailwind.config.ts`, so about 370 hardcoded utilities reskin with no per-file edits. `blue` is now the coral scale.
+  - `StatusBadge` (lib/video-status.ts) and `StatusFilter` now render `StatusPill`, so status labels changed from lowercase ("pending review") to the fixed v3 labels. `STATUS_STYLES` was removed.
+  - `components/ui/button.tsx` (cva, no new dependency) is added but adopted nowhere yet.
+  - Contrast pairs were checked with a throwaway script. `gray-400` was darkened to `#70737a` to pass 4.5:1 on white.
+- **Gotcha (if any):** raw v3 tokens named `--accent`/`--muted` would collide with the shadcn `--accent`/`--muted` HSL vars, so the raw ones are `--coral*` and `--text-muted`.
