@@ -23,9 +23,12 @@ export function AppHeader({ displayName, role }: Props) {
   }
 
   return (
-    <header className="border-b bg-background sticky top-0 z-40">
+    <header className="sticky top-0 z-40 border-b border-line bg-surface">
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center gap-6">
-        <Link href="/videos" className="font-semibold text-foreground tracking-tight">
+        <Link
+          href="/videos"
+          className="font-display text-[20px] font-semibold tracking-[-0.02em] text-foreground"
+        >
           Hudo
         </Link>
 

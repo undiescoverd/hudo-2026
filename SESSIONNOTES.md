@@ -812,6 +812,42 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - `tsx --test` can't take explicit bracketed paths (`[videoId]`); run those files with `npx tsx "<path>"`.
   - Rendering components in Node tests needs `globalThis.React = React`, because tsx compiles JSX to classic `React.createElement`.
 
+## 2026-10-23 22:30 — S4-REVIEW-001 new-version upload (built; live check pending)
+
+- **Task:** S4-REVIEW-001 (GitHub #190)
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** partial. The code, tests and build are done, in a draft PR. The live Preview check of a v2 upload, as talent and as agent, is still to do.
+- **Notes:**
+  - **Video page:** an "Upload new version" link to `/upload?videoId=<id>`. It shows only once the versions endpoint has returned 200, which happens only for the owning talent or a non-talent member. Guests never load this page.
+  - **Upload page, version mode:**
+    - It reads the `searchParams` prop, not `useSearchParams`, which needs a Suspense boundary at build time.
+    - It looks up the title and `agency_id` with an RLS-scoped query. On a miss it falls back to the membership agency, so presign returns its 404/403.
+    - There is no talent picker and no `talentId` in this mode.
+    - `draftVideoIdRef` is seeded with the target and reset to it, so no path creates a new video.
+    - It skips MetadataForm and redirects to `/videos/<id>`. VersionSelector auto-selects the newest version there.
+  - **Added a `beforeunload` warning while uploading.** The spec assumed the upload page already had one; it didn't.
+  - No API route changed. The status flip and notification for talent uploads stay server-side, as before.
+  - Other sessions are building REVIEW-002 (#197), REVIEW-004 (#196) and the callback rate limit (#195) in parallel.
+  - Linear sync failed: there's no `LINEAR_API_KEY` in the cloud. Run `sync-fix` locally.
+  - The DeepSeek review bots are still out of credit, so the pr-fix loop was skipped. Not a security surface (UI only), so no hudo-security-reviewer run. Opus reviewed the diff.
+- **Gotcha (if any):** `orchestrate.js start` checks out the task's `feat/…` branch. In a cloud session tied to one designated branch, switch back before committing.
+
+## 2026-10-24 04:30 — comments_select follows video visibility; un-delete blocked (migration 0030)
+
+- **Task:** follow-up from the #196 audit of migration 0029 (comments video-scope; number 0030 noted in `tasks/sprint-4.md`)
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** partial. Code, tests and local pgTAP are done. Applying 0029/0030 to hudo-dev and hudo-staging is left to Ian (no DB credentials in the cloud session): `sh scripts/db-push.sh local --dry-run --include-all`, then `staging`. The dry-run should list 0029 (if #196 isn't applied yet) and 0030.
+- **Notes:**
+  - **What `0030_comments_select_video_scope.sql` does:**
+    - Recreates `comments_select` with two branches: agent+ (`owner`/`admin_agent`/`agent`) reads every comment in their agencies; any other member (talent) reads only comments on versions of videos with `videos.talent_id = auth.uid()`. That matches `videos_select_talent` and `video_versions_select`. Still no `deleted_at` filter (#187), so soft-deleted rows stay visible to whoever can see the video.
+    - Adds the `prevent_comment_undelete` BEFORE UPDATE trigger: `deleted_at` non-null to null raises 23514 'Soft-deleted comments cannot be restored'. Without it, `comments_update_own` / `comments_update_agents` let a client undo a soft delete. That was already possible on live since 0002; only databases carrying the never-applied 0004 filter blocked it.
+  - **`tests/rls/comments.test.sql`:** plan 15 to 23. Adds a second talent (Cora) with her own video and a live plus a soft-deleted comment. New assertions cover talent isolation (Clara can't see Cora's live or soft-deleted comment; Cora sees only her 2), agent visibility of soft-deleted rows, both un-delete attempts (talent and agent) and a forward direct soft delete still working. Tests are now numbered one per assertion.
+  - **Test 11 (old numbering) restructured:** it un-deleted C2 as superuser to set up the resolve test. The trigger fires for every role, so that line now fails. Charlie resolves Clara's live comment `c0de0003-...-0099` (Clara's own video) instead. Old Test 13 no longer re-soft-deletes C2 (it stays deleted since Test 8).
+  - **Guard test `lib/comments-read-guard.test.ts`:** scans `app/`, `lib/`, `hooks/` for `.from('comments')` read chains and fails unless each has `.is('deleted_at', null)` or selects `deleted_at`. 7 read chains and 3 write chains on the current tree, all fine. Not an RLS substitute: the API routes read through the service-role client, so app code is the only filter there (the dashboard `comments` embeds use the session client and filter `comments.deleted_at` themselves).
+  - **Local pgTAP (no supabase CLI):** throwaway PG16 cluster with a minimal Supabase scaffold, all migrations in order (26 with 0030, 25 without), then every file in `tests/rls/`. Baseline (no 0030, original test): 15 files, 124 tests, green. With 0030 and the new test: 15 files, 132 tests, green. The new test against the baseline schema fails exactly the 7 talent-isolation and un-delete assertions.
+  - **Not changed here:** `comments_insert` (write path). Aligning it with `comments_select` is a follow-up candidate.
+- **Gotcha (if any):** the un-delete trigger fires for every role, superuser and service_role included, so test fixtures and data repairs can't reset `deleted_at` to NULL. If it's ever genuinely needed, disable the trigger explicitly as postgres (`ALTER TABLE comments DISABLE TRIGGER prevent_comment_undelete`) and re-enable it.
+
 ## 2026-10-24 — S4-JOURNEY-004: middleware moved to project root (PR #188, awaiting live walk + merge)
 
 - **Task:** S4-JOURNEY-004 (RES-221). Also landed PR #185 (merge commit, Ian approved) as handoff step 1.
@@ -904,6 +940,42 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - run the live Preview checks (Preview is now behind Vercel SSO).
   - **Linear:** no `LINEAR_API_KEY` here, so `orchestrate.js done` could not sync. The daily `sync-fix` job will push the new statuses.
 - **Gotcha (if any):** two sessions given the same backlog will build the same tasks. Check `gh pr list` / open PRs for a task ID before starting it, and push to a fresh branch name if the task branch already exists on origin.
+
+## 2026-11-21 — S4-REVIEW-001 (#198) review, update from main, review fixes
+
+- **Task:** S4-REVIEW-001, PR #198
+- **Models:** planner=opus; reviewers=sonnet code reviewer + hudo-security-reviewer
+- **Outcome:** partial. The code is ready to merge. The live Preview check (a v2 upload as talent and as agent) is still to do.
+- **Notes:**
+  - Merged origin/main into the branch with no conflicts.
+  - **Security review:** fit to merge. Presign and complete already check the agency and that a talent owns the video, and the version number still comes from `create_video_version`.
+  - **Code review:** no blockers. Two small fixes applied:
+    - the draft-id ref now follows `targetVideoId` through a `useEffect`, so going from `/upload?videoId=A` to `B` can't reuse A;
+    - a failed video lookup now shows a setup error before a file is picked, instead of a 404 after upload.
+  - Format, type-check, lint and build pass; unit tests 1739/1739.
+- **Gotcha (if any):** auto mode blocked `gh pr merge` from the agent, so merges are left to Ian.
+
+## 2026-11-21 16:00 — S4-DESIGN-001 design v3 foundation
+
+- **Task:** S4-DESIGN-001 (part of #217): tokens, fonts, palette remap, app shell, StatusPill, Button
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done (PR open, not merged)
+- **Notes:**
+  - v3 tokens live in `app/globals.css`; the shadcn HSL vars point at them. The default `gray`/`blue`/`red`/`green`/`amber`/`yellow` scales are remapped in `tailwind.config.ts`, so about 370 hardcoded utilities reskin with no per-file edits. `blue` is now the coral scale.
+  - `StatusBadge` (lib/video-status.ts) and `StatusFilter` now render `StatusPill`, so status labels changed from lowercase ("pending review") to the fixed v3 labels. `STATUS_STYLES` was removed.
+  - `components/ui/button.tsx` (cva, no new dependency) is added but adopted nowhere yet.
+  - Contrast pairs were checked with a throwaway script. `gray-400` was darkened to `#70737a` to pass 4.5:1 on white.
+- **Gotcha (if any):** raw v3 tokens named `--accent`/`--muted` would collide with the shadcn `--accent`/`--muted` HSL vars, so the raw ones are `--coral*` and `--text-muted`.
+
+## 2026-11-21 — S4-DESIGN-001 visual check (local, staging data)
+
+- **Task:** S4-DESIGN-001 (#219)
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done (PR green, waiting on merge)
+- **Notes:** Screenshots of /dashboard, /talent, /upload and a video page, as owner and talent against staging data, confirm the reskin. Fixed in f677d61:
+  - checkboxes were coral, because they used `--primary`; they're graphite now;
+  - `NotificationBell` focused itself on every page load, because its focus-return effect ran on mount. That's an accessibility bug from before v3 that the coral ring made visible.
+- **Gotcha (if any):** hudo-dev was paused (its hostname didn't resolve; sign-in shows "Invalid email or password"). For a local walk, run `set -a; . ./.env.staging; set +a; pnpm dev` and sign in with the `*@hudo.test` seed accounts. Repeated scripted sign-ins hit the auth rate limit ("Too many sign-in attempts"), so sign in once per context.
 
 ## 2026-11-21 01:45 — S4-LAUNCH-002: seven-flow staging smoke suite
 

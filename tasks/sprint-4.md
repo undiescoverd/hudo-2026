@@ -6,7 +6,7 @@
 
 ---
 
-> **Migration numbering (verified 2026-10-22):** migrations 0001–0023 are in the repo. Wave 1 uses **0024–0026** (deletion plan). S4-JOURNEY-001 uses **0027**. Archive & restore (archive plan Phase 5) moves to **0028**. S4-REVIEW-004 uses **0029**. Apply via the `/apply-migration` flow (`sh scripts/db-push.sh local|staging`, `--dry-run` first → both hudo-dev + hudo-staging), never MCP `apply_migration` or the SQL editor. Because 0027 is already applied, pushing 0024–0026 later needs `--include-all` (`db push` refuses versions older than the newest remote one) — check the dry-run list first.
+> **Migration numbering (verified 2026-10-22):** migrations 0001–0023 are in the repo. Wave 1 uses **0024–0026** (deletion plan). S4-JOURNEY-001 uses **0027**. Archive & restore (archive plan Phase 5) moves to **0028**. S4-REVIEW-004 uses **0029**. The comments video-scope follow-up (from the #196 audit) uses **0030**. Apply via the `/apply-migration` flow (`sh scripts/db-push.sh local|staging`, `--dry-run` first → both hudo-dev + hudo-staging), never MCP `apply_migration` or the SQL editor. Because 0027 is already applied, pushing 0024–0026 later needs `--include-all` (`db push` refuses versions older than the newest remote one) — check the dry-run list first.
 
 ## Tasks
 
@@ -304,7 +304,7 @@ TASK_ID: S4-REVIEW-001
 TITLE: Upload a new version from the video page (GitHub #190)
 BRANCH: feat/s4-S4-REVIEW-001-new-version
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_progress
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - "Upload new version" on the video page for the owning talent and agent+ in the video's agency; hidden from other talent and guests
@@ -389,6 +389,135 @@ NOTES: S — Decision: #187 comment (2026-10-23). Security surface (RLS): mandat
 
 ---
 
+- [ ] **S4-DESIGN-001** — v3 design foundation
+
+TASK_ID: S4-DESIGN-001
+TITLE: Design v3 foundation: tokens, fonts, palette remap, app shell, StatusPill (GitHub #217)
+BRANCH: feat/s4-S4-DESIGN-001-foundation
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - v3 light tokens (Graphite & Coral + st-* status pairs) in app/globals.css; shadcn vars point at v3
+  - Tailwind semantic colours + default gray/blue/red/green/amber scales remapped onto v3 so every existing page reskins
+  - Space Grotesk + Space Mono via next/font (self-hosted; CSP font-src 'self' unchanged)
+  - App-shell top bar/nav restyled; StatusPill with the five fixed labels; button variants (primary coral, ghost)
+  - No behaviour change; accessible names/roles unchanged
+  - pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green
+FILES:
+  - app/globals.css
+  - tailwind.config.ts
+  - app/layout.tsx
+  - components/layout/**
+  - components/ui/**
+  - source-regex tests that assert old class strings
+NOTES: M — Reskin-only. Light theme only. Unblocks DESIGN-002..006.
+
+---
+
+- [ ] **S4-DESIGN-002** — Video page v3 layout
+
+TASK_ID: S4-DESIGN-002
+TITLE: Port v3 player + video page layout (GitHub #217)
+BRANCH: feat/s4-S4-DESIGN-002-video-page
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S4-DESIGN-001, S4-REVIEW-001
+ACCEPTANCE_CRITERIA:
+  - Video page matches player.html (coral) + Paper 'Screens · Video page states': dark stage, mono timecodes, comment rail, coral markers
+  - Upload new version ghost button (coral when changes requested)
+  - No behaviour change
+  - CI checks green
+FILES:
+  - app/(dashboard)/videos/[id]/**
+  - components/player/**
+  - components/comments/**
+  - components/versions/**
+NOTES: M
+
+---
+
+- [ ] **S4-DESIGN-003** — Agent dashboard v3
+
+TASK_ID: S4-DESIGN-003
+TITLE: Port v3 agent dashboard, layout E Needs you + list (GitHub #217)
+BRANCH: feat/s4-S4-DESIGN-003-agent-dashboard
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S4-DESIGN-001
+ACCEPTANCE_CRITERIA:
+  - /dashboard matches dashboard.html#l=hybrid: Needs you strip (max 4 cards, +N more) over the filterable table
+  - Owner/admin_agent/agent only
+  - CI checks green
+FILES:
+  - app/(dashboard)/dashboard/**
+  - components/dashboard/**
+  - app/(dashboard)/videos/page.tsx
+NOTES: M
+
+---
+
+- [ ] **S4-DESIGN-004** — Talent dashboard v3
+
+TASK_ID: S4-DESIGN-004
+TITLE: Port v3 talent dashboard, layout C progress tracker (GitHub #217)
+BRANCH: feat/s4-S4-DESIGN-004-talent-dashboard
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S4-DESIGN-001
+ACCEPTANCE_CRITERIA:
+  - /talent matches talent.html#l=track: one row per video, 4-step stage bar, Your move / Everything else groups
+  - CTA is Upload v{n+1} (opens /upload?videoId=)
+  - CI checks green
+FILES:
+  - app/(dashboard)/talent/**
+  - components/dashboard/**
+NOTES: M
+
+---
+
+- [ ] **S4-DESIGN-005** — Upload + guest v3
+
+TASK_ID: S4-DESIGN-005
+TITLE: Port v3 upload page and guest page (GitHub #217)
+BRANCH: feat/s4-S4-DESIGN-005-upload-guest
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S4-DESIGN-001, S4-REVIEW-001
+ACCEPTANCE_CRITERIA:
+  - /upload matches upload.html#l=page (new video + new-version modes, error states)
+  - /guest/[token] matches Paper Guest v2: video only, no comments
+  - CI checks green
+FILES:
+  - app/(dashboard)/upload/**
+  - components/upload/**
+  - app/guest/**
+  - components/guest/**
+NOTES: M
+
+---
+
+- [ ] **S4-DESIGN-006** — Settings + auth v3
+
+TASK_ID: S4-DESIGN-006
+TITLE: Port v3 settings (side nav) and auth family, layout A (GitHub #217)
+BRANCH: feat/s4-S4-DESIGN-006-settings-auth
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S4-DESIGN-001
+ACCEPTANCE_CRITERIA:
+  - Settings matches settings.html#l=sidenav (Members, Billing, Notifications, Account; talent sees Notifications, Account)
+  - Sign-in/register/forgot/reset/invite match Paper 'Screens · Sign in and join' layout A (provisional)
+  - CI checks green
+FILES:
+  - app/(dashboard)/settings/**
+  - components/settings/**
+  - components/billing/**
+  - app/auth/**
+NOTES: M
+
+---
+
 - [ ] **S4-ACCESS-001** — axe audit over five page groups
 
 TASK_ID: S4-ACCESS-001
@@ -396,7 +525,7 @@ TITLE: Automated WCAG 2.1 AA audit (axe) and fixes
 BRANCH: feat/s4-S4-ACCESS-001-axe
 MODEL: sonnet
 STATUS: not_started
-BLOCKED_BY: S4-JOURNEY-004, S4-DELETE-001, S4-ERASE-001, S4-SAVER-001, S4-REVIEW-001, S4-REVIEW-002, S4-REVIEW-003
+BLOCKED_BY: S4-JOURNEY-004, S4-DELETE-001, S4-ERASE-001, S4-SAVER-001, S4-REVIEW-001, S4-REVIEW-002, S4-REVIEW-003, S4-DESIGN-001, S4-DESIGN-002, S4-DESIGN-003, S4-DESIGN-004, S4-DESIGN-005, S4-DESIGN-006
 ACCEPTANCE_CRITERIA:
   - @axe-core/playwright added (flagged in PR for dependency approval)
   - tests/e2e/a11y.spec.ts scans five page groups: auth, dashboard, video player, comments, guest
