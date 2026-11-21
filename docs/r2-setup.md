@@ -73,6 +73,30 @@ aws s3api put-bucket-cors --bucket <bucket> --endpoint-url "$R2_ENDPOINT" \
 - The proxy fetches from R2 using server-side credentials
 - Direct R2 URLs are never returned to any client
 
+### Lifecycle: abort abandoned multipart uploads
+
+Browser multipart uploads that never complete (tab closed, network lost) leave orphaned
+parts that count toward storage and are invisible to the app. Add a lifecycle rule to
+**all three buckets** that aborts incomplete multipart uploads 1 day after initiation:
+
+```bash
+AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY \
+aws s3api put-bucket-lifecycle-configuration --endpoint-url "$R2_ENDPOINT" --bucket hudo-staging \
+  --lifecycle-configuration '{"Rules":[{"ID":"abort-incomplete-multipart","Status":"Enabled","Filter":{"Prefix":""},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}'
+```
+
+Repeat with `--bucket hudo-dev` and `--bucket hudo-prod`. Verify with:
+
+```bash
+AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY \
+aws s3api get-bucket-lifecycle-configuration --endpoint-url "$R2_ENDPOINT" --bucket hudo-staging
+```
+
+This is independent of CORS (the CORS config above, including `ExposeHeaders: ["ETag"]`, is
+not touched). **Status: still to apply to hudo-dev, hudo-staging and hudo-prod (prod is a
+pre-launch checklist item).** Empty draft videos (no versions, older than 24h) are cleaned up
+separately by the daily `storage-purge` cron (`purge_empty_drafts`, migration 0026).
+
 ### Object Versioning
 
 **Note**: Cloudflare R2 does not currently support native object versioning. This is a requested feature but not yet available in the dashboard or API. Video version history is managed at the application level via the `video_versions` table in the database, not via R2 object versions.

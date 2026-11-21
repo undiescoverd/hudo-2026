@@ -45,6 +45,10 @@ describe('next.config.js CSP directives', () => {
     )
   })
 
+  it("allows the same-origin service worker via worker-src 'self' only", () => {
+    assert.equal(directive('worker-src'), "worker-src 'self'")
+  })
+
   it("keeps 'self' and blob: in media-src", () => {
     const mediaSrc = directive('media-src')
     assert.ok(mediaSrc.includes("'self'"))

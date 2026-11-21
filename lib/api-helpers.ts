@@ -1,7 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { AGENT_PLUS_ROLES } from './roles'
 
-export const AGENT_PLUS_ROLES = ['owner', 'admin_agent', 'agent'] as const
+// Re-exported so existing `@/lib/api-helpers` imports keep working; the list
+// itself lives in the dependency-free `lib/roles.ts` for client use.
+export { AGENT_PLUS_ROLES }
 
 /**
  * Roles permitted to drive the upload pipeline (presign/complete/multipart-url/

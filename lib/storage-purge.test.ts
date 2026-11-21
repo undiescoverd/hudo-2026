@@ -40,6 +40,9 @@ interface AdminOpts {
   /** Return an error message to make this update fail. */
   updateError?: (patch: Partial<Row>) => string | null
   countError?: boolean
+  /** Shared log: rpc calls are pushed here, and drain reads log 'drain' on first select. */
+  log?: string[]
+  rpc?: (fn: string) => { data: unknown; error: { message: string } | null }
 }
 
 function makeAdmin(rows: Row[], opts: AdminOpts = {}): SupabaseClient {
@@ -47,6 +50,7 @@ function makeAdmin(rows: Row[], opts: AdminOpts = {}): SupabaseClient {
     assert.equal(table, 'storage_deletions')
     return {
       select: (_cols: string, selOpts?: { count?: string; head?: boolean }) => {
+        if (!selOpts?.head) opts.log?.push('drain')
         const preds: Array<(r: Row) => boolean> = []
         let max = Infinity
         const q = {
@@ -96,7 +100,11 @@ function makeAdmin(rows: Row[], opts: AdminOpts = {}): SupabaseClient {
       }),
     }
   }
-  return { from } as unknown as SupabaseClient
+  const rpc = async (fn: string) => {
+    opts.log?.push(`rpc:${fn}`)
+    return opts.rpc?.(fn) ?? { data: 0, error: null }
+  }
+  return { from, rpc } as unknown as SupabaseClient
 }
 
 function makeStorage(overrides: Partial<StorageClient> = {}) {
@@ -304,10 +312,47 @@ describe('drainStorageDeletions', () => {
     assert.equal(rows[2].completed_at, null)
   })
 
-  it('runStoragePurge wraps the drainer result', async () => {
+  it('runStoragePurge purges empty drafts BEFORE draining and reports the count', async () => {
+    const log: string[] = []
     const { storage } = makeStorage()
-    const res = await runStoragePurge({ admin: makeAdmin([]), storage })
-    assert.deepEqual(res, { drained: { processed: 0, failed: 0, skipped: 0 } })
+    const res = await runStoragePurge({
+      admin: makeAdmin([], { log, rpc: () => ({ data: 3, error: null }) }),
+      storage,
+    })
+    assert.deepEqual(log.slice(0, 2), ['rpc:purge_empty_drafts', 'drain'])
+    assert.deepEqual(res, {
+      emptyDraftsPurged: 3,
+      drained: { processed: 0, failed: 0, skipped: 0 },
+    })
+  })
+
+  it('runStoragePurge drains the prefix queued by the draft purge in the same run', async () => {
+    const rows: Row[] = []
+    const admin = makeAdmin(rows, {
+      rpc: () => {
+        rows.push(makeRow({ id: 1, target: `${A}/${V}/`, is_prefix: true }))
+        return { data: 1, error: null }
+      },
+    })
+    const { storage, calls } = makeStorage()
+    const res = await runStoragePurge({ admin, storage })
+    assert.deepEqual(calls.deletePrefix, [`${A}/${V}/`])
+    assert.equal(res.drained.processed, 1)
+  })
+
+  it('runStoragePurge still drains (and does not throw) when the draft purge fails', async () => {
+    const log: string[] = []
+    const { messages, sentry } = makeSentry()
+    const { storage } = makeStorage()
+    const res = await runStoragePurge({
+      admin: makeAdmin([], { log, rpc: () => ({ data: null, error: { message: 'rpc boom' } }) }),
+      storage,
+      sentry,
+    })
+    assert.ok(log.includes('drain'))
+    assert.equal(res.emptyDraftsPurged, 0)
+    assert.equal(messages.length, 1)
+    assert.match(messages[0], /empty draft/i)
   })
 })
 

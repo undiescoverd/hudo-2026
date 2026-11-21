@@ -169,9 +169,32 @@ export async function drainStorageDeletions(deps?: DrainDeps): Promise<DrainResu
 }
 
 /**
- * Entry point for the daily cron. Later phases add purgeEmptyDrafts and
- * purgeExpiredArchive here; the route only ever calls this.
+ * Purges videos with no versions that are older than 24h (migration 0026). Each purge queues
+ * the video's R2 prefix, so this MUST run before the drain to send those prefixes out the same
+ * run. A failure is reported but never throws: the drain (erasure data!) must still run.
  */
-export async function runStoragePurge(deps?: DrainDeps): Promise<{ drained: DrainResult }> {
-  return { drained: await drainStorageDeletions(deps) }
+export async function purgeEmptyDrafts(deps?: DrainDeps): Promise<number> {
+  const admin = deps?.admin ?? createAdminClient()
+  const sentry = deps?.sentry ?? {
+    captureMessage: (msg: string, context?: Record<string, unknown>) =>
+      Sentry.captureMessage(msg, { extra: context }),
+  }
+  const { data, error } = await admin.rpc('purge_empty_drafts')
+  if (error) {
+    console.error(`[storage-purge] purge_empty_drafts failed: ${error.message}`)
+    sentry.captureMessage('[storage-purge] Empty draft purge failed', { error: error.message })
+    return 0
+  }
+  return typeof data === 'number' ? data : 0
+}
+
+/**
+ * Entry point for the daily cron. Later phases add purgeExpiredArchive here;
+ * the route only ever calls this.
+ */
+export async function runStoragePurge(
+  deps?: DrainDeps
+): Promise<{ emptyDraftsPurged: number; drained: DrainResult }> {
+  const emptyDraftsPurged = await purgeEmptyDrafts(deps)
+  return { emptyDraftsPurged, drained: await drainStorageDeletions(deps) }
 }
