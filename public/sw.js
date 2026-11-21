@@ -8,6 +8,7 @@
  * (lib/pwa-cache-rules.test.ts) loads this file and asserts both agree.
  */
 
+// Bump the version suffix whenever the shell (offline page, icons, manifest) changes.
 var CACHE_NAME = 'hudo-shell-v1'
 var OFFLINE_URL = '/offline'
 var PRECACHE = [
@@ -85,6 +86,27 @@ self.addEventListener('activate', function (event) {
   )
 })
 
+function cacheMatch(request) {
+  return caches.open(CACHE_NAME).then(function (cache) {
+    return cache.match(request)
+  })
+}
+
+// Store only complete, same-origin, non-redirected 200s (no 206 partials, no
+// redirects). Never rejects, so a failed put cannot become an unhandled rejection.
+function store(request, res) {
+  if (!(res && res.ok && res.status === 200 && res.type === 'basic' && !res.redirected)) {
+    return Promise.resolve()
+  }
+  var copy = res.clone()
+  return caches
+    .open(CACHE_NAME)
+    .then(function (cache) {
+      return cache.put(request, copy)
+    })
+    .catch(function () {})
+}
+
 self.addEventListener('fetch', function (event) {
   var request = event.request
 
@@ -92,7 +114,7 @@ self.addEventListener('fetch', function (event) {
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(function () {
-        return caches.match(OFFLINE_URL).then(function (res) {
+        return cacheMatch(OFFLINE_URL).then(function (res) {
           return res || Response.error()
         })
       })
@@ -102,18 +124,21 @@ self.addEventListener('fetch', function (event) {
 
   if (!shouldCache(toRule(request))) return // not intercepted: straight to network
 
+  var isShell = SHELL_PATHS.indexOf(new URL(request.url).pathname) !== -1
+
   event.respondWith(
-    caches.match(request).then(function (hit) {
-      if (hit) return hit
-      return fetch(request).then(function (res) {
-        if (res && res.ok && res.type === 'basic') {
-          var copy = res.clone()
-          caches.open(CACHE_NAME).then(function (cache) {
-            return cache.put(request, copy)
-          })
-        }
+    cacheMatch(request).then(function (hit) {
+      // Static assets: cache-first. Shell pages: stale-while-revalidate.
+      if (hit && !isShell) return hit
+      var network = fetch(request).then(function (res) {
+        event.waitUntil(store(request, res))
         return res
       })
+      if (hit) {
+        event.waitUntil(network.catch(function () {}))
+        return hit
+      }
+      return network
     })
   )
 })
