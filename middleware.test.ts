@@ -143,3 +143,11 @@ test('middleware lets public paths through', async () => {
   assert.equal(res.headers.get('location'), null)
   assert.equal(res.status, 200)
 })
+
+test('middleware lets signed-out requests reach the legal pages (/terms, /privacy, /dpa)', async () => {
+  for (const path of ['/terms', '/privacy', '/dpa']) {
+    const res = await middleware(new NextRequest('http://localhost' + path))
+    assert.equal(res.headers.get('location'), null, path)
+    assert.equal(res.status, 200, path)
+  }
+})
