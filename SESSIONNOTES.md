@@ -904,3 +904,25 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - run the live Preview checks (Preview is now behind Vercel SSO).
   - **Linear:** no `LINEAR_API_KEY` here, so `orchestrate.js done` could not sync. The daily `sync-fix` job will push the new statuses.
 - **Gotcha (if any):** two sessions given the same backlog will build the same tasks. Check `gh pr list` / open PRs for a task ID before starting it, and push to a fresh branch name if the task branch already exists on origin.
+
+## 2026-11-21 01:45 — S4-LAUNCH-002: seven-flow staging smoke suite
+
+- **Task:** S4-LAUNCH-002, branch `feat/s4-S4-LAUNCH-002-smoke`
+- **Models:** planner=opus, executor=sonnet; security review=hudo-security-reviewer (fit to merge after fixes, applied)
+- **Outcome:** partial. The suite is built and its PR is open. It has **never run against staging**, because this session has no URL or credentials.
+- **Notes:**
+  - **What it is:** one serial spec, `tests/e2e/smoke/smoke.spec.ts`, covering register → invite and accept → upload → comment and resolve → PDF (API) → guest link → Stripe test upgrade.
+  - **Config and workflow:** it has its own config and is excluded from the root Playwright config. `.github/workflows/smoke.yml` runs on push to `main` and on manual dispatch, fails if any required secret is missing, and waits for the Vercel deployment.
+  - **Cleanup:** it uses the `purge_agency` RPC, scoped to the run's generated agency, then deletes only the two throwaway auth users.
+  - **Security-review fixes:**
+    - The password is generated per run.
+    - Traces are off, and the report is uploaded only on failure.
+    - The dispatch has no URL input.
+    - Secrets are scoped per step.
+    - A guard requires the Supabase project ref to match the repo variable `SMOKE_SUPABASE_PROJECT_REF`.
+    - `SMOKE_EMAIL_DOMAIN` is required.
+  - **Human-only before the first run:**
+    - Secrets: `PLAYWRIGHT_TEST_URL`, `SMOKE_SUPABASE_URL`, `SMOKE_SUPABASE_SERVICE_ROLE_KEY`, `SMOKE_EMAIL_DOMAIN`.
+    - The variable `SMOKE_SUPABASE_PROJECT_REF`.
+    - Staging must have `NEXT_PUBLIC_BILLING_ENABLED=true` and the Stripe test webhook.
+- **Gotcha (if any):** Playwright traces and the HTML report record typed passwords and cookies, and artifacts on a public repo are downloadable. Never upload traces from a workflow that types a real credential. Also, `scripts/check-secrets.sh` skips `tests/`.
