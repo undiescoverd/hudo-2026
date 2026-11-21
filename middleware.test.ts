@@ -143,3 +143,9 @@ test('middleware lets public paths through', async () => {
   assert.equal(res.headers.get('location'), null)
   assert.equal(res.status, 200)
 })
+
+test('middleware serves /offline without auth (no sign-in redirect)', async () => {
+  const res = await middleware(new NextRequest('http://localhost/offline'))
+  assert.equal(res.headers.get('location'), null)
+  assert.equal(res.status, 200)
+})
