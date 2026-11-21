@@ -43,8 +43,16 @@ describe('/dpa page', () => {
     }
   })
 
-  it('uses a placeholder for the processor rather than an invented name', () => {
-    assert.match(html, /\[Company legal name\]/)
-    assert.doesNotMatch(html, /Resolve Labs/)
+  it('names the processor as Resolve Labs Ltd, matching the acceptance modal', () => {
+    assert.match(html, /Resolve Labs Ltd/)
+  })
+
+  it('exposes the sub-processor list at the #sub-processors anchor the modal links to', () => {
+    assert.match(html, /<section id="sub-processors"/)
+  })
+
+  it('states only the clauses the acceptance modal states (no audit or schedule clauses)', () => {
+    assert.doesNotMatch(html, /Schedule 1/)
+    assert.doesNotMatch(html, /Audits/)
   })
 })

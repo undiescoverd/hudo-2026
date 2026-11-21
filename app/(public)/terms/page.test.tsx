@@ -30,8 +30,13 @@ describe('/terms page', () => {
     assert.match(html, /href="\/dpa"/)
   })
 
-  it('uses placeholders rather than an invented company identity', () => {
-    assert.match(html, /\[Company legal name\]/)
+  it('names the operator as Resolve Labs Ltd and keeps other details as placeholders', () => {
+    assert.match(html, /operated by Resolve Labs Ltd/)
     assert.match(html, /\[Company registration number\]/)
+  })
+
+  it('brackets the VAT treatment instead of asserting it', () => {
+    assert.match(html, /\[VAT treatment to be confirmed\.\]/)
+    assert.doesNotMatch(html, /exclusive of VAT/)
   })
 })

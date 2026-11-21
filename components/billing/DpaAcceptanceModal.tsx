@@ -11,6 +11,7 @@
  */
 
 import React, { useState } from 'react'
+import Link from 'next/link'
 import { Checkbox } from '@/components/ui/checkbox'
 
 const DPA_TEXT = `
@@ -31,7 +32,7 @@ The Data Processor shall process Personal Data only on the documented instructio
 The Data Processor shall implement appropriate technical and organisational measures to ensure a level of security appropriate to the risk, including encryption at rest and in transit, access controls, and regular security assessments.
 
 5. Sub-processors
-The Data Controller authorises the engagement of sub-processors as listed in Hudo's Sub-processor List (available at hudo.io/legal/sub-processors), subject to notice of changes.
+The Data Controller authorises the engagement of sub-processors as listed in Hudo's Sub-processor List (available at /dpa#sub-processors), subject to notice of changes.
 
 6. Data Subject Rights
 The Data Processor shall assist the Data Controller in fulfilling obligations to respond to requests from data subjects exercising their rights under UK GDPR.
@@ -106,6 +107,16 @@ export function DpaAcceptanceModal({ agencyId, onAccepted, onCancel }: DpaAccept
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
             You must accept this agreement before activating a paid plan.
+          </p>
+          <p className="text-sm mt-1">
+            <Link
+              href="/dpa#sub-processors"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              View the full Data Processing Agreement and sub-processor list
+            </Link>
           </p>
         </div>
 

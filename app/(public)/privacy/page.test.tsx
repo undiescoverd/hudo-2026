@@ -46,4 +46,9 @@ describe('/privacy page', () => {
   it('links to the DPA for processor terms', () => {
     assert.match(html, /href="\/dpa"[^>]*>Data Processing Agreement<\/a>/)
   })
+
+  it('names the controller as Resolve Labs Ltd and brackets the subprocessor terms claim', () => {
+    assert.match(html, /Resolve Labs Ltd/)
+    assert.match(html, /written agreement \[to be confirmed\]/)
+  })
 })

@@ -27,7 +27,7 @@ export default function TermsPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold">1. Who we are</h2>
           <p>
-            Hudo is a video review platform for talent agencies, operated by [Company legal name],
+            Hudo is a video review platform for talent agencies, operated by Resolve Labs Ltd,
             registered in England and Wales under company number [Company registration number], with
             its registered office at [Registered address].
           </p>
@@ -81,9 +81,8 @@ export default function TermsPage() {
           <h2 className="text-xl font-semibold">6. Subscriptions and payment</h2>
           <p>
             Paid plans are billed in advance through Stripe, monthly or annually, in pounds
-            sterling. Prices are shown exclusive of VAT, which is added where applicable under UK
-            VAT rules. Plans renew automatically until cancelled. [Cancellation, refund and
-            price-change terms to be confirmed.]
+            sterling. [VAT treatment to be confirmed.] Plans renew automatically until cancelled.
+            [Cancellation, refund and price-change terms to be confirmed.]
           </p>
         </section>
 
