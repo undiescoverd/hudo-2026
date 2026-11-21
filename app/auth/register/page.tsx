@@ -238,6 +238,18 @@ export default function RegisterPage() {
             {loading ? 'Creating account…' : 'Create account'}
           </button>
         </form>
+
+        <p className="text-center text-xs text-muted-foreground">
+          By creating an account you agree to the{' '}
+          <Link href="/terms" className="underline underline-offset-4 hover:text-foreground">
+            Terms of Service
+          </Link>{' '}
+          and{' '}
+          <Link href="/privacy" className="underline underline-offset-4 hover:text-foreground">
+            Privacy Policy
+          </Link>
+          .
+        </p>
       </div>
     </main>
   )

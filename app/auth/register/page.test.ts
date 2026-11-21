@@ -32,4 +32,10 @@ describe('RegisterPage — source invariants (S4-JOURNEY-001)', () => {
     assert.match(source, /setSubmitted\(true\)/)
     assert.match(source, /Check your email/)
   })
+
+  it('links the Terms and Privacy Policy under the form (S4-LAUNCH-001)', () => {
+    assert.match(source, /By creating an account you agree to the/)
+    assert.match(source, /<Link href="\/terms"/)
+    assert.match(source, /<Link href="\/privacy"/)
+  })
 })

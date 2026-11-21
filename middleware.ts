@@ -12,8 +12,7 @@ const PUBLIC_PATHS = [
   '/auth/reset-password',
   '/auth/callback',
   '/guest',
-  // Legal and offline pages — the pages themselves land with LAUNCH-001 / PWA-001
-  // (until then they 404, which is harmless).
+  // Legal pages (app/(public)/) — drafted copy, awaiting legal review.
   '/terms',
   '/privacy',
   '/dpa',
