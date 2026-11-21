@@ -60,6 +60,11 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
   // The draft video created by the first presign. Retries reuse it so a failed
   // upload never leaves a new empty draft behind per attempt.
   const draftVideoIdRef = useRef<string | undefined>(targetVideoId)
+  // Next may reuse this component across /upload?videoId=A → B (or → /upload),
+  // so keep the ref in step with the URL rather than only the first mount.
+  useEffect(() => {
+    draftVideoIdRef.current = targetVideoId
+  }, [targetVideoId])
 
   const needsTalent = !targetVideoId && isAgentClassRole(role)
 
@@ -69,17 +74,21 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
       const membership = await fetchMembership()
       let resolvedAgencyId = membership.agencyId
       if (targetVideoId) {
-        // RLS-scoped lookup; a miss leaves the membership agency so the presign
-        // error ("Video not found in this agency") surfaces on upload.
+        // RLS-scoped lookup. A miss (unknown, foreign or not-allowed id) stops
+        // here with a clear error, before the user picks a file. The presign
+        // route still enforces agency + ownership server-side.
         const { data: video, error: videoError } = await createClient()
           .from('videos')
           .select('title, agency_id')
           .eq('id', targetVideoId)
           .maybeSingle()
-        if (!videoError && video?.agency_id) {
-          resolvedAgencyId = video.agency_id as string
-          setTargetTitle((video.title as string | null) ?? null)
+        if (videoError) throw new Error('Failed to load video')
+        if (!video?.agency_id) {
+          setSetupError('Video not found, or you can’t upload a new version of it')
+          return
         }
+        resolvedAgencyId = video.agency_id as string
+        setTargetTitle((video.title as string | null) ?? null)
       } else if (isAgentClassRole(membership.role)) {
         setRoster(await fetchTalentRoster(createClient(), membership.agencyId))
       }

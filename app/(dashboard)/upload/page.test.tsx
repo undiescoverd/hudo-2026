@@ -36,6 +36,11 @@ describe('UploadPage — new version mode', () => {
     assert.match(source, /of “\{targetTitle\}”/)
   })
 
+  it('stops with a setup error (not ready) when the target video lookup misses', () => {
+    assert.match(source, /if \(!video\?\.agency_id\) \{\s*setSetupError\(/)
+    assert.match(source, /if \(videoError\) throw new Error\('Failed to load video'\)/)
+  })
+
   it('hides the talent picker and never sends talentId in version mode', () => {
     assert.match(source, /const needsTalent = !targetVideoId && isAgentClassRole\(role\)/)
     assert.match(source, /talentId: needsTalent \? talentId : undefined/)
@@ -44,7 +49,12 @@ describe('UploadPage — new version mode', () => {
   it('seeds and resets the draft video id to the target so no new video is created', () => {
     assert.match(source, /useRef<string \| undefined>\(targetVideoId\)/)
     assert.doesNotMatch(source, /draftVideoIdRef\.current = undefined/)
-    assert.equal([...source.matchAll(/draftVideoIdRef\.current = targetVideoId/g)].length, 2)
+    // two reset handlers + the effect that follows URL changes
+    assert.equal([...source.matchAll(/draftVideoIdRef\.current = targetVideoId/g)].length, 3)
+    assert.match(
+      source,
+      /useEffect\(\(\) => \{\s*draftVideoIdRef\.current = targetVideoId\s*\}, \[targetVideoId\]\)/
+    )
   })
 
   it('redirects to /videos/<id> on success and skips MetadataForm in version mode', () => {

@@ -924,3 +924,17 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - run the live Preview checks (Preview is now behind Vercel SSO).
   - **Linear:** no `LINEAR_API_KEY` here, so `orchestrate.js done` could not sync. The daily `sync-fix` job will push the new statuses.
 - **Gotcha (if any):** two sessions given the same backlog will build the same tasks. Check `gh pr list` / open PRs for a task ID before starting it, and push to a fresh branch name if the task branch already exists on origin.
+
+## 2026-11-21 — S4-REVIEW-001 (#198) review, update from main, review fixes
+
+- **Task:** S4-REVIEW-001, PR #198
+- **Models:** planner=opus; reviewers=sonnet code reviewer + hudo-security-reviewer
+- **Outcome:** partial. The code is ready to merge. The live Preview check (a v2 upload as talent and as agent) is still to do.
+- **Notes:**
+  - Merged origin/main into the branch with no conflicts.
+  - **Security review:** fit to merge. Presign and complete already check the agency and that a talent owns the video, and the version number still comes from `create_video_version`.
+  - **Code review:** no blockers. Two small fixes applied:
+    - the draft-id ref now follows `targetVideoId` through a `useEffect`, so going from `/upload?videoId=A` to `B` can't reuse A;
+    - a failed video lookup now shows a setup error before a file is picked, instead of a 404 after upload.
+  - Format, type-check, lint and build pass; unit tests 1739/1739.
+- **Gotcha (if any):** auto mode blocked `gh pr merge` from the agent, so merges are left to Ian.
