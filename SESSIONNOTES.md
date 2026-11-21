@@ -607,6 +607,15 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Notes:** Flow 01: auto In review on first agent open; warn-then-allow approve with open comments; new version on Approved re-opens review; changes requested requires ≥1 open comment; confirm only when leaving Approved; "N open comments on v1" note on v2; talent in 2 agencies = one list + agency label; dropped upload = tab-close warning + part retry + Retry (no resume). Flow 02: guests see NO comments; optional link label (no Hudo email); guests read-only for MVP; expiry presets 24h/3d/7d/Never, default 3d, expired links auto-hide; links show version + "Share v3 instead" nudge; links stop when subscription ends. Also confirmed: uploads have no resume/retry/beforeunload today.
 - **Gotcha (if any):** none
 
+## 2026-10-17 23:45 — Guest-link gaps: hide Share for talent; renewals don't count as views
+
+- **Task:** fix/guest-link-share-role-and-view-count, two gaps found mapping Flow 02 (guest review link) in Paper
+- **Models:** planner=opus, executor=opus (small, tightly scoped), reviewers=hudo-security-reviewer + general-purpose code review (sonnet)
+- **Outcome:** done (PR open)
+- **Notes:** (1) The video page mounted `GuestShareButton` for every role, but the guest-links API is `requireAgentRole`, so talent saw a button that always 403'd. `GET /api/videos/:id/versions` now also returns the caller's `role`; `GuestShareButton` now takes a required `role` prop and renders nothing unless `isAgentPlusRole(role)` (null until loaded, so no flash; every future mount is gated too). `AGENT_PLUS_ROLES` moved to the dependency-free `lib/roles.ts` (re-exported from `lib/api-helpers.ts`) so the client gate uses the exact list the API enforces. (2) `GET /api/guest/:token/playback-url` ran `increment_guest_link_view` on every signed-URL fetch, and `GuestPlayer` renews every ~12 min, so one long watch counted several times. Renewals (`fetchUrl(true)`, including its 30 s retry) now send `?renew=1` via `lib/guest-playback.ts`, and the route skips the RPC for them; token checks, the 20/min rate limit and the response shape are unchanged. Decided with Ian: a page reload still counts as a view, and `last_viewed_at` isn't refreshed on renewals (no migration).
+- **Review follow-up (automated PR review):** added behavioural tests: the real playback `GET` handler runs against a stubbed PostgREST (`globalThis.fetch`) with an offline R2 presigner (load = +1, renewal = +0, a 2-hour watch counts once, a reload counts again), and `GuestShareButton` is render-tested via `react-dom/server`. Mutation-checked: inverting either guard fails the tests.
+- **Gotcha (if any):** `tsx --test '<path with [token]>'` treats the brackets as a glob and silently runs **0 tests**. Run a single bracketed-path test as `pnpm exec tsx '<path>'` (node:test auto-runs). Also, tsx compiles component JSX with the classic runtime, so a render test must `Object.assign(globalThis, { React })` before dynamically importing the component. A helper shared by a `'use client'` component and an API route must live in a pure `lib/*.ts` with no server imports: not exported from `route.ts` (that breaks `next build`) and not in `lib/api-helpers.ts` (it imports `next/server`).
+
 ## 2026-10-18 — GitHub issues filed for flow decisions
 
 - **Task:** File issues for the Flow 01/02 decisions + gaps (Ian approved all)
@@ -803,6 +812,22 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - `tsx --test` can't take explicit bracketed paths (`[videoId]`); run those files with `npx tsx "<path>"`.
   - Rendering components in Node tests needs `globalThis.React = React`, because tsx compiles JSX to classic `React.createElement`.
 
+## 2026-10-24 04:30 — comments_select follows video visibility; un-delete blocked (migration 0030)
+
+- **Task:** follow-up from the #196 audit of migration 0029 (comments video-scope; number 0030 noted in `tasks/sprint-4.md`)
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** partial. Code, tests and local pgTAP are done. Applying 0029/0030 to hudo-dev and hudo-staging is left to Ian (no DB credentials in the cloud session): `sh scripts/db-push.sh local --dry-run --include-all`, then `staging`. The dry-run should list 0029 (if #196 isn't applied yet) and 0030.
+- **Notes:**
+  - **What `0030_comments_select_video_scope.sql` does:**
+    - Recreates `comments_select` with two branches: agent+ (`owner`/`admin_agent`/`agent`) reads every comment in their agencies; any other member (talent) reads only comments on versions of videos with `videos.talent_id = auth.uid()`. That matches `videos_select_talent` and `video_versions_select`. Still no `deleted_at` filter (#187), so soft-deleted rows stay visible to whoever can see the video.
+    - Adds the `prevent_comment_undelete` BEFORE UPDATE trigger: `deleted_at` non-null to null raises 23514 'Soft-deleted comments cannot be restored'. Without it, `comments_update_own` / `comments_update_agents` let a client undo a soft delete. That was already possible on live since 0002; only databases carrying the never-applied 0004 filter blocked it.
+  - **`tests/rls/comments.test.sql`:** plan 15 to 23. Adds a second talent (Cora) with her own video and a live plus a soft-deleted comment. New assertions cover talent isolation (Clara can't see Cora's live or soft-deleted comment; Cora sees only her 2), agent visibility of soft-deleted rows, both un-delete attempts (talent and agent) and a forward direct soft delete still working. Tests are now numbered one per assertion.
+  - **Test 11 (old numbering) restructured:** it un-deleted C2 as superuser to set up the resolve test. The trigger fires for every role, so that line now fails. Charlie resolves Clara's live comment `c0de0003-...-0099` (Clara's own video) instead. Old Test 13 no longer re-soft-deletes C2 (it stays deleted since Test 8).
+  - **Guard test `lib/comments-read-guard.test.ts`:** scans `app/`, `lib/`, `hooks/` for `.from('comments')` read chains and fails unless each has `.is('deleted_at', null)` or selects `deleted_at`. 7 read chains and 3 write chains on the current tree, all fine. Not an RLS substitute: the API routes read through the service-role client, so app code is the only filter there (the dashboard `comments` embeds use the session client and filter `comments.deleted_at` themselves).
+  - **Local pgTAP (no supabase CLI):** throwaway PG16 cluster with a minimal Supabase scaffold, all migrations in order (26 with 0030, 25 without), then every file in `tests/rls/`. Baseline (no 0030, original test): 15 files, 124 tests, green. With 0030 and the new test: 15 files, 132 tests, green. The new test against the baseline schema fails exactly the 7 talent-isolation and un-delete assertions.
+  - **Not changed here:** `comments_insert` (write path). Aligning it with `comments_select` is a follow-up candidate.
+- **Gotcha (if any):** the un-delete trigger fires for every role, superuser and service_role included, so test fixtures and data repairs can't reset `deleted_at` to NULL. If it's ever genuinely needed, disable the trigger explicitly as postgres (`ALTER TABLE comments DISABLE TRIGGER prevent_comment_undelete`) and re-enable it.
+
 ## 2026-10-24 — S4-JOURNEY-004: middleware moved to project root (PR #188, awaiting live walk + merge)
 
 - **Task:** S4-JOURNEY-004 (RES-221). Also landed PR #185 (merge commit, Ian approved) as handoff step 1.
@@ -879,3 +904,53 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - **Format, type-check, lint and build:** all clean.
   - **Apply:** 0027 and 0029 are already applied, so 0024/0025 need `--include-all`. Run `sh scripts/db-push.sh local --dry-run --include-all`; it should list 0024, 0025 and 0029 if 0029 isn't applied yet. Then the same for `staging`.
 - **Gotcha (if any):** `/tmp/claude-0` is root-owned mode 700, so a postgres-owned cluster can't live in the scratchpad. Use `/var/tmp`. To run real pgTAP without a package, generate it: `sed -e 's,MODULE_PATHNAME,$libdir/pgtap,g' -e 's,__OS__,linux,g' -e 's,__VERSION__,1.3,g' sql/pgtap.sql.in > pgtap.sql`, then `psql -f pgtap.sql`.
+
+## 2026-11-21 00:30 — Sprint 4 wave: 6 tasks merged, 4 duplicate/old PRs closed or merged
+
+- **Task:** "do what's next and keep going": the unblocked S4 tasks plus the open PR backlog
+- **Models:** planner=opus; executors=sonnet (ERASE, SAVER, PWA, LAUNCH-004) and haiku (LAUNCH-001) in parallel worktrees; reviewers: hudo-security-reviewer (ERASE, PWA), rls-tenancy-auditor (SAVER), and a sonnet code reviewer (ERASE, LAUNCH-001, LAUNCH-004)
+- **Outcome:** partial. Sprint 4 is at 14/19. Every task that could be built in this container is merged.
+- **Notes:**
+  - **Merged:**
+    - #175 (flow inventory), #203 (S4-DELETE-001), #195 (callback rate limit) and #209 (tracker);
+    - #197 (S4-REVIEW-002) and #158 (guest-link fixes);
+    - #210 (S4-SAVER-001), #211 (S4-PWA-001), #212 (S4-ERASE-001), #213 (S4-LAUNCH-004) and #214 (S4-LAUNCH-001).
+  - **Review findings fixed before merge:**
+    - **SAVER (high):** `purge_empty_drafts` picked its candidates with no lock, so an upload completing at the same moment could lose its new version. Fixed with `FOR UPDATE SKIP LOCKED` plus a recheck on each row, a cap of 500 per run, and an exception block per row.
+    - **ERASE (medium, high in the code review):** a scoped removal deleted the membership before erasing the account, so a failed erasure couldn't be retried by the agency. Now the code counts the other memberships first and deletes nothing until it knows. Also added: a purge of agencies where only videos remain, no raw error text in Sentry, and behavioural route tests.
+    - **LAUNCH-001 (high):** the pages disagreed with the DPA modal owners accept, and the modal linked a dead URL. The pages now name "Resolve Labs Ltd" (to confirm) and the modal links `/dpa#sub-processors`.
+    - **LAUNCH-004 (medium):** the checklist had no defined agency for owners of several. It now covers every owned agency and shows the first incomplete one.
+    - **PWA (lows only):** the cache no longer stores redirected or 206 responses, and tests drive the real fetch handler.
+  - **Merge conflict on #158 vs #197:** both had added a source for the viewer's role on the video page (the versions response, and a `memberships` query). The versions response is now the only source, because two lookups would race on the same state.
+  - **Duplicates:** another session built S4-PWA-001 (#205) and S4-LAUNCH-001 (#206), and marked S4-JOURNEY-004 done (#204), in parallel with this one. Ian chose the reviewed versions, so those three are closed with notes.
+  - **Drafts:** #198, #199, #201 and #202 are updated from main and merge cleanly, but are left as drafts. #199 (0030) passes all 17 RLS files under real pgTAP.
+  - **Still for a human:**
+    - apply migrations 0024, 0025, 0026, 0029 and 0030 to dev and staging with `db-push.sh --include-all`;
+    - apply the R2 multipart-abort lifecycle rule (dev, staging, and prod before launch);
+    - confirm the legal entity name and do the legal review;
+    - supply brand icons and test PWA installs on real phones;
+    - run the live Preview checks (Preview is now behind Vercel SSO).
+  - **Linear:** no `LINEAR_API_KEY` here, so `orchestrate.js done` could not sync. The daily `sync-fix` job will push the new statuses.
+- **Gotcha (if any):** two sessions given the same backlog will build the same tasks. Check `gh pr list` / open PRs for a task ID before starting it, and push to a fresh branch name if the task branch already exists on origin.
+
+## 2026-11-21 16:00 — S4-DESIGN-001 design v3 foundation
+
+- **Task:** S4-DESIGN-001 (part of #217): tokens, fonts, palette remap, app shell, StatusPill, Button
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done (PR open, not merged)
+- **Notes:**
+  - v3 tokens live in `app/globals.css`; the shadcn HSL vars point at them. The default `gray`/`blue`/`red`/`green`/`amber`/`yellow` scales are remapped in `tailwind.config.ts`, so about 370 hardcoded utilities reskin with no per-file edits. `blue` is now the coral scale.
+  - `StatusBadge` (lib/video-status.ts) and `StatusFilter` now render `StatusPill`, so status labels changed from lowercase ("pending review") to the fixed v3 labels. `STATUS_STYLES` was removed.
+  - `components/ui/button.tsx` (cva, no new dependency) is added but adopted nowhere yet.
+  - Contrast pairs were checked with a throwaway script. `gray-400` was darkened to `#70737a` to pass 4.5:1 on white.
+- **Gotcha (if any):** raw v3 tokens named `--accent`/`--muted` would collide with the shadcn `--accent`/`--muted` HSL vars, so the raw ones are `--coral*` and `--text-muted`.
+
+## 2026-11-21 — S4-DESIGN-001 visual check (local, staging data)
+
+- **Task:** S4-DESIGN-001 (#219)
+- **Models:** planner=opus, executor=sonnet
+- **Outcome:** done (PR green, waiting on merge)
+- **Notes:** Screenshots of /dashboard, /talent, /upload and a video page, as owner and talent against staging data, confirm the reskin. Fixed in f677d61:
+  - checkboxes were coral, because they used `--primary`; they're graphite now;
+  - `NotificationBell` focused itself on every page load, because its focus-return effect ran on mount. That's an accessibility bug from before v3 that the coral ring made visible.
+- **Gotcha (if any):** hudo-dev was paused (its hostname didn't resolve; sign-in shows "Invalid email or password"). For a local walk, run `set -a; . ./.env.staging; set +a; pnpm dev` and sign in with the `*@hudo.test` seed accounts. Repeated scripted sign-ins hit the auth rate limit ("Too many sign-in attempts"), so sign in once per context.

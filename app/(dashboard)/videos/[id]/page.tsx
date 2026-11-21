@@ -24,8 +24,9 @@ export default function VideoPage({ params }: Props) {
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [agencyId, setAgencyId] = useState<string | null>(null)
-  // The viewer's role in this video's agency; gates which comment actions render
-  // (the API re-checks them). null = not loaded yet, or the lookup failed: no actions.
+  // The viewer's role in this video's agency, from the versions endpoint. It gates
+  // Share and which comment actions render (the APIs re-check both). null = not
+  // loaded yet, or the lookup failed: agent-only controls never flash for talent.
   const [role, setRole] = useState<string | null>(null)
   // null = still loading (or not yet retried); passed straight through to
   // VersionSelector so it doesn't issue its own duplicate GET request.
@@ -81,8 +82,15 @@ export default function VideoPage({ params }: Props) {
     return fetch(`/api/videos/${params.id}/versions`)
       .then(async (res) => {
         if (!res.ok) throw new Error(`versions fetch failed (${res.status})`)
-        const data = (await res.json()) as { agencyId: string; versions: Version[] }
+        const data = (await res.json()) as {
+          agencyId: string
+          role?: string
+          versions: Version[]
+        }
         if (data.agencyId) setAgencyId(data.agencyId)
+        if (data.role) setRole(data.role)
+        // Share stays hidden without a role — make that contract break visible.
+        else console.warn('[video-page] versions response missing role; hiding Share')
         setVersions(data.versions ?? [])
       })
       .catch((err: unknown) => {
@@ -107,32 +115,6 @@ export default function VideoPage({ params }: Props) {
     void fetchVersions()
   }, [isValidId, fetchVersions])
 
-  // Role in the video's agency, read from `memberships` under RLS (members can read
-  // their own agency's rows) as the upload page does. Needs both ids, so it runs
-  // after the two bootstrap fetches. On failure the panel just renders without actions.
-  useEffect(() => {
-    if (!isValidId || !userId || !agencyId) return
-    let cancelled = false
-    void (async () => {
-      try {
-        const { data, error } = await createClient()
-          .from('memberships')
-          .select('role')
-          .eq('user_id', userId)
-          .eq('agency_id', agencyId)
-          .single()
-        if (error || !data) throw error ?? new Error('No membership found')
-        if (!cancelled) setRole(typeof data.role === 'string' ? data.role : null)
-      } catch (err) {
-        console.error('[video-page] role fetch failed:', err)
-        if (!cancelled) setRole(null)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [isValidId, userId, agencyId])
-
   if (!isValidId) {
     notFound()
   }
@@ -150,7 +132,7 @@ export default function VideoPage({ params }: Props) {
         >
           ← Back to videos
         </Link>
-        <GuestShareButton videoId={params.id} />
+        <GuestShareButton videoId={params.id} role={role} />
       </div>
       <div className="px-4 pt-2">
         <VersionSelector

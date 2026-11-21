@@ -12,6 +12,9 @@ const CSP_DIRECTIVES = [
   // 'unsafe-eval' required in dev for Next.js React Fast Refresh (HMR)
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval' https://eu-assets.i.posthog.com" : ''}`,
   "style-src 'self' 'unsafe-inline'",
+  // Service worker (/sw.js). Without this it falls back to script-src; explicit
+  // so a future tightening of script-src can't silently kill the PWA.
+  "worker-src 'self'",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://*.i.posthog.com https://*.posthog.com https://*.r2.cloudflarestorage.com",
   "img-src 'self' data: blob:",
   "media-src 'self' blob: https://*.r2.cloudflarestorage.com",

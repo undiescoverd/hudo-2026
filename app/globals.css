@@ -2,50 +2,106 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design v3 — Graphite & Coral (S4-DESIGN-001).
+ * Raw v3 tokens are plain colour values (read by tailwind.config.ts as-is).
+ * The shadcn variables below them are HSL triplets (Tailwind wraps them in
+ * hsl(...)) and point at the same palette. Light theme only: nothing sets
+ * `.dark`, but the dark set is kept for later.
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --bg: #f5f5f3;
+    --surface: #ffffff;
+    --surface-2: #efefec;
+    --line: #e2e2de;
+    --text: #17181b;
+    --text-muted: #5d6068;
+    --faint: #66696f;
+    --coral: #cc3b18;
+    --coral-on: #ffffff;
+    --coral-text: #b83514;
+    --coral-soft: rgba(217, 67, 31, 0.09);
+    --stage: #0c0c0d;
+
+    --st-draft-fg: #52525b;
+    --st-draft-bg: #ececee;
+    --st-pending-fg: #8a5a00;
+    --st-pending-bg: #fbefcf;
+    --st-review-fg: #1d55c4;
+    --st-review-bg: #e1ebff;
+    --st-changes-fg: #b42318;
+    --st-changes-bg: #fde4e1;
+    --st-approved-fg: #157040;
+    --st-approved-bg: #dcf3e5;
+
+    /* shadcn (HSL triplets) -> v3 */
+    --background: 60 9.1% 95.7%; /* bg */
+    --foreground: 225 8% 9.8%; /* text */
+    --card: 0 0% 100%; /* surface */
+    --card-foreground: 225 8% 9.8%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --popover-foreground: 225 8% 9.8%;
+    --primary: 11.7 78.9% 44.7%; /* accent (coral) */
+    --primary-foreground: 0 0% 100%; /* on-accent */
+    --secondary: 60 8.6% 93.1%; /* surface-2 */
+    --secondary-foreground: 225 8% 9.8%;
+    --muted: 60 8.6% 93.1%;
+    --muted-foreground: 223.6 5.6% 38.6%; /* muted */
+    --accent: 60 8.6% 93.1%;
+    --accent-foreground: 225 8% 9.8%;
+    --destructive: 4.2 76.5% 40%; /* changes fg */
+    --destructive-foreground: 0 0% 100%;
+    --border: 60 6.5% 87.8%; /* line */
+    --input: 60 6.5% 87.8%;
+    --ring: 11.7 78.9% 44.7%;
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --bg: #0f1012;
+    --surface: #16171a;
+    --surface-2: #1f2125;
+    --line: #2a2c31;
+    --text: #ececee;
+    --text-muted: #9a9ca3;
+    --faint: #878a91;
+    --coral: #ff6b4a;
+    --coral-on: #1c0a05;
+    --coral-text: #ff8a6e;
+    --coral-soft: rgba(255, 107, 74, 0.13);
+    --stage: #000000;
+
+    --st-draft-fg: #b4b4bc;
+    --st-draft-bg: rgba(180, 180, 188, 0.13);
+    --st-pending-fg: #f2c14e;
+    --st-pending-bg: rgba(242, 193, 78, 0.14);
+    --st-review-fg: #7fb0ff;
+    --st-review-bg: rgba(127, 176, 255, 0.14);
+    --st-changes-fg: #ff8a80;
+    --st-changes-bg: rgba(255, 138, 128, 0.14);
+    --st-approved-fg: #5fd98c;
+    --st-approved-bg: rgba(95, 217, 140, 0.14);
+
+    --background: 220 9.1% 6.5%;
+    --foreground: 240 5.6% 92.9%;
+    --card: 225 8.3% 9.4%;
+    --card-foreground: 240 5.6% 92.9%;
+    --popover: 225 8.3% 9.4%;
+    --popover-foreground: 240 5.6% 92.9%;
+    --primary: 10.9 100% 64.5%;
+    --primary-foreground: 13 69.7% 6.5%;
+    --secondary: 220 8.8% 13.3%;
+    --secondary-foreground: 240 5.6% 92.9%;
+    --muted: 220 8.8% 13.3%;
+    --muted-foreground: 226.7 4.7% 62.2%;
+    --accent: 220 8.8% 13.3%;
+    --accent-foreground: 240 5.6% 92.9%;
+    --destructive: 4.7 100% 75.1%;
+    --destructive-foreground: 13 69.7% 6.5%;
+    --border: 222.9 7.7% 17.8%;
+    --input: 222.9 7.7% 17.8%;
+    --ring: 10.9 100% 64.5%;
   }
 }
 
@@ -54,6 +110,6 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background font-sans text-foreground;
   }
 }

@@ -85,6 +85,19 @@ describe('VideoPage — source invariants', () => {
     assert.match(source, /activeVersionId && userId && agencyId \? \(/)
   })
 
+  it('passes the role from the versions response to GuestShareButton (which gates itself)', () => {
+    assert.match(source, /<GuestShareButton videoId=\{params\.id\} role=\{role\} \/>/)
+    assert.match(source, /const \[role, setRole\] = useState<string \| null>\(null\)/)
+    assert.match(source, /if \(data\.role\) setRole\(data\.role\)/)
+  })
+
+  it('warns when the versions response has no role (contract break is visible, not silent)', () => {
+    assert.match(
+      source,
+      /console\.warn\('\[video-page\] versions response missing role; hiding Share'\)/
+    )
+  })
+
   it('passes top-level comments to VideoPlayer so CommentTimeline markers render (replies add none)', () => {
     assert.match(source, /<VideoPlayer[\s\S]*?comments=\{timelineComments\}/)
     assert.match(source, /comments\.filter\(\(c\) => c\.parentId === null\)/)
@@ -113,21 +126,16 @@ describe('VideoPage — comment actions wiring (S4-REVIEW-002)', () => {
     source = fs.readFileSync(path.resolve(currentDir, 'page.tsx'), 'utf8')
   })
 
-  it("reads the viewer's role in the video's agency from memberships (RLS, no new API route)", () => {
-    assert.match(source, /\.from\('memberships'\)/)
-    assert.match(source, /\.select\('role'\)/)
-    assert.match(source, /\.eq\('user_id', userId\)/)
-    assert.match(source, /\.eq\('agency_id', agencyId\)/)
-    assert.doesNotMatch(source, /fetch\(`\/api\/[^`]*role/)
+  it("takes the viewer's role from the versions response only (one source, no second lookup)", () => {
+    // The versions endpoint returns the caller's role in this agency (it already
+    // checks the membership). A second `memberships` read would race it on the same state.
+    assert.match(source, /if \(data\.role\) setRole\(data\.role\)/)
+    assert.doesNotMatch(source, /\.from\('memberships'\)/)
+    assert.equal(source.match(/setRole\(/g)?.length, 1)
   })
 
-  it('waits for both the user id and the agency id before looking the role up', () => {
-    assert.match(source, /if \(!isValidId \|\| !userId \|\| !agencyId\) return/)
-  })
-
-  it('logs a failed role lookup and leaves the role null (no actions), not a crash', () => {
-    assert.match(source, /console\.error\('\[video-page\] role fetch failed:', err\)/)
-    assert.match(source, /setRole\(null\)/)
+  it('leaves the role null (no actions) until the versions response provides it', () => {
+    assert.match(source, /const \[role, setRole\] = useState<string \| null>\(null\)/)
   })
 
   it('passes the role and the three comment actions from the hook to CommentPanel', () => {
