@@ -47,9 +47,14 @@ export function NotificationBell() {
     }
   }, [open])
 
-  // Restore focus to button when panel closes
+  // Restore focus to the button when the panel closes — only after it was
+  // actually open, so the bell doesn't steal focus on every page load.
+  const wasOpenRef = useRef(false)
   useEffect(() => {
-    if (!open && buttonRef.current) {
+    if (open) {
+      wasOpenRef.current = true
+    } else if (wasOpenRef.current && buttonRef.current) {
+      wasOpenRef.current = false
       buttonRef.current.focus()
     }
   }, [open])
@@ -62,7 +67,7 @@ export function NotificationBell() {
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className="relative rounded-md p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="relative rounded-md p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {/* Bell SVG icon */}
         <svg

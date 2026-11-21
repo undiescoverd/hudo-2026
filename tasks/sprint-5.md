@@ -333,3 +333,38 @@ FILES:
   - components/guest/GuestPlayer.tsx (+ test)
   - components/player/VideoPlayer.tsx (+ test)
 NOTES: GH #171. Paper: both flow boards' edge cases. Linear RES-217.
+
+---
+
+### WAVE 5 — Agency admin (decision 2026-11-21)
+
+---
+
+- [ ] **S5-ADMIN-001** — Owner can grant billing access to admin agents
+
+TASK_ID: S5-ADMIN-001
+TITLE: Owner can grant billing access to admin agents
+BRANCH: feat/s5-S5-ADMIN-001-billing-access
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - Migration 0031 adds memberships.can_manage_billing (boolean, default false); RLS still derives access from memberships
+  - Owner sees a per-person billing-access toggle on the team page, offered for admin agents only
+  - A granted admin agent sees Billing in the header and can open /settings/billing
+  - Granted admin agents can view the plan and invoices and change the payment method (portal); plan change and cancel stay owner-only
+  - Billing API routes accept a granted admin agent and reject agents, talent and ungranted admin agents
+  - Owner can revoke; it takes effect on the next request
+  - Grant and revoke are written to audit_log
+  - Unit tests for the permission rule, pgTAP for the column/RLS, route tests; security review (billing + app/api/)
+FILES:
+  - supabase/migrations/0031_membership_billing_access.sql
+  - tests/rls/memberships.test.sql
+  - lib/billing-access.ts (+ test)
+  - app/api/agencies/[id]/billing/route.ts (+ test)
+  - app/api/billing/portal/route.ts (+ test)
+  - app/(dashboard)/settings/billing/page.tsx
+  - app/(dashboard)/settings/team/page.tsx (+ test)
+  - components/settings/BillingAccessToggle.tsx (+ test)
+  - components/layout/AppHeader.tsx (+ test)
+NOTES: GH #207 (all three open questions decided 2026-11-21). Paper: "Flow · Every role, end to end", admin agent lane, step 08. Needs an API route (or extension of the team route) for the toggle; add it to FILES when planned. Migration 0031: 0024–0026 and 0028 are reserved, 0029 is on main, 0030 is PR #199. Apply with scripts/db-push.sh. Linear RES-228.
