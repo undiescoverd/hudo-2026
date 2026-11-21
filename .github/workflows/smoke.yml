@@ -7,23 +7,21 @@ name: Staging Smoke (seven flows)
 #   PLAYWRIGHT_TEST_URL              staging base URL (same secret playwright.yml uses)
 #   SMOKE_SUPABASE_URL               staging Supabase project URL
 #   SMOKE_SUPABASE_SERVICE_ROLE_KEY  staging service-role key (cleanup via purge_agency + test seams)
-#   SMOKE_TEST_PASSWORD              password for the throwaway users the run creates
+#   SMOKE_EMAIL_DOMAIN               domain you control for generated addresses (no default)
+# Required repository variable:
+#   SMOKE_SUPABASE_PROJECT_REF       staging Supabase project ref; the run refuses any other project
 # Optional secrets / variables:
-#   SMOKE_EMAIL_DOMAIN               domain for generated addresses (default example.com)
 #   SMOKE_CRON_SECRET                lets cleanup drain the R2 storage_deletions queue immediately
 #   SMOKE_EXPECT_WEBHOOK (variable)  "true" once the staging Stripe test webhook is configured
 # Human-only prerequisites: staging Stripe test webhook; Supabase "confirm email" setting on
 # staging (the suite works either way); NEXT_PUBLIC_BILLING_ENABLED=true on staging.
+# Test-user passwords are generated per run inside the fixture; no password secret exists.
+# The URL comes only from the PLAYWRIGHT_TEST_URL secret (no dispatch override).
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      base_url:
-        description: 'Override the staging URL (otherwise the PLAYWRIGHT_TEST_URL secret)'
-        required: false
-        default: ''
 
 concurrency:
   group: staging-smoke
@@ -38,26 +36,30 @@ jobs:
     name: Smoke (Chromium)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      PLAYWRIGHT_TEST_URL: ${{ github.event.inputs.base_url || secrets.PLAYWRIGHT_TEST_URL }}
-      SMOKE_SUPABASE_URL: ${{ secrets.SMOKE_SUPABASE_URL }}
-      SMOKE_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SMOKE_SUPABASE_SERVICE_ROLE_KEY }}
-      SMOKE_TEST_PASSWORD: ${{ secrets.SMOKE_TEST_PASSWORD }}
-      SMOKE_EMAIL_DOMAIN: ${{ secrets.SMOKE_EMAIL_DOMAIN }}
-      SMOKE_CRON_SECRET: ${{ secrets.SMOKE_CRON_SECRET }}
-      SMOKE_EXPECT_WEBHOOK: ${{ vars.SMOKE_EXPECT_WEBHOOK }}
     steps:
       # FAIL (never skip) when the target is not configured. playwright.yml exits 0 here;
       # a smoke suite that silently passes on a missing URL is worse than none.
       - name: Require staging URL and secrets
+        env:
+          PLAYWRIGHT_TEST_URL: ${{ secrets.PLAYWRIGHT_TEST_URL }}
+          SMOKE_SUPABASE_URL: ${{ secrets.SMOKE_SUPABASE_URL }}
+          SMOKE_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SMOKE_SUPABASE_SERVICE_ROLE_KEY }}
+          SMOKE_EMAIL_DOMAIN: ${{ secrets.SMOKE_EMAIL_DOMAIN }}
+          SMOKE_SUPABASE_PROJECT_REF: ${{ vars.SMOKE_SUPABASE_PROJECT_REF }}
         run: |
           missing=""
-          for v in PLAYWRIGHT_TEST_URL SMOKE_SUPABASE_URL SMOKE_SUPABASE_SERVICE_ROLE_KEY SMOKE_TEST_PASSWORD; do
+          for v in PLAYWRIGHT_TEST_URL SMOKE_SUPABASE_URL SMOKE_SUPABASE_SERVICE_ROLE_KEY SMOKE_EMAIL_DOMAIN SMOKE_SUPABASE_PROJECT_REF; do
             eval "val=\${$v:-}"
             if [ -z "$val" ]; then missing="$missing $v"; fi
           done
           if [ -n "$missing" ]; then
             echo "::error::Smoke suite cannot run, missing:$missing"
+            exit 1
+          fi
+          # Refuse any Supabase project other than staging: the run purges data.
+          host=$(printf '%s' "$SMOKE_SUPABASE_URL" | sed -E 's#^https?://([^/]+).*#\1#')
+          if [ "$host" != "$SMOKE_SUPABASE_PROJECT_REF.supabase.co" ]; then
+            echo "::error::SMOKE_SUPABASE_URL host does not match SMOKE_SUPABASE_PROJECT_REF"
             exit 1
           fi
 
@@ -69,6 +71,7 @@ jobs:
       # no commit to wait on and goes straight to the URL probe.)
       - name: Wait for Vercel deployment
         env:
+          PLAYWRIGHT_TEST_URL: ${{ secrets.PLAYWRIGHT_TEST_URL }}
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.sha }}
           EVENT: ${{ github.event_name }}
@@ -113,14 +116,20 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run smoke suite
+        env:
+          PLAYWRIGHT_TEST_URL: ${{ secrets.PLAYWRIGHT_TEST_URL }}
+          SMOKE_SUPABASE_URL: ${{ secrets.SMOKE_SUPABASE_URL }}
+          SMOKE_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SMOKE_SUPABASE_SERVICE_ROLE_KEY }}
+          SMOKE_SUPABASE_PROJECT_REF: ${{ vars.SMOKE_SUPABASE_PROJECT_REF }}
+          SMOKE_EMAIL_DOMAIN: ${{ secrets.SMOKE_EMAIL_DOMAIN }}
+          SMOKE_CRON_SECRET: ${{ secrets.SMOKE_CRON_SECRET }}
+          SMOKE_EXPECT_WEBHOOK: ${{ vars.SMOKE_EXPECT_WEBHOOK }}
         run: pnpm exec playwright test -c tests/e2e/smoke/playwright.smoke.config.ts
 
       - name: Upload report
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-report
-          path: |
-            playwright-report/
-            test-results/
+          path: playwright-report/
           retention-days: 7

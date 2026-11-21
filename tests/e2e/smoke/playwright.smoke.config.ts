@@ -25,7 +25,8 @@ export default defineConfig({
   reporter: process.env.CI ? [['html', { outputFolder: 'playwright-report' }], ['github']] : 'list',
   use: {
     baseURL,
-    trace: 'retain-on-failure',
+    // Traces would record typed passwords, cookies and tokens; the repo is public.
+    trace: 'off',
     screenshot: 'only-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],

@@ -5,11 +5,11 @@
  *   PLAYWRIGHT_TEST_URL            staging base URL (read by the smoke config)
  *   SMOKE_SUPABASE_URL             staging Supabase project URL
  *   SMOKE_SUPABASE_SERVICE_ROLE_KEY  staging service-role key (cleanup + test seams)
- *   SMOKE_TEST_PASSWORD            password for the users the run creates
- *                                  (8+ chars, one uppercase, one number)
+ *   SMOKE_SUPABASE_PROJECT_REF     staging project ref; the run refuses any other Supabase URL
+ *   SMOKE_EMAIL_DOMAIN             domain you control for generated addresses (no default;
+ *                                  invites/confirmations are mailed there)
+ * User passwords are generated per run (crypto.randomBytes); there is no password env var.
  * Optional env:
- *   SMOKE_EMAIL_DOMAIN             domain for generated addresses (default example.com;
- *                                  use a domain you control, invites/confirmations are mailed)
  *   SMOKE_EXPECT_WEBHOOK           "true" once the staging Stripe test webhook is configured:
  *                                  the upgrade flow then also asserts agencies.plan flips
  *   SMOKE_CRON_SECRET              if set, cleanup also drains the storage_deletions queue by
@@ -57,10 +57,11 @@ export function adminClient(): SupabaseClient {
 
 function newRun(): SmokeRun {
   const runId = `${Date.now().toString(36)}${randomBytes(2).toString('hex')}`
-  const domain = process.env.SMOKE_EMAIL_DOMAIN || 'example.com'
+  const domain = requireEnv('SMOKE_EMAIL_DOMAIN')
   return {
     runId,
-    password: requireEnv('SMOKE_TEST_PASSWORD'),
+    // Meets the password rules (8+, uppercase, number); fresh per run, never stored.
+    password: `Aa1-${randomBytes(12).toString('hex')}`,
     agencyName: `Smoke ${runId}`,
     ownerName: `Smoke Owner ${runId}`,
     ownerEmail: `smoke-owner-${runId}@${domain}`,
