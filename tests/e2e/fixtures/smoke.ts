@@ -55,13 +55,24 @@ export function adminClient(): SupabaseClient {
   )
 }
 
+/**
+ * A fresh random password per run, never stored. Hex alone has no uppercase,
+ * so a random uppercase letter, lowercase letter and digit are added to meet the sign-up rules.
+ */
+function generateRunPassword(): string {
+  const bytes = randomBytes(14)
+  const upper = String.fromCharCode(65 + (bytes[0] % 26))
+  const lower = String.fromCharCode(97 + (bytes[1] % 26))
+  const digit = String(bytes[2] % 10)
+  return upper + lower + digit + bytes.subarray(3).toString('hex')
+}
+
 function newRun(): SmokeRun {
   const runId = `${Date.now().toString(36)}${randomBytes(2).toString('hex')}`
   const domain = requireEnv('SMOKE_EMAIL_DOMAIN')
   return {
     runId,
-    // Meets the password rules (8+, uppercase, number); fresh per run, never stored.
-    password: `Aa1-${randomBytes(12).toString('hex')}`,
+    password: generateRunPassword(),
     agencyName: `Smoke ${runId}`,
     ownerName: `Smoke Owner ${runId}`,
     ownerEmail: `smoke-owner-${runId}@${domain}`,
