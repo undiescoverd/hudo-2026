@@ -747,6 +747,22 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Linear:** this session has no `LINEAR_API_KEY` and the Linear connector failed to connect, so the four issues still need creating, each title starting with its exact task ID. Until then, `sync-check` shows `⚠ ERROR` for them (Failure Log, 2026-06-16 Linear entry).
 - **Gotcha (if any):** a cloud session can push only its designated branch unless the user OKs another. When one PR is already open on it, ask early for a second branch rather than queueing unrelated work behind the merge.
 
+## 2026-10-23 20:44 — Rate limit on `/auth/callback` (follow-up from the #193 security review)
+
+- **Task:** add the Upstash limiter that `/auth/callback` was missing. It was the only auth route without one. The `hudo-security-reviewer` flagged it as a medium on #193.
+- **Models:** planner=opus, executor=sonnet; security review=hudo-security-reviewer
+- **Outcome:** done; PR #195. It was first stacked on #193's head, because #193 adds the test file, then rebased onto `main` after #193 merged.
+- **Notes:**
+  - **Limit:** `auth:callback:ip:<ip>`, 10 per 15 minutes (`AUTH_RATE_WINDOW`). It uses `checkRateLimit(…, 'fail-closed')`, the same as reset-password and invitations, and runs first, before the code is read or exchanged.
+  - **Choice of response:** a plain 429 + `Retry-After`, not a redirect to `/auth/signin?error=rate_limited`. `Retry-After` on a 3xx means "wait before following the redirect", and browsers ignore it. The sign-in page also renders no `?error=` param, not even the existing `error=auth`. A redirect would therefore land the user on a bare form with no reason given.
+  - **Redis outage:** fail-closed, as the policy in `lib/api-helpers.ts` sets for unauthenticated auth routes. The result is a 503 + `Retry-After: 30`.
+  - **Tests:** 6 new cases in `app/auth/callback/route.test.ts`: under the limit (keyed by IP), keyed by the rightmost `x-forwarded-for`, exactly at the limit (still allowed), over the limit (429, code not spent), Upstash down (503, code not spent), and a request with no code. Without the route change, the 5 that need the limiter fail, and the 15 existing cases still pass. The full suite has 1291 passing before the boundary case was added; format, type-check, lint and build are clean.
+  - **Security review:** no blocker, high or medium issue. The reviewer mutation-tested the limiter: moving it after the exchange, making it fail-open, changing the window, making the key global, and removing it were all caught.
+    - Lows fixed: L1, the 429 text said "try the link again", but the PKCE code may expire during the 15-minute wait, so it now also says "or request a new one". L2, changing the limit from 10 to 3 went uncaught, so an at-the-limit case now pins it.
+    - Lows accepted: L3, code-less requests are counted too, the same as reset-password and invitations. L4, completing confirmation and recovery now also depends on Upstash, which is the fail-closed policy.
+    - Pre-existing, for the backlog: `lib/redis.ts` runs INCR and EXPIRE as two calls. If EXPIRE fails after the first INCR, the key has no TTL and that IP stays blocked on every limited route.
+- **Gotcha (if any):** to stub an Upstash outage in a unit test, return a non-2xx response from the fake Upstash endpoint; don't make `fetch` throw. The SDK throws at once on a non-2xx, but it retries a thrown `fetch` 5 times with exponential backoff (about 4 s per test). It also sends even a single `INCR` as a pipeline (`[["incr", key]]`), so stubs must handle both shapes.
+
 ## 2026-10-23 20:55 — S4-REVIEW-004: migration 0029 keeps soft-deleted comments visible to members (#187 option b)
 
 - **Task:** S4-REVIEW-004 (branch `feat/s4-S4-REVIEW-004-comments-select`, built in its own worktree in parallel with S4-REVIEW-002)
@@ -759,6 +775,33 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Docs still describe the RLS filter:** `.claude/agents/rls-tenancy-auditor.md` item 4, `docs/Hudo App 2026/tables/comments.md` and `ADR-005-soft-delete-only.md`. They're outside this task's FILES; follow-up task suggested.
   - **Apply:** `sh scripts/db-push.sh local --dry-run --include-all`, then `staging`. The dry-run should list only 0029. It doesn't change live's policy; it only aligns the tracked history.
 - **Gotcha (if any):** with no RLS `deleted_at` filter on `comments`, app code is the only thing hiding soft-deleted comments. Every new read of `comments` must filter `deleted_at` itself.
+
+## 2026-10-23 21:40 — S4-REVIEW-002: comment actions (reply, resolve, edit, delete)
+
+- **Task:** S4-REVIEW-002 (#191), branch `feat/s4-S4-REVIEW-002-comment-actions`, built in its own worktree in parallel with S4-REVIEW-004
+- **Models:** planner=opus, executor=sonnet; reviews=hudo-security-reviewer (fit to merge) + sonnet code review (simplify included)
+- **Outcome:** partial. The PR is open. The live Preview check (resolve as agent, reply as talent, reply-to-reply 400) still needs `STAGING_SEED_PASSWORD`.
+- **Notes:**
+  - **What was built:**
+    - Per-comment actions, gated by `getCommentPermissions`: Reply on top-level comments, Resolve for agent+, Edit for the author, Delete for the author or agent+.
+    - The viewer's role comes from a client `memberships` read under RLS, as the upload page does.
+    - A "Comment deleted" placeholder when a deleted comment has replies.
+    - The empty state follows what's actually visible.
+    - The POST route returns 400 "Replies can only be one level deep". The 23514 backstop only applies to replies, and logs.
+  - **Security review: fit to merge.** Its two lows are fixed: a stale Realtime UPDATE can no longer resurrect a deleted comment, and the backstop now logs.
+  - **Code review fixes:**
+    - Space on a focused button no longer toggles playback (`usePlayerShortcuts`).
+    - Optimistic resolve and edit only own their fields, and roll back only if those fields are untouched, so concurrent Realtime updates aren't clobbered.
+    - A 404 on PATCH or DELETE marks the comment deleted.
+    - Focus is kept after save, delete and reply.
+    - Regex-on-source tests were replaced by pure extractions (`runCommentDelete`, `editKeyAction`, `resolveCommentTarget`, `itemReducer`).
+    - `buildThreads` owns visibility.
+  - **Decisions:** resolve stays allowed on replies (resolved state only feeds the per-comment PDF status). Timeline markers show top-level comments only.
+  - **FILES deviation:** `page.tsx` (role wiring), `hooks/usePlayerShortcuts.ts` (Space fix) and the new `components/comments/*` helpers.
+  - **Worker restart:** a restart killed one full-suite run mid-way (exit 137). The worktrees survived, and the re-run is green (1443).
+- **Gotcha (if any):** `GET /comments` omits soft-deleted parents, so a reload orphans their replies; `buildThreads` rebuilds a placeholder parent client-side. Two more:
+  - `tsx --test` can't take explicit bracketed paths (`[videoId]`); run those files with `npx tsx "<path>"`.
+  - Rendering components in Node tests needs `globalThis.React = React`, because tsx compiles JSX to classic `React.createElement`.
 
 ## 2026-10-24 — S4-JOURNEY-004: middleware moved to project root (PR #188, awaiting live walk + merge)
 
@@ -794,6 +837,22 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - **Change:** the success screen now says "If <email> is new to Hudo, we sent a confirmation link" and links to sign-in and forgot-password. A test pins the neutral wording.
   - **Follow-up:** S4-AUTH-001 / #200 emails the existing account's owner (per-address rate limit, constant-time response, mandatory security review).
 - **Gotcha (if any):** "I signed up and got no email" on a known address is not a mail fault: check Supabase Authentication → Users for an existing confirmed row before touching SMTP. Resend → Emails showing no send at all is the tell.
+
+## 2026-10-30 — PR triage: 4 merged, #188 conflict resolved
+
+- **Task:** audit all 13 open PRs for merge readiness; merge the ready ones; unblock #188 (S4-JOURNEY-004)
+- **Models:** planner=opus; PR audit=sonnet (read-only)
+- **Outcome:** partial. Four PRs merged; #188 is conflict-free and waiting on CI and its signed-in role walk.
+- **Notes:**
+  - **CI:** real CI was green on all 13 PRs. The only red checks were "AI Code Review" and pullfrog, which still fail on DeepSeek `402 Insufficient Balance`. No PR has a Claude Approvals check.
+  - **Merged (squash, Ian approved):** #173 (CSP export), #157 (forgot-password link), #177 (Sprint 5 backlog), #196 (0029, S4-REVIEW-004).
+  - **0029 is not applied yet.** Run `sh scripts/db-push.sh local --dry-run`, then `local`, then the same for `staging`.
+  - **#188:** merged main in. The only conflict was SESSIONNOTES.md, where both sides had appended entries; both are kept, in date order. I confirmed `/auth/forgot-password` (linked from #157) is in the root middleware's public paths. Format, type-check, lint, 1303/1303 unit tests and build all pass.
+  - **Merge order for the rest:**
+    - #199 (0030) is stacked on #196, so it is next in the comments chain; #201 (docs) follows it.
+    - #197, #198 and #158 all edit `app/(dashboard)/videos/[id]/page.tsx` and its test, so the second and third of them to merge will conflict.
+    - #175 needs one doc fix: row F25 should read `#143, #144–#148`.
+- **Gotcha (if any):** nearly every PR appends to SESSIONNOTES.md at the same spot, so every merge after the first conflicts there. Resolve by keeping both sides in timestamp order.
 
 ## 2026-10-30 10:00 — S4-DELETE-001: delete path foundation (0024 queue + cascades, 0025 purge functions, drainer, cron)
 

@@ -85,8 +85,9 @@ describe('VideoPage — source invariants', () => {
     assert.match(source, /activeVersionId && userId && agencyId \? \(/)
   })
 
-  it('passes comments to VideoPlayer so CommentTimeline markers render', () => {
-    assert.match(source, /<VideoPlayer[\s\S]*?comments=\{comments\}/)
+  it('passes top-level comments to VideoPlayer so CommentTimeline markers render (replies add none)', () => {
+    assert.match(source, /<VideoPlayer[\s\S]*?comments=\{timelineComments\}/)
+    assert.match(source, /comments\.filter\(\(c\) => c\.parentId === null\)/)
   })
 
   it('sources comments from the shared useVideoComments hook (single fetch)', () => {
@@ -101,5 +102,39 @@ describe('VideoPage — source invariants', () => {
     assert.match(source, /<CommentPanel[\s\S]*?comments=\{comments\}/)
     assert.match(source, /<CommentPanel[\s\S]*?onOptimisticInsert=\{handleCommentInsert\}/)
     assert.match(source, /<CommentPanel[\s\S]*?onOptimisticRollback=\{handleCommentRollback\}/)
+  })
+})
+
+describe('VideoPage — comment actions wiring (S4-REVIEW-002)', () => {
+  let source: string
+
+  before(() => {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url))
+    source = fs.readFileSync(path.resolve(currentDir, 'page.tsx'), 'utf8')
+  })
+
+  it("reads the viewer's role in the video's agency from memberships (RLS, no new API route)", () => {
+    assert.match(source, /\.from\('memberships'\)/)
+    assert.match(source, /\.select\('role'\)/)
+    assert.match(source, /\.eq\('user_id', userId\)/)
+    assert.match(source, /\.eq\('agency_id', agencyId\)/)
+    assert.doesNotMatch(source, /fetch\(`\/api\/[^`]*role/)
+  })
+
+  it('waits for both the user id and the agency id before looking the role up', () => {
+    assert.match(source, /if \(!isValidId \|\| !userId \|\| !agencyId\) return/)
+  })
+
+  it('logs a failed role lookup and leaves the role null (no actions), not a crash', () => {
+    assert.match(source, /console\.error\('\[video-page\] role fetch failed:', err\)/)
+    assert.match(source, /setRole\(null\)/)
+  })
+
+  it('passes the role and the three comment actions from the hook to CommentPanel', () => {
+    assert.match(source, /<CommentPanel[\s\S]*?viewerRole=\{role\}/)
+    assert.match(source, /<CommentPanel[\s\S]*?onResolveComment=\{resolveComment\}/)
+    assert.match(source, /<CommentPanel[\s\S]*?onEditComment=\{editComment\}/)
+    assert.match(source, /<CommentPanel[\s\S]*?onDeleteComment=\{deleteComment\}/)
+    assert.match(source, /resolveComment,\s*editComment,\s*deleteComment,\s*\} = useVideoComments/)
   })
 })
