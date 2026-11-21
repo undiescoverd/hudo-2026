@@ -329,7 +329,7 @@ TASK_ID: S4-REVIEW-002
 TITLE: Comment actions: reply, resolve, edit, delete (GitHub #191)
 BRANCH: feat/s4-S4-REVIEW-002-comment-actions
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Each comment shows only the viewer's allowed actions: Reply (top-level only, any member), Resolve/Unresolve (agent+), Edit (author), Delete (author; agent+ on any)

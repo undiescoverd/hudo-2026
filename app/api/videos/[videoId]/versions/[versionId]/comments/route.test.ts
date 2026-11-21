@@ -2,13 +2,15 @@
  * Unit tests for the comments collection API route.
  *
  * Uses Node.js built-in test runner — no Next.js runtime needed.
- * Tests validation logic and source-invariant security checks.
+ * Tests validation logic and source-invariant security checks, plus the real POST
+ * handler end to end (reply depth guard) with Supabase and Upstash stubbed at fetch.
  *
  * Run: npx tsx --test "app/api/videos/[videoId]/versions/[versionId]/comments/route.test.ts"
  */
 
 import assert from 'node:assert/strict'
-import { before, describe, it } from 'node:test'
+import type { NextRequest } from 'next/server'
+import { afterEach, before, describe, it, mock } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -340,5 +342,290 @@ describe('rowToComment', () => {
     assert.equal(c.parent_id, undefined)
     assert.equal(c.timestamp_seconds, undefined)
     assert.equal(c.comment_type, undefined)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST handler behaviour — the real handler runs end to end, with Supabase
+// REST/Auth + Upstash stubbed at the fetch layer and the Next request scope
+// (cookies()) supplied via AsyncLocalStorage. Replies are one level deep
+// (migration 0008): a reply to a reply must be a 400, never a 500.
+// ---------------------------------------------------------------------------
+
+describe('comments POST — reply depth (real handler)', () => {
+  const SB = 'https://sb.comments-post.test'
+  const REDIS = 'https://redis.comments-post.test'
+  const AGENCY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  const OTHER_AGENCY = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  const USER = '11111111-1111-4111-8111-111111111111'
+  const VIDEO = '22222222-2222-4222-8222-222222222222'
+  const VERSION = '33333333-3333-4333-8333-333333333333'
+  const OTHER_VERSION = '33333333-3333-4333-8333-444444444444'
+  const TOP = '44444444-4444-4444-8444-444444444444' // top-level comment
+  const REPLY = '55555555-5555-4555-8555-555555555555' // reply to TOP
+  const NEW_ID = '66666666-6666-4666-8666-666666666666'
+  const realFetch = globalThis.fetch
+
+  type ParentRow = {
+    id: string
+    video_version_id: string
+    agency_id: string
+    parent_id: string | null
+    deleted_at: string | null
+  }
+  const parentRow = (over: Partial<ParentRow> & { id: string }): ParentRow => ({
+    video_version_id: VERSION,
+    agency_id: AGENCY,
+    parent_id: null,
+    deleted_at: null,
+    ...over,
+  })
+
+  let parents: ParentRow[] = []
+  let insertError: { code: string; message: string } | null = null
+  let calls: { method: string; url: URL; body: unknown }[] = []
+  let POST: (
+    req: NextRequest,
+    ctx: { params: { videoId: string; versionId: string } }
+  ) => Promise<Response>
+  let runInScope: <T>(fn: () => Promise<T>) => Promise<T>
+
+  function installFetch() {
+    globalThis.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+      const method = (init.method ?? 'GET').toUpperCase()
+      let body: unknown
+      if (typeof init.body === 'string') {
+        try {
+          body = JSON.parse(init.body)
+        } catch {
+          body = init.body
+        }
+      }
+      if (url.origin === REDIS) {
+        const n = Array.isArray(body) ? body.length : 1
+        const items = Array.from({ length: n }, () => ({ result: 1 }))
+        return Response.json(Array.isArray(body) ? items : items[0])
+      }
+      calls.push({ method, url, body })
+      const json = (status: number, b: unknown) =>
+        new Response(JSON.stringify(b), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        })
+      const eq = (k: string) => url.searchParams.get(k)?.replace(/^eq\./, '')
+      const single = (rows: unknown[]) =>
+        rows.length
+          ? json(200, rows[0])
+          : json(406, { code: 'PGRST116', message: 'no rows', details: '', hint: null })
+
+      if (url.pathname === '/auth/v1/user') {
+        return json(200, {
+          id: USER,
+          aud: 'authenticated',
+          role: 'authenticated',
+          email: 'agent@comments-post.test',
+          app_metadata: {},
+          user_metadata: {},
+          created_at: new Date().toISOString(),
+        })
+      }
+      if (url.pathname === '/rest/v1/videos') {
+        return single(eq('id') === VIDEO ? [{ id: VIDEO, agency_id: AGENCY, talent_id: USER }] : [])
+      }
+      if (url.pathname === '/rest/v1/memberships') {
+        // Used by both the access check (.single) and the notification fan-out (list).
+        // The caller is an agent. The list form is the notification fan-out, which
+        // excludes the author, so it is empty here.
+        return new Headers(init.headers).get('accept')?.includes('pgrst.object')
+          ? json(200, { role: 'agent' })
+          : json(200, [])
+      }
+      if (url.pathname === '/rest/v1/video_versions') {
+        return single(eq('id') === VERSION ? [{ id: VERSION }] : [])
+      }
+      if (url.pathname === '/rest/v1/notifications') {
+        return json(201, [])
+      }
+      if (url.pathname === '/rest/v1/comments' && method === 'GET') {
+        return single(parents.filter((p) => p.id === eq('id')))
+      }
+      if (url.pathname === '/rest/v1/comments' && method === 'POST') {
+        if (insertError) return json(400, { ...insertError, details: null, hint: null })
+        const b = body as Record<string, unknown>
+        return json(201, {
+          id: NEW_ID,
+          ...b,
+          resolved: false,
+          resolved_at: null,
+          resolved_by: null,
+          deleted_at: null,
+          created_at: new Date().toISOString(),
+          users: { full_name: 'Alex Agent', avatar_url: null },
+        })
+      }
+      return json(404, { message: `unexpected ${method} ${url.pathname}` })
+    }) as typeof fetch
+  }
+
+  before(async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = SB
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-comments-post-test'
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-comments-post-test'
+    process.env.UPSTASH_REDIS_REST_URL = REDIS
+    process.env.UPSTASH_REDIS_REST_TOKEN = 'redis-comments-post-test'
+    // Next's request-scope storage needs the global ALS that its server runtime normally installs.
+    const { AsyncLocalStorage } = await import('node:async_hooks')
+    ;(globalThis as { AsyncLocalStorage?: unknown }).AsyncLocalStorage = AsyncLocalStorage
+    const { requestAsyncStorage } =
+      await import('next/dist/client/components/request-async-storage.external')
+
+    // Session cookie that @supabase/ssr turns into a (non-expired) session for getUser().
+    const session = {
+      access_token: 'access-comments-post-test',
+      refresh_token: 'refresh-comments-post-test',
+      token_type: 'bearer',
+      expires_in: 3600,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user: { id: USER, aud: 'authenticated' },
+    }
+    const cookieList = [{ name: 'sb-sb-auth-token', value: JSON.stringify(session) }]
+    const cookies = { getAll: () => cookieList, set: () => {}, get: () => undefined }
+    runInScope = (fn) =>
+      requestAsyncStorage.run({ cookies, mutableCookies: cookies } as never, fn) as Promise<never>
+    ;({ POST } = await import('./route'))
+  })
+
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  function post(parentId: string | undefined, over: { versionId?: string } = {}) {
+    calls = []
+    installFetch()
+    const req = new Request(
+      `http://localhost:3000/api/videos/${VIDEO}/versions/${over.versionId ?? VERSION}/comments`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          content: 'Agreed, tighten the pause.',
+          comment_type: 'point',
+          timestamp_seconds: 12,
+          ...(parentId ? { parent_id: parentId } : {}),
+        }),
+      }
+    ) as unknown as NextRequest
+    return runInScope(() =>
+      POST(req, { params: { videoId: VIDEO, versionId: over.versionId ?? VERSION } })
+    )
+  }
+
+  const inserts = () =>
+    calls.filter((c) => c.url.pathname === '/rest/v1/comments' && c.method === 'POST')
+
+  it('reply to a reply -> 400 "Replies can only be one level deep", no insert', async () => {
+    parents = [parentRow({ id: TOP }), parentRow({ id: REPLY, parent_id: TOP })]
+    insertError = null
+    const res = await post(REPLY)
+    assert.equal(res.status, 400)
+    assert.deepEqual(await res.json(), { error: 'Replies can only be one level deep' })
+    assert.equal(inserts().length, 0, 'the depth guard must run before the insert')
+  })
+
+  it('reply to a top-level comment -> 201, inserted with parent_id', async () => {
+    parents = [parentRow({ id: TOP })]
+    insertError = null
+    const res = await post(TOP)
+    assert.equal(res.status, 201)
+    const { comment } = (await res.json()) as {
+      comment: { id: string; parentId: string; authorName: string }
+    }
+    assert.equal(comment.id, NEW_ID)
+    assert.equal(comment.parentId, TOP)
+    assert.equal(comment.authorName, 'Alex Agent')
+    assert.equal(inserts().length, 1)
+    assert.equal((inserts()[0].body as { parent_id: string }).parent_id, TOP)
+  })
+
+  it('top-level comment (no parent_id) -> 201 and never looks up a parent', async () => {
+    parents = []
+    insertError = null
+    const res = await post(undefined)
+    assert.equal(res.status, 201)
+    assert.equal((inserts()[0].body as { parent_id: unknown }).parent_id, null)
+    assert.equal(
+      calls.filter((c) => c.url.pathname === '/rest/v1/comments' && c.method === 'GET').length,
+      0
+    )
+  })
+
+  it('reply race: trigger raises 23514 at insert -> 400, same message (not a 500)', async () => {
+    parents = [parentRow({ id: TOP })] // parent looked top-level at check time...
+    insertError = {
+      code: '23514',
+      message: 'Replies can only be made to top-level comments (max depth 1)',
+    }
+    const logged = mock.method(console, 'error', () => {})
+    const res = await post(TOP) // ...but the trigger rejects the insert
+    logged.mock.restore()
+    assert.equal(res.status, 400)
+    assert.deepEqual(await res.json(), { error: 'Replies can only be one level deep' })
+    // A mislabelled check violation must stay visible in the logs.
+    assert.equal(logged.mock.callCount(), 1)
+    assert.match(String(logged.mock.calls[0].arguments[0]), /\[comments:POST\].*23514/)
+    assert.equal((logged.mock.calls[0].arguments[1] as { code: string }).code, '23514')
+  })
+
+  it('a 23514 on a top-level insert is some other constraint -> stays a 500', async () => {
+    parents = []
+    insertError = { code: '23514', message: 'check constraint violated' }
+    const logged = mock.method(console, 'error', () => {})
+    const res = await post(undefined)
+    logged.mock.restore()
+    assert.equal(res.status, 500)
+    assert.equal(logged.mock.callCount(), 1)
+  })
+
+  it('a different insert failure on a reply is still a 500', async () => {
+    parents = [parentRow({ id: TOP })]
+    insertError = { code: 'XX000', message: 'boom' }
+    const logged = mock.method(console, 'error', () => {})
+    const res = await post(TOP)
+    logged.mock.restore()
+    assert.equal(res.status, 500)
+    assert.equal(logged.mock.callCount(), 1)
+  })
+
+  it('earlier parent checks still win: deleted / other version / other agency / missing', async () => {
+    insertError = null
+    const cases: [string, ParentRow[], string, string][] = [
+      ['missing', [], TOP, 'Parent comment not found'],
+      [
+        'deleted',
+        [parentRow({ id: TOP, deleted_at: '2026-10-23T10:00:00Z' })],
+        TOP,
+        'Cannot reply to a deleted comment',
+      ],
+      [
+        'other version',
+        [parentRow({ id: TOP, video_version_id: OTHER_VERSION })],
+        TOP,
+        'Parent comment belongs to a different version',
+      ],
+      [
+        'other agency (even if it is a reply)',
+        [parentRow({ id: REPLY, agency_id: OTHER_AGENCY, parent_id: TOP })],
+        REPLY,
+        'Parent comment belongs to a different agency',
+      ],
+    ]
+    for (const [label, rows, parent, expected] of cases) {
+      parents = rows
+      const res = await post(parent)
+      assert.equal(res.status, 400, label)
+      assert.equal(((await res.json()) as { error: string }).error, expected, label)
+      assert.equal(inserts().length, 0, label)
+    }
   })
 })
