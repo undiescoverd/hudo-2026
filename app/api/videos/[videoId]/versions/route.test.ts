@@ -56,6 +56,10 @@ describe('versions route — source invariants', () => {
     assert.match(source, /order\('version_number',\s*\{\s*ascending:\s*false\s*\}/)
   })
 
+  it("returns the caller's membership role (lets the page hide agent-only Share)", () => {
+    assert.match(source, /role: membership\.role,/)
+  })
+
   it('validates videoId with UUID helper', () => {
     assert.match(source, /isValidUUID\(videoId\)/)
   })
