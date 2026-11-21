@@ -1,12 +1,21 @@
-import { Page } from '@playwright/test'
+import { expect, Page } from '@playwright/test'
 
-// Page Object for /dashboard — populated in S1-E2E-001 and S3-E2E-001
+// Page Object for /dashboard, /settings/team and /settings/billing.
 //
-// Expected data-testid selectors:
-//   dashboard-video-list  — container element holding all video cards
-//   video-card-title      — title text within an individual video card
-//   upgrade-button        — CTA to open Stripe checkout (used in S3-E2E-001)
+// Originally-planned data-testid selectors (not implemented in the app, kept for reference):
+//   dashboard-video-list, video-card-title, upgrade-button
 
 export class DashboardPage {
   constructor(readonly page: Page) {}
+
+  /** Sends an invitation from /settings/team via the InviteForm. */
+  async inviteMember(email: string, role: 'talent' | 'agent' | 'admin_agent') {
+    await this.page.goto('/settings/team')
+    await this.page.locator('#invite-email').fill(email)
+    await this.page.locator('#invite-role').selectOption(role)
+    await this.page.getByRole('button', { name: 'Send invitation' }).click()
+    await expect(this.page.getByText(`Invitation sent to ${email}`)).toBeVisible({
+      timeout: 20_000,
+    })
+  }
 }

@@ -1,12 +1,16 @@
-import { Page } from '@playwright/test'
+import { expect, Page } from '@playwright/test'
 
-// Page Object for /guest/:token — populated in S2-E2E-001
+// Page Object for /guest/:token.
 //
-// Expected data-testid selectors:
-//   guest-player          — <video> element on the guest view
-//   comment-panel         — read-only comment list shown to guest
-//   guest-expired-message — message displayed when token is invalid/expired
+// Originally-planned data-testid selectors (not implemented in the app, kept for reference):
+//   guest-player, comment-panel, guest-expired-message
 
 export class GuestPage {
   constructor(readonly page: Page) {}
+
+  async openAndExpectComment(url: string, commentText: string) {
+    await this.page.goto(url)
+    await expect(this.page).toHaveURL(/\/guest\/[A-Za-z0-9_-]{43}/)
+    await expect(this.page.getByText(commentText)).toBeVisible({ timeout: 30_000 })
+  }
 }

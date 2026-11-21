@@ -1,17 +1,45 @@
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 
-// Page Object for /auth/signin and /auth/register — populated in S1-E2E-001
+// Page Object for /auth/signin, /auth/register and /auth/invite/:token.
+// The app has no data-testid hooks on these screens, so locators are label/role based.
 //
-// Expected data-testid selectors:
-//   sign-in-email       — email input on sign-in form
-//   sign-in-password    — password input on sign-in form
-//   sign-in-submit      — submit button on sign-in form
-//   sign-up-email       — email input on sign-up form
-//   sign-up-password    — password input on sign-up form
-//   sign-up-submit      — submit button on sign-up form
-//   sign-out-button     — sign-out trigger in nav/header
-//   auth-error-message  — inline error displayed on auth failure
+// Originally-planned data-testid selectors (not implemented in the app, kept for reference):
+//   sign-in-email, sign-in-password, sign-in-submit, sign-up-email, sign-up-password,
+//   sign-up-submit, sign-out-button, auth-error-message
 
 export class AuthPage {
   constructor(readonly page: Page) {}
+
+  /** Fills and submits the owner sign-up form (S4-LAUNCH-002 flow 1). */
+  async register(opts: { fullName: string; agencyName: string; email: string; password: string }) {
+    await this.page.goto('/auth/register')
+    await this.page.getByLabel('Full name').fill(opts.fullName)
+    await this.page.getByLabel('Agency name').fill(opts.agencyName)
+    await this.page.getByLabel('Email').fill(opts.email)
+    await this.page.getByLabel('Password').fill(opts.password)
+    await this.page.getByRole('button', { name: /create account/i }).click()
+  }
+
+  /** Signs in through the UI and waits to leave /auth/*. */
+  async signIn(email: string, password: string) {
+    await this.page.goto('/auth/signin')
+    await this.page.getByLabel('Email').fill(email)
+    await this.page.getByLabel('Password').fill(password)
+    await this.page.getByRole('button', { name: /sign in/i }).click()
+    await this.page.waitForURL((u) => !u.pathname.startsWith('/auth/'), { timeout: 20_000 })
+  }
+
+  /** Accepts an invitation as a new user on /auth/invite/:token. */
+  async acceptInviteAsNewUser(token: string, fullName: string, password: string) {
+    await this.page.goto(`/auth/invite/${token}`)
+    await expect(this.page.getByRole('heading', { name: 'Create your account' })).toBeVisible({
+      timeout: 15_000,
+    })
+    await this.page.getByLabel('Full name').fill(fullName)
+    await this.page.getByLabel('Password').fill(password)
+    await this.page.getByRole('button', { name: /create account & join/i }).click()
+    await expect(this.page.getByRole('heading', { name: 'Welcome aboard!' })).toBeVisible({
+      timeout: 20_000,
+    })
+  }
 }

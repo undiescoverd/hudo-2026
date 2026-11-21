@@ -559,7 +559,7 @@ TASK_ID: S4-LAUNCH-002
 TITLE: Seven-flow smoke suite against staging (register, invite, upload, comment, PDF, guest, upgrade)
 BRANCH: feat/s4-S4-LAUNCH-002-smoke
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: S4-JOURNEY-004, S4-LAUNCH-004, S4-REVIEW-002
 ACCEPTANCE_CRITERIA:
   - Seven flows: register → agency; invite talent → accept; upload; comment and resolve; PDF export; guest link; upgrade in Stripe test mode
