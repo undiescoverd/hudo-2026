@@ -8,6 +8,7 @@ import { MetadataForm } from '@/components/upload/MetadataForm'
 import { createClient } from '@/lib/auth'
 import { MULTIPART_THRESHOLD_BYTES } from '@/lib/upload-validation'
 import { performUpload } from '@/lib/upload-client'
+import { parseTargetVideoId } from '@/lib/new-version-upload'
 import { fetchTalentRoster, isAgentClassRole, type TalentRosterEntry } from '@/lib/talent-roster'
 
 async function fetchMembership(): Promise<{ agencyId: string; role: string }> {
@@ -34,7 +35,14 @@ function fileNameWithoutExtension(name: string): string {
   return lastDot > 0 ? name.slice(0, lastDot) : name
 }
 
-export default function UploadPage() {
+interface UploadPageProps {
+  searchParams?: { videoId?: string | string[] }
+}
+
+export default function UploadPage({ searchParams }: UploadPageProps) {
+  // Version mode: /upload?videoId=<id> adds a new version to an existing video.
+  const targetVideoId = parseTargetVideoId(searchParams?.videoId)
+  const [targetTitle, setTargetTitle] = useState<string | null>(null)
   const router = useRouter()
   const [file, setFile] = useState<File | null>(null)
   const [agencyId, setAgencyId] = useState('')
@@ -51,28 +59,61 @@ export default function UploadPage() {
   const [uploadedFileName, setUploadedFileName] = useState<string>('')
   // The draft video created by the first presign. Retries reuse it so a failed
   // upload never leaves a new empty draft behind per attempt.
-  const draftVideoIdRef = useRef<string | undefined>(undefined)
+  const draftVideoIdRef = useRef<string | undefined>(targetVideoId)
+  // Next may reuse this component across /upload?videoId=A → B (or → /upload),
+  // so keep the ref in step with the URL rather than only the first mount.
+  useEffect(() => {
+    draftVideoIdRef.current = targetVideoId
+  }, [targetVideoId])
 
-  const needsTalent = isAgentClassRole(role)
+  const needsTalent = !targetVideoId && isAgentClassRole(role)
 
   const loadContext = useCallback(async () => {
     setSetupError(null)
     try {
       const membership = await fetchMembership()
-      if (isAgentClassRole(membership.role)) {
+      let resolvedAgencyId = membership.agencyId
+      if (targetVideoId) {
+        // RLS-scoped lookup. A miss (unknown, foreign or not-allowed id) stops
+        // here with a clear error, before the user picks a file. The presign
+        // route still enforces agency + ownership server-side.
+        const { data: video, error: videoError } = await createClient()
+          .from('videos')
+          .select('title, agency_id')
+          .eq('id', targetVideoId)
+          .maybeSingle()
+        if (videoError) throw new Error('Failed to load video')
+        if (!video?.agency_id) {
+          setSetupError('Video not found, or you can’t upload a new version of it')
+          return
+        }
+        resolvedAgencyId = video.agency_id as string
+        setTargetTitle((video.title as string | null) ?? null)
+      } else if (isAgentClassRole(membership.role)) {
         setRoster(await fetchTalentRoster(createClient(), membership.agencyId))
       }
-      setAgencyId(membership.agencyId)
+      setAgencyId(resolvedAgencyId)
       setRole(membership.role)
       setReady(true)
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : 'Failed to load agency')
     }
-  }, [])
+  }, [targetVideoId])
 
   useEffect(() => {
     void loadContext()
   }, [loadContext])
+
+  // Warn before closing the tab mid-upload (first uploads and new versions).
+  useEffect(() => {
+    if (!uploading) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [uploading])
 
   const runUpload = useCallback(
     async (f: File) => {
@@ -90,6 +131,10 @@ export default function UploadPage() {
             draftVideoIdRef.current = id
           },
         })
+        if (targetVideoId) {
+          router.push(`/videos/${targetVideoId}`)
+          return
+        }
         setUploadedVideoId(videoId)
         setUploadedFileName(f.name)
       } catch (err) {
@@ -98,7 +143,7 @@ export default function UploadPage() {
         setUploading(false)
       }
     },
-    [agencyId, needsTalent, talentId]
+    [agencyId, needsTalent, talentId, targetVideoId, router]
   )
 
   const handleFileSelected = useCallback(
@@ -109,10 +154,10 @@ export default function UploadPage() {
       setError(null)
       setProgress(0)
       setUploadedVideoId(null)
-      draftVideoIdRef.current = undefined
+      draftVideoIdRef.current = targetVideoId
       await runUpload(f)
     },
-    [ready, needsTalent, talentId, runUpload]
+    [ready, needsTalent, talentId, runUpload, targetVideoId]
   )
 
   const handleRetry = useCallback(async () => {
@@ -126,7 +171,14 @@ export default function UploadPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-12">
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Upload video</h1>
+        <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+          {targetVideoId ? 'Upload new version' : 'Upload video'}
+        </h1>
+        {targetVideoId && targetTitle && (
+          <p className="mt-1 text-sm font-medium text-gray-700 dark:text-gray-300">
+            of “{targetTitle}”
+          </p>
+        )}
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           Drag and drop or select an MP4 or MOV file
         </p>
@@ -209,7 +261,7 @@ export default function UploadPage() {
                   setError(null)
                   setProgress(0)
                   setUploadedVideoId(null)
-                  draftVideoIdRef.current = undefined
+                  draftVideoIdRef.current = targetVideoId
                 }}
                 className="w-full rounded-lg border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
               >
