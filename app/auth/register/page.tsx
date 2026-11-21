@@ -88,8 +88,25 @@ export default function RegisterPage() {
         <div className="w-full max-w-sm space-y-4 text-center">
           <h1 className="text-2xl font-semibold">Check your email</h1>
           <p className="text-sm text-muted-foreground">
-            We sent a confirmation link to <strong>{email}</strong>. Click the link to activate your
-            account.
+            If <strong>{email}</strong> is new to Hudo, we sent a confirmation link. Click it to
+            activate your account.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Already have an account?{' '}
+            <Link
+              href="/auth/signin"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              Sign in
+            </Link>{' '}
+            or{' '}
+            <Link
+              href="/auth/forgot-password"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              reset your password
+            </Link>
+            .
           </p>
           <p className="text-xs text-muted-foreground">
             Didn&apos;t receive it? Check your spam folder or{' '}

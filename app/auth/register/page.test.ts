@@ -33,6 +33,16 @@ describe('RegisterPage — source invariants (S4-JOURNEY-001)', () => {
     assert.match(source, /Check your email/)
   })
 
+  it('success screen is neutral and points existing users to sign in / reset password', () => {
+    const start = source.indexOf('if (submitted)')
+    const screen = source.slice(start, source.indexOf('return (', start + 20) + 2000)
+    assert.match(screen, /is new to Hudo/)
+    assert.match(screen, /href="\/auth\/signin"/)
+    assert.match(screen, /href="\/auth\/forgot-password"/)
+    // Must not reveal whether the address already has an account.
+    assert.doesNotMatch(screen, /already (registered|exists|in use)/i)
+  })
+
   it('links the Terms and Privacy Policy under the form (S4-LAUNCH-001)', () => {
     assert.match(source, /By creating an account you agree to the/)
     assert.match(source, /<Link href="\/terms"/)

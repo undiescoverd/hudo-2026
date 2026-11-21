@@ -851,6 +851,18 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - DeepSeek bot reviews still fail with 402, so the pr-fix loop was skipped.
 - **Gotcha (if any):** a matcher exclusion by file extension (`.*\.(png|js|…)$`) lets page paths like `/talent/x.png` skip the auth middleware entirely. Exclude static files by name.
 
+## 2026-10-24 — Sign-up "no email" = existing account; neutral success wording; S4-AUTH-001
+
+- **Task:** Ian reported no email after signing up on a staging Preview URL.
+- **Models:** planner=opus (investigation + decisions), no executor needed
+- **Outcome:** done for the wording change; S4-AUTH-001 (#200) specced, not built.
+- **Notes:**
+  - **Root cause:** the address (`ian.jamesvincent@gmail.com`) already had a confirmed account (created 2026-06-15). Supabase sends nothing for an already-registered address, and `app/api/auth/register/route.ts` deliberately answers it like a fresh sign-up (user-enumeration protection), so the page said "Check your email".
+  - **SMTP was fine:** hudo-staging has custom SMTP on (Resend, sender `noreply@hudoapp.com`, domain verified). The 2026-06-16 note above says `noreply@resend.com`; that is out of date.
+  - **Change:** the success screen now says "If <email> is new to Hudo, we sent a confirmation link" and links to sign-in and forgot-password. A test pins the neutral wording.
+  - **Follow-up:** S4-AUTH-001 / #200 emails the existing account's owner (per-address rate limit, constant-time response, mandatory security review).
+- **Gotcha (if any):** "I signed up and got no email" on a known address is not a mail fault: check Supabase Authentication → Users for an existing confirmed row before touching SMTP. Resend → Emails showing no send at all is the tell.
+
 ## 2026-10-30 — PR triage: 4 merged, #188 conflict resolved
 
 - **Task:** audit all 13 open PRs for merge readiness; merge the ready ones; unblock #188 (S4-JOURNEY-004)
