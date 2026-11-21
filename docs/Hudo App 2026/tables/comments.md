@@ -25,12 +25,12 @@ Timestamped feedback on a specific video version. Soft-delete only — no hard d
 
 | Operation | Policy |
 |---|---|
-| SELECT | All agency members |
+| SELECT | All agency members, including soft-deleted rows |
 | INSERT | All agency members (own `user_id` only) |
 | UPDATE | Own comment; Agents+ can update any comment in their agency |
 | DELETE | **No policy** — hard delete is blocked at RLS level |
 
-Note: The soft-delete filter (`WHERE deleted_at IS NULL`) is enforced in the RLS SELECT policy (migration 0010), not just at the API layer.
+Note: The RLS SELECT policy deliberately does **not** filter `deleted_at` (GitHub #187 option b, migration `0029_comments_select_keep_soft_deleted`). A soft delete is an UPDATE that sets `deleted_at`, and Supabase Realtime checks each subscriber's SELECT policy against the new row, so an RLS filter would stop other viewers receiving the soft-delete event. App code hides soft-deleted comments instead: every read of `comments` filters `.is('deleted_at', null)` or checks `deleted_at !== null`. Accepted trade-off: soft-deleted comment text stays readable to the comment's own agency through direct supabase-js reads and the Realtime payload. Migration 0004 added the filter but was never applied to the live DBs; 0029 drops it so the repo and CI match live.
 
 ## Indexes
 
@@ -63,7 +63,7 @@ Scoped to `video_version_id` — **not** `video_id`. Switching video versions mu
 - Max nesting depth is 1. `parent_id` must refer to a comment with `parent_id IS NULL`.
 
 ## Migrations
-- `0002_rls_policies`- `0004_rls_comments_soft_delete_filter`- `0010_fix_comments_soft_delete`
+- `0002_rls_policies`- `0004_rls_comments_soft_delete_filter`- `0010_fix_comments_soft_delete`- `0029_comments_select_keep_soft_deleted`
 
 
 

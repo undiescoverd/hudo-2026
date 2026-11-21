@@ -812,6 +812,22 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - `tsx --test` can't take explicit bracketed paths (`[videoId]`); run those files with `npx tsx "<path>"`.
   - Rendering components in Node tests needs `globalThis.React = React`, because tsx compiles JSX to classic `React.createElement`.
 
+## 2026-10-24 07:56 — soft-delete docs follow-up for #187 / migration 0029
+
+- **Task:** follow-up from S4-REVIEW-004 (branch `chore/soft-delete-docs-0029`, docs only)
+- **Models:** planner=opus (edits written by opus; no code)
+- **Outcome:** done. Draft PR opened ahead of #196 at Ian's request; it must merge after #196.
+- **Notes:**
+  - **`.claude/agents/rls-tenancy-auditor.md` item 4:**
+    - For `comments`, the soft-delete filter now lives in app code, not RLS.
+    - The auditor flags an app read of `comments` that doesn't filter `deleted_at`, and any change that re-adds `deleted_at IS NULL` to `comments_select`.
+    - It doesn't flag the policy itself; the trade-off was accepted.
+    - Other soft-delete tables keep the old rule, but none exist: `comments` is the only table with `deleted_at`.
+  - **`docs/Hudo App 2026/tables/comments.md` and `ADR-005-soft-delete-only.md`:** the "RLS SELECT filters `deleted_at IS NULL` (migration 0010)" claim is corrected. 0010 never touched the SELECT policy; 0004 added the filter and was never applied live. ADR-005 also gets a note pointing to #187 and 0029.
+  - **Not fixed (out of scope):** both docs say `DELETE /api/comments/:id` returns 405, but `app/api/comments/[id]/route.ts` exports a DELETE that soft-deletes.
+  - **Merge order:** #196 also appends to this file, so whichever merges second needs a trivial conflict fix here.
+- **Gotcha (if any):** `docs/` and `.claude/` are prettier-ignored, so `pnpm format:check` doesn't cover them. The three edited files weren't prettier-clean before this change either.
+
 ## 2026-10-24 — S4-JOURNEY-004: middleware moved to project root (PR #188, awaiting live walk + merge)
 
 - **Task:** S4-JOURNEY-004 (RES-221). Also landed PR #185 (merge commit, Ian approved) as handoff step 1.
