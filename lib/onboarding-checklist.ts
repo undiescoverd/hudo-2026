@@ -26,6 +26,8 @@ export type ChecklistItem = {
 
 export type OnboardingChecklist = {
   agencyId?: string
+  /** Set only when the user owns more than one agency. */
+  agencyName?: string | null
   items: ChecklistItem[]
   allDone: boolean
 }
@@ -47,6 +49,7 @@ export function deriveChecklist({
   hasVideoVersion,
   now = new Date(),
 }: DeriveInput): OnboardingChecklist {
+  // An unaccepted invite that has expired no longer counts: the owner must re-invite (intended).
   const live = invitations.filter(
     (i) => i.accepted_at !== null || new Date(i.expires_at).getTime() > now.getTime()
   )
@@ -81,7 +84,10 @@ export function deriveChecklist({
 
 /**
  * Returns the checklist to show, or null when it must be hidden
- * (not an owner, all done, or any query failed). Uses the RLS-scoped client.
+ * (not an owner, every owned agency complete, or any query failed). Uses the
+ * RLS-scoped client. Owned agencies are checked oldest-membership first and the
+ * first incomplete one is shown. Queries: 1 owner lookup, then 1 each for
+ * agencies/memberships/invitations (batched with .in) plus 1 video check per agency.
  */
 export async function getOnboardingChecklist({
   supabase,
@@ -97,33 +103,60 @@ export async function getOnboardingChecklist({
     .eq('user_id', userId)
     .eq('role', 'owner')
     .order('created_at', { ascending: true })
-    .limit(1)
 
   if (ownedError) {
     console.error('[onboarding-checklist] owner lookup failed:', ownedError.message)
     return null
   }
-  const agencyId = (owned as Array<{ agency_id: string }> | null)?.[0]?.agency_id
-  if (!agencyId) return null
+  const ids = ((owned ?? []) as Array<{ agency_id: string }>).map((r) => r.agency_id)
+  if (ids.length === 0) return null
 
-  const [members, invitations, versions] = await Promise.all([
-    supabase.from('memberships').select('user_id, role').eq('agency_id', agencyId),
-    supabase.from('invitations').select('role, accepted_at, expires_at').eq('agency_id', agencyId),
-    supabase.from('video_versions').select('id').eq('agency_id', agencyId).limit(1),
+  const [agencies, members, invitations, ...versions] = await Promise.all([
+    supabase.from('agencies').select('id, name').in('id', ids),
+    supabase.from('memberships').select('agency_id, user_id, role').in('agency_id', ids),
+    supabase
+      .from('invitations')
+      .select('agency_id, role, accepted_at, expires_at')
+      .in('agency_id', ids),
+    ...ids.map((id) => supabase.from('video_versions').select('id').eq('agency_id', id).limit(1)),
   ])
 
-  const failed = [members.error, invitations.error, versions.error].find(Boolean)
+  const failed = [
+    agencies.error,
+    members.error,
+    invitations.error,
+    ...versions.map((v) => v.error),
+  ].find(Boolean)
   if (failed) {
     console.error('[onboarding-checklist] query failed:', failed.message)
     return null
   }
 
-  const result = deriveChecklist({
-    members: ((members.data ?? []) as Array<{ user_id: string; role: string }>).filter(
-      (m) => m.user_id !== userId
-    ),
-    invitations: (invitations.data ?? []) as DeriveInput['invitations'],
-    hasVideoVersion: (versions.data ?? []).length > 0,
-  })
-  return result.allDone ? null : { ...result, agencyId }
+  const names = new Map(
+    ((agencies.data ?? []) as Array<{ id: string; name: string }>).map((a) => [a.id, a.name])
+  )
+  const memberRows = (members.data ?? []) as Array<{
+    agency_id: string
+    user_id: string
+    role: string
+  }>
+  const inviteRows = (invitations.data ?? []) as Array<
+    DeriveInput['invitations'][number] & { agency_id: string }
+  >
+
+  for (const [idx, agencyId] of ids.entries()) {
+    const result = deriveChecklist({
+      members: memberRows.filter((m) => m.agency_id === agencyId && m.user_id !== userId),
+      invitations: inviteRows.filter((i) => i.agency_id === agencyId),
+      hasVideoVersion: (versions[idx].data ?? []).length > 0,
+    })
+    if (!result.allDone) {
+      return {
+        ...result,
+        agencyId,
+        agencyName: ids.length > 1 ? (names.get(agencyId) ?? null) : null,
+      }
+    }
+  }
+  return null
 }

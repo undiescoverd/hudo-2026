@@ -9,9 +9,10 @@ import type { ChecklistItem } from '@/lib/onboarding-checklist'
 
 type Props = {
   items: ChecklistItem[]
+  agencyName?: string | null
 }
 
-export function OnboardingChecklist({ items }: Props) {
+export function OnboardingChecklist({ items, agencyName }: Props) {
   const doneCount = items.filter((i) => i.done).length
   return (
     <section
@@ -20,7 +21,7 @@ export function OnboardingChecklist({ items }: Props) {
       data-testid="onboarding-checklist"
     >
       <h2 id="onboarding-heading" className="text-base font-semibold">
-        Get started ({doneCount} of {items.length} done)
+        Get started{agencyName ? ` — ${agencyName}` : ''} ({doneCount} of {items.length} done)
       </h2>
       <ul className="mt-3 space-y-2">
         {items.map((item) => (

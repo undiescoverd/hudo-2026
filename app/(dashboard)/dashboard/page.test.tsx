@@ -43,7 +43,7 @@ describe('/dashboard page — source invariants', () => {
   it('gates the onboarding checklist on an explicit owner equality', () => {
     assert.match(source, /role === 'owner'/)
     assert.match(source, /getOnboardingChecklist\(\{ supabase, userId: user\.id \}\)/)
-    assert.match(source, /checklist && <OnboardingChecklist/)
+    assert.match(source, /checklist &&\s*\(?\s*<OnboardingChecklist/)
     assert.doesNotMatch(source, /roleAtLeast/)
   })
 })

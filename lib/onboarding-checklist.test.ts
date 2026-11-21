@@ -80,28 +80,35 @@ describe('deriveChecklist', () => {
   })
 })
 
+const ok = (data: any): Resp => ({ data, error: null })
 type Resp = { data: any; error: any }
-function stub(map: Record<string, Resp>) {
+type Entry = Resp | ((agencyId: string | undefined) => Resp)
+function stub(map: Record<string, Entry>) {
   const filters: Record<string, Array<[string, unknown[]]>> = {}
   return {
     filters,
     from(table: string) {
       const log: Array<[string, unknown[]]> = (filters[table] ??= [])
       const chain: any = {}
-      for (const m of ['select', 'eq', 'order', 'limit']) {
+      let eqAgency: string | undefined
+      for (const m of ['select', 'eq', 'in', 'order', 'limit']) {
         chain[m] = (...a: unknown[]) => {
           log.push([m, a])
+          if (m === 'eq' && a[0] === 'agency_id') eqAgency = a[1] as string
           return chain
         }
       }
       chain.then = (res: (v: Resp) => unknown, rej: (e: unknown) => unknown) =>
-        Promise.resolve(map[table]).then(res, rej)
+        Promise.resolve(
+          (() => {
+            const e = map[table] ?? ok([])
+            return typeof e === 'function' ? e(eqAgency) : e
+          })()
+        ).then(res, rej)
       return chain
     },
   } as any
 }
-
-const ok = (data: any): Resp => ({ data, error: null })
 
 describe('getOnboardingChecklist', () => {
   it('returns null for a non-owner (no owner membership)', async () => {
@@ -158,9 +165,81 @@ describe('getOnboardingChecklist', () => {
     assert.equal(await getOnboardingChecklist({ supabase: s, userId: 'u1' }), null)
   })
 
-  for (const failing of ['memberships', 'invitations', 'video_versions']) {
+  const twoAgencies = (videos: Record<string, boolean>, aAgentInvited: boolean) =>
+    stub({
+      agencies: ok([
+        { id: 'a1', name: 'Alpha' },
+        { id: 'a2', name: 'Beta' },
+      ]),
+      memberships: ok([
+        { agency_id: 'a1', user_id: 'u1', role: 'owner' },
+        { agency_id: 'a2', user_id: 'u1', role: 'owner' },
+        { agency_id: 'a1', user_id: 'u2', role: 'agent' },
+        { agency_id: 'a1', user_id: 'u3', role: 'talent' },
+        ...(aAgentInvited ? [{ agency_id: 'a2', user_id: 'u4', role: 'agent' }] : []),
+      ]),
+      invitations: ok([]),
+      video_versions: (id) => ok(id && videos[id] ? [{ id: 'v' }] : []),
+    })
+
+  it('two agencies: A complete, B new shows B with its name', async () => {
+    const r = await getOnboardingChecklist({
+      supabase: twoAgencies({ a1: true }, false),
+      userId: 'u1',
+    })
+    assert.equal(r?.agencyId, 'a2')
+    assert.equal(r?.agencyName, 'Beta')
+  })
+
+  it('two agencies: A incomplete, B complete shows A', async () => {
+    const s = stub({
+      agencies: ok([
+        { id: 'a1', name: 'Alpha' },
+        { id: 'a2', name: 'Beta' },
+      ]),
+      memberships: ok([
+        { agency_id: 'a1', user_id: 'u1', role: 'owner' },
+        { agency_id: 'a2', user_id: 'u1', role: 'owner' },
+        { agency_id: 'a2', user_id: 'u2', role: 'agent' },
+        { agency_id: 'a2', user_id: 'u3', role: 'talent' },
+      ]),
+      invitations: ok([]),
+      video_versions: (id) => ok(id === 'a2' ? [{ id: 'v' }] : []),
+    })
+    const r = await getOnboardingChecklist({ supabase: s, userId: 'u1' })
+    assert.equal(r?.agencyId, 'a1')
+    assert.equal(r?.agencyName, 'Alpha')
+  })
+
+  it('two agencies both complete hides the card', async () => {
+    const s = stub({
+      agencies: ok([]),
+      memberships: ok([
+        { agency_id: 'a1', user_id: 'u1', role: 'owner' },
+        { agency_id: 'a2', user_id: 'u1', role: 'owner' },
+        { agency_id: 'a1', user_id: 'u2', role: 'agent' },
+        { agency_id: 'a1', user_id: 'u3', role: 'talent' },
+        { agency_id: 'a2', user_id: 'u2', role: 'agent' },
+        { agency_id: 'a2', user_id: 'u3', role: 'talent' },
+      ]),
+      invitations: ok([]),
+      video_versions: ok([{ id: 'v' }]),
+    })
+    assert.equal(await getOnboardingChecklist({ supabase: s, userId: 'u1' }), null)
+  })
+
+  it('omits the agency name for a single-agency owner', async () => {
+    const s = stub({
+      agencies: ok([{ id: 'a1', name: 'Alpha' }]),
+      memberships: ok([{ agency_id: 'a1', user_id: 'u1', role: 'owner' }]),
+    })
+    const r = await getOnboardingChecklist({ supabase: s, userId: 'u1' })
+    assert.equal(r?.agencyName, null)
+  })
+
+  for (const failing of ['agencies', 'memberships', 'invitations', 'video_versions']) {
     it(`fails closed (hidden, logged) when the ${failing} query errors`, async () => {
-      const map: Record<string, Resp> = {
+      const map: Record<string, Entry> = {
         memberships: ok([{ agency_id: 'a1', user_id: 'u1', role: 'owner' }]),
         invitations: ok([]),
         video_versions: ok([]),

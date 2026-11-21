@@ -67,7 +67,9 @@ export default async function DashboardPage() {
         <p className="text-sm text-muted-foreground mt-1">All videos across your agencies.</p>
       </div>
 
-      {checklist && <OnboardingChecklist items={checklist.items} />}
+      {checklist && (
+        <OnboardingChecklist items={checklist.items} agencyName={checklist.agencyName} />
+      )}
 
       {error ? <DashboardError /> : <AgentDashboard initialVideos={initialVideos ?? []} />}
     </main>
