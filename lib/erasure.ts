@@ -32,16 +32,15 @@ const ELEVATED_ROLES = new Set(['owner', 'admin_agent'])
  *
  * Rules:
  * - Self-erasure is always allowed.
- * - An `owner` may erase any target who belongs to an agency they own.
- *   Accepted risk (documented): erasure is account-wide, so an owner in one
- *   shared agency erases the target's memberships in ALL agencies, including
- *   elevated roles held elsewhere.
- * - An `admin_agent` may only erase a target who holds NO elevated role
- *   (owner/admin_agent) in ANY agency — checked across the target's entire
- *   membership set, not per shared agency. A per-pair check would allow a
- *   cross-agency escalation: an admin_agent sharing agency B with a target
- *   who is `agent` there could account-wide-erase that target's `owner`
- *   membership in unrelated agency A.
+ * - Removal is scoped to ONE agency (S4-ERASE-001, D13): the route passes
+ *   only the caller's and target's memberships in that agency, so every rule
+ *   below is evaluated against that agency alone. Memberships elsewhere are
+ *   untouched (the account is erased only when none remain).
+ * - An `owner` of that agency may remove any member of it.
+ * - An `admin_agent` may remove a member only if the target holds no elevated
+ *   role (owner/admin_agent) within the memberships supplied, i.e. in that
+ *   agency. (Direct callers passing a full membership set get the stricter
+ *   account-wide check.)
  * - No shared agency (including an empty target membership set) → denied.
  */
 export function canEraseUser(
@@ -81,6 +80,22 @@ export async function eraseUser(
   admin: SupabaseClient,
   targetUserId: string
 ): Promise<ErasureResult> {
+  const result = await eraseUserInner(admin, targetUserId)
+  // Anything past the capture step may follow destructive purges: make a
+  // partial erasure visible (fixed message, no PII — the step is a constant).
+  if (!result.ok && result.step !== 'capture_memberships') alertPartialErasure(result.step)
+  return result
+}
+
+/** Fixed-message Sentry alert for a failure after a destructive step. No PII. */
+function alertPartialErasure(step: string): void {
+  Sentry.captureMessage('erasure: failure after destructive step', {
+    level: 'error',
+    tags: { step },
+  })
+}
+
+async function eraseUserInner(admin: SupabaseClient, targetUserId: string): Promise<ErasureResult> {
   try {
     // 1. Capture the target's memberships (agency_id, role) before they're
     //    deleted — the caller uses agencyIds to fire one audit event per
@@ -100,11 +115,26 @@ export async function eraseUser(
 
     const agencyIds = (memberships ?? []).map((m) => m.agency_id as string)
 
+    // 1a. Agencies where the talent still owns videos but no longer has a
+    //     membership (e.g. removed earlier) must be purged too (L2).
+    const { data: videoRows, error: videosSelectError } = await admin
+      .from('videos')
+      .select('agency_id')
+      .eq('talent_id', targetUserId)
+
+    if (videosSelectError) {
+      return { ok: false, step: 'capture_videos', message: videosSelectError.message }
+    }
+
+    const purgeAgencyIds = Array.from(
+      new Set([...agencyIds, ...(videoRows ?? []).map((v) => v.agency_id as string)])
+    )
+
     // 1b. Permanently delete the target's videos in every agency they belong
     //     to (D12, D13 self-erasure) via the single purge path. Runs BEFORE the
     //     tombstone and is idempotent (purge_video returns 0 for a missing
     //     video), so a retry after a partial failure recovers cleanly.
-    for (const agencyId of agencyIds) {
+    for (const agencyId of purgeAgencyIds) {
       const { error: purgeError } = await admin.rpc('purge_talent_in_agency', {
         p_talent_id: targetUserId,
         p_agency_id: agencyId,
@@ -241,24 +271,28 @@ export async function removeMemberWithData(
       return { ok: false, step: 'purge_talent_videos', message: purgeError.message }
     }
 
-    const { error: deleteError } = await admin
-      .from('memberships')
-      .delete()
-      .eq('user_id', targetUserId)
-      .eq('agency_id', agencyId)
-    if (deleteError) {
-      return { ok: false, step: 'delete_membership', message: deleteError.message }
-    }
-
-    const { data: remaining, error: remainingError } = await admin
+    // Decide BEFORE deleting anything: if this is the target's last membership,
+    // eraseUser deletes memberships itself (after the tombstone), so a failure
+    // leaves the membership in place and an admin retry still passes authz (M1).
+    const { data: held, error: heldError } = await admin
       .from('memberships')
       .select('agency_id')
       .eq('user_id', targetUserId)
-    if (remainingError) {
-      return { ok: false, step: 'count_remaining_memberships', message: remainingError.message }
+    if (heldError) {
+      return { ok: false, step: 'count_remaining_memberships', message: heldError.message }
     }
+    const others = (held ?? []).filter((m) => m.agency_id !== agencyId)
 
-    if ((remaining ?? []).length > 0) {
+    if (others.length > 0) {
+      const { error: deleteError } = await admin
+        .from('memberships')
+        .delete()
+        .eq('user_id', targetUserId)
+        .eq('agency_id', agencyId)
+      if (deleteError) {
+        alertPartialErasure('delete_membership')
+        return { ok: false, step: 'delete_membership', message: deleteError.message }
+      }
       return { ok: true, agencyIds: [agencyId], accountErased: false }
     }
 
@@ -298,22 +332,31 @@ export async function sendErasureEmails(
   send: SendFn = sendEmail
 ): Promise<void> {
   const { target, agencyId, accountErased } = params
-  const fail = (what: string, err: unknown) => {
-    console.error(`[erasure:email] ${what} failed:`, err instanceof Error ? err.message : err)
-    Sentry.captureException(err)
+  const fail = (step: string, err: unknown) => {
+    // No raw error text: it may echo an email address (PII). Name only.
+    console.error(`[erasure:email] ${step} failed:`, err instanceof Error ? err.name : 'error')
+    Sentry.captureMessage('erasure email failed', { level: 'warning', tags: { step } })
   }
 
   let agencyName: string | null = null
   if (agencyId) {
     try {
-      const { data } = await admin.from('agencies').select('name').eq('id', agencyId).single()
+      const { data, error } = await admin
+        .from('agencies')
+        .select('name')
+        .eq('id', agencyId)
+        .single()
+      if (error) fail('agency lookup', error)
       agencyName = (data as { name?: string } | null)?.name ?? null
     } catch (err) {
       fail('agency lookup', err)
     }
   }
 
-  if (target.email) {
+  // Neutral wording when the name could not be resolved — never render a blank.
+  if (agencyId && !agencyName) agencyName = 'an agency'
+
+  if (target.email && !target.email.endsWith('@erased.invalid')) {
     try {
       const mail = renderErasureConfirmationEmail({
         recipientName: target.fullName?.trim() || 'there',
@@ -350,7 +393,7 @@ export async function sendErasureEmails(
         try {
           const mail = renderMemberRemovedReceiptEmail({
             ownerName: owner.full_name?.trim() || 'there',
-            agencyName: agencyName ?? 'your agency',
+            agencyName: agencyName === 'an agency' ? 'your agency' : (agencyName ?? 'your agency'),
             removedName: target.fullName?.trim() || 'A member',
             accountErased,
           })

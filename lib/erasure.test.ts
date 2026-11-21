@@ -11,6 +11,8 @@
  */
 
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import { describe, it, mock } from 'node:test'
 import {
   eraseUser,
@@ -85,6 +87,8 @@ function makeChain(config: TableConfig) {
 type AdminOverrides = Partial<
   Record<
     | 'memberships'
+    | 'videos'
+    | 'agencies'
     | 'users'
     | 'audit_log'
     | 'notifications'
@@ -104,6 +108,7 @@ function makeAdmin(
   const tableConfigs: Record<string, TableConfig> = {
     memberships: { selectData: [{ agency_id: AGENCY_A, role: 'agent' }] },
     users: {},
+    videos: {},
     audit_log: {},
     notifications: {},
     notification_preferences: {},
@@ -565,7 +570,15 @@ describe('lib/erasure — removeMemberWithData (D13 agency-scoped)', () => {
   })
 
   it('membership delete failure is reported', async () => {
-    const { admin } = makeAdmin({ memberships: { deleteError: { message: 'fk' } } })
+    const { admin } = makeAdmin({
+      memberships: {
+        deleteError: { message: 'fk' },
+        selectData: [
+          { agency_id: AGENCY_A, role: 'talent' },
+          { agency_id: AGENCY_B, role: 'talent' },
+        ],
+      },
+    })
     const result = await removeMemberWithData(admin as never, TARGET_ID, AGENCY_A, ACTOR)
     assert.deepStrictEqual(result, { ok: false, step: 'delete_membership', message: 'fk' })
   })
@@ -707,5 +720,102 @@ describe('lib/erasure — canEraseUser scoped to a single agency (D13)', () => {
     const caller: MembershipRecord[] = [{ agency_id: AGENCY_A, role: 'owner' }]
     const target: MembershipRecord[] = [{ agency_id: AGENCY_B, role: 'talent' }]
     assert.strictEqual(canEraseUser(CALLER_ID, TARGET_ID, inB(caller), inB(target)), false)
+  })
+})
+
+const AGENCY_C = '00000000-0000-0000-0000-0000000000a3'
+const ERASURE_SRC = fs.readFileSync(path.join(import.meta.dirname, 'erasure.ts'), 'utf8')
+
+function membershipDeletes(chainsByTable: Record<string, ReturnType<typeof makeChain>[]>) {
+  return (chainsByTable.memberships ?? []).filter((c) =>
+    c.calls.some((x: ChainCall) => x.method === 'delete')
+  )
+}
+
+describe('lib/erasure — M1: scoped removal never deletes the membership before the account erase', () => {
+  it('last membership: a failing eraseUser leaves the membership in place for retry', async () => {
+    const { admin, chainsByTable, rpcCalls } = makeAdmin({
+      memberships: { selectData: [{ agency_id: AGENCY_A, role: 'talent' }] },
+      users: { updateError: { message: 'tombstone down' } },
+    })
+    const result = await removeMemberWithData(admin as never, TARGET_ID, AGENCY_A, ACTOR)
+
+    assert.strictEqual(result.ok, false)
+    assert.strictEqual(rpcCalls[0].args.p_actor_id, ACTOR.id)
+    assert.strictEqual(
+      membershipDeletes(chainsByTable).length,
+      0,
+      'membership must survive for retry'
+    )
+  })
+
+  it("last membership success: exactly one membership delete (eraseUser's), account erased", async () => {
+    const { admin, chainsByTable, deleteUserMock } = makeAdmin({
+      memberships: { selectData: [{ agency_id: AGENCY_A, role: 'talent' }] },
+    })
+    const result = await removeMemberWithData(admin as never, TARGET_ID, AGENCY_A, ACTOR)
+    assert.deepStrictEqual(result, { ok: true, agencyIds: [AGENCY_A], accountErased: true })
+    assert.strictEqual(membershipDeletes(chainsByTable).length, 1)
+    assert.strictEqual(deleteUserMock.mock.calls.length, 1)
+  })
+
+  it('other memberships remain: the scoped membership is deleted, account kept', async () => {
+    const { admin, chainsByTable, deleteUserMock } = makeAdmin({
+      memberships: {
+        selectData: [
+          { agency_id: AGENCY_A, role: 'talent' },
+          { agency_id: AGENCY_B, role: 'talent' },
+        ],
+      },
+    })
+    const result = await removeMemberWithData(admin as never, TARGET_ID, AGENCY_A, ACTOR)
+    assert.deepStrictEqual(result, { ok: true, agencyIds: [AGENCY_A], accountErased: false })
+    assert.strictEqual(deleteUserMock.mock.calls.length, 0)
+    assert.strictEqual(membershipDeletes(chainsByTable).length, 1)
+  })
+
+  it('alerts Sentry with a fixed, PII-free message on a failure after a destructive step', () => {
+    assert.match(
+      ERASURE_SRC,
+      /Sentry\.captureMessage\(\s*'erasure: failure after destructive step'/
+    )
+  })
+})
+
+describe('lib/erasure — L2: purge covers agencies where the membership is gone', () => {
+  it('purges the union of membership agencies and agencies holding the talent videos', async () => {
+    const { admin, rpcCalls, chainsByTable } = makeAdmin({
+      memberships: { selectData: [{ agency_id: AGENCY_A, role: 'talent' }] },
+      videos: { selectData: [{ agency_id: AGENCY_A }, { agency_id: AGENCY_C }] },
+    })
+    const result = await eraseUser(admin as never, TARGET_ID)
+    assert.strictEqual(result.ok, true)
+    assert.deepStrictEqual(
+      rpcCalls.map((c) => c.args.p_agency_id).sort(),
+      [AGENCY_A, AGENCY_C].sort()
+    )
+    const eq = chainsByTable.videos[0].calls.find((c: ChainCall) => c.method === 'eq')
+    assert.deepStrictEqual(eq!.args, ['talent_id', TARGET_ID])
+  })
+})
+
+describe('lib/erasure — L3: email failures', () => {
+  it('Sentry gets a fixed message + step tag, never the raw error', () => {
+    assert.doesNotMatch(ERASURE_SRC, /Sentry\.captureException\(err\)/)
+    assert.match(ERASURE_SRC, /Sentry\.captureMessage\(\s*'erasure email failed'/)
+  })
+
+  it('skips the confirmation for an @erased.invalid address', async () => {
+    const sent: unknown[] = []
+    await sendErasureEmails(
+      {} as never,
+      {
+        target: { id: TARGET_ID, email: tombstoneEmail(TARGET_ID), fullName: null },
+        agencyId: null,
+        accountErased: true,
+      },
+      async (m) => void sent.push(m)
+    )
+    assert.strictEqual(sent.length, 0)
   })
 })
