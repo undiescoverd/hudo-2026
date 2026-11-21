@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { VideoPlayer } from '@/components/player/VideoPlayer'
@@ -24,8 +24,9 @@ export default function VideoPage({ params }: Props) {
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [agencyId, setAgencyId] = useState<string | null>(null)
-  // Caller's role in this video's agency (from the versions endpoint). null
-  // until loaded, so agent-only controls never flash for talent.
+  // The viewer's role in this video's agency, from the versions endpoint. It gates
+  // Share and which comment actions render (the APIs re-check both). null = not
+  // loaded yet, or the lookup failed: agent-only controls never flash for talent.
   const [role, setRole] = useState<string | null>(null)
   // null = still loading (or not yet retried); passed straight through to
   // VersionSelector so it doesn't issue its own duplicate GET request.
@@ -47,7 +48,14 @@ export default function VideoPage({ params }: Props) {
     error: commentsError,
     handleInsert: handleCommentInsert,
     handleOptimisticRollback: handleCommentRollback,
+    resolveComment,
+    editComment,
+    deleteComment,
   } = useVideoComments(params.id, activeVersionId)
+
+  // Timeline markers anchor top-level comments only: a reply continues its parent's
+  // thread (it carries the parent's timestamp) and must not add a second marker.
+  const timelineComments = useMemo(() => comments.filter((c) => c.parentId === null), [comments])
 
   // Fetch the current user id once on mount
   const fetchUser = useCallback(() => {
@@ -140,7 +148,7 @@ export default function VideoPage({ params }: Props) {
             <VideoPlayer
               videoId={params.id}
               versionId={activeVersionId ?? undefined}
-              comments={comments}
+              comments={timelineComments}
               className="h-full w-full"
             />
           }
@@ -152,11 +160,15 @@ export default function VideoPage({ params }: Props) {
                 agencyId={agencyId}
                 userId={userId}
                 currentUserName={userName}
+                viewerRole={role}
                 comments={comments}
                 loading={commentsLoading}
                 error={commentsError}
                 onOptimisticInsert={handleCommentInsert}
                 onOptimisticRollback={handleCommentRollback}
+                onResolveComment={resolveComment}
+                onEditComment={editComment}
+                onDeleteComment={deleteComment}
               />
             ) : bootstrapError ? (
               <div className="p-4">

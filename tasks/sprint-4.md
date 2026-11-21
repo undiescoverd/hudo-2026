@@ -6,7 +6,7 @@
 
 ---
 
-> **Migration numbering (verified 2026-10-22):** migrations 0001–0023 are in the repo. Wave 1 uses **0024–0026** (deletion plan). S4-JOURNEY-001 uses **0027**. Archive & restore (archive plan Phase 5) moves to **0028**. Apply via the `/apply-migration` flow (`sh scripts/db-push.sh local|staging`, `--dry-run` first → both hudo-dev + hudo-staging), never MCP `apply_migration` or the SQL editor. Because 0027 is already applied, pushing 0024–0026 later needs `--include-all` (`db push` refuses versions older than the newest remote one) — check the dry-run list first.
+> **Migration numbering (verified 2026-10-22):** migrations 0001–0023 are in the repo. Wave 1 uses **0024–0026** (deletion plan). S4-JOURNEY-001 uses **0027**. Archive & restore (archive plan Phase 5) moves to **0028**. S4-REVIEW-004 uses **0029**. Apply via the `/apply-migration` flow (`sh scripts/db-push.sh local|staging`, `--dry-run` first → both hudo-dev + hudo-staging), never MCP `apply_migration` or the SQL editor. Because 0027 is already applied, pushing 0024–0026 later needs `--include-all` (`db push` refuses versions older than the newest remote one) — check the dry-run list first.
 
 ## Tasks
 
@@ -77,20 +77,20 @@ NOTES: S — GitHub #149 (B1), #150 (B2), #151 (B3); plan Phase 1. Verify the me
 
 ---
 
-- [ ] **S4-DELETE-001** — Delete path foundation
+- [x] **S4-DELETE-001** — Delete path foundation
 
 TASK_ID: S4-DELETE-001
 TITLE: Delete path foundation (storage_deletions queue, purge functions, R2 prefix delete, daily cron)
 BRANCH: feat/s4-S4-DELETE-001-delete-path
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Migration 0024 fixes the three blocking FKs (notifications, guest_links.video_version_id, videos.active_version_id) and adds the storage_deletions queue with RLS
   - Migration 0025 adds purge_video_version / purge_video / purge_talent_in_agency / purge_agency (SECURITY DEFINER, service_role only), each one transaction: queue R2 keys, lower storage_usage_bytes (floor 0), audit_log row, delete rows
   - Purging twice is a no-op; deleting the active version is refused; malformed prefixes are rejected
   - Queue drainer deletes by prefix; an already-gone key counts as done
-  - Daily cron /api/cron/storage-purge (CRON_SECRET, 0 3 * * *) drains the queue
+  - Daily cron /api/cron/storage-purge (CRON_SECRET, 0 1 * * *) drains the queue
   - pgTAP + unit tests for each; reviewers (code, security, RLS) run and logged in SESSIONNOTES.md
 FILES:
   - supabase/migrations/0024_storage_deletions_and_cascades.sql
@@ -213,13 +213,13 @@ NOTES: S — Security surface (app/api/, invitations). Mandatory hudo-security-r
 
 ---
 
-- [ ] **S4-JOURNEY-004** — Load the middleware
+- [x] **S4-JOURNEY-004** — Load the middleware
 
 TASK_ID: S4-JOURNEY-004
 TITLE: Move middleware to project root and open only the public paths
 BRANCH: feat/s4-S4-JOURNEY-004-middleware
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-JOURNEY-001, S4-JOURNEY-002, S4-JOURNEY-003
 ACCEPTANCE_CRITERIA:
   - middleware.ts lives at the project root (app/middleware.ts removed); Next 14 loads it
@@ -298,6 +298,97 @@ NOTES: S — Human-only: brand icons, install check on a real iOS and Android de
 
 ---
 
+- [ ] **S4-REVIEW-001** — New version upload
+
+TASK_ID: S4-REVIEW-001
+TITLE: Upload a new version from the video page (GitHub #190)
+BRANCH: feat/s4-S4-REVIEW-001-new-version
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - "Upload new version" on the video page for the owning talent and agent+ in the video's agency; hidden from other talent and guests
+  - /upload?videoId=<id> shows the existing title read-only, hides title/description, sends videoId to presign so complete creates version N+1 (create_video_version), never a new video
+  - Unknown, foreign or not-allowed videoId shows the presign error and creates nothing
+  - Retry and the close-tab warning work as for a first upload
+  - On success, redirect to /videos/<id> with the new version selected
+  - Agent upload: no status change, no notification. Talent upload: the existing draft/changes_requested auto-flip and agent alert are unchanged
+  - Tests for each criterion; pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green; live Preview check of a v2 upload as talent and as agent
+FILES:
+  - app/(dashboard)/videos/[id]/page.tsx (+ test)
+  - app/(dashboard)/upload/page.tsx (+ test)
+  - components/upload/MetadataForm.tsx (+ test)
+  - components/versions/VersionSelector.tsx (+ test), only if it doesn't select the new version after the redirect
+NOTES: M — Spec: GitHub #190 (decided 2026-10-23). Presign/complete already support videoId; if either route changes, it's a security surface (R2 presigning) and needs hudo-security-reviewer. #162 stays separate.
+
+---
+
+- [ ] **S4-REVIEW-002** — Comment actions
+
+TASK_ID: S4-REVIEW-002
+TITLE: Comment actions: reply, resolve, edit, delete (GitHub #191)
+BRANCH: feat/s4-S4-REVIEW-002-comment-actions
+MODEL: sonnet
+STATUS: in_review
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - Each comment shows only the viewer's allowed actions: Reply (top-level only, any member), Resolve/Unresolve (agent+), Edit (author), Delete (author; agent+ on any)
+  - Reply posts with parent_id and renders nested; resolve/unresolve, edit and soft delete call the existing PATCH/DELETE /api/comments/[id]
+  - A deleted comment with replies shows "Comment deleted" with replies intact; one without replies is hidden
+  - The comments POST route maps the 0008 depth-trigger error (23514) to 400 "Replies can only be one level deep" (behavioural test on the real handler)
+  - Changes appear live for other viewers; useVideoComments keeps merging embed-derived author fields (Failure Log Realtime rule)
+  - API permission checks and rate limits unchanged; guests still can't comment
+  - Tests for each criterion; pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green; live Preview check: resolve as agent, reply as talent, reply-to-reply returns 400
+FILES:
+  - components/comments/CommentItem.tsx, CommentThread.tsx, CommentInput.tsx, CommentPanel.tsx (+ tests)
+  - hooks/useVideoComments.ts (+ test)
+  - app/api/videos/[videoId]/versions/[versionId]/comments/route.ts (+ route.test.ts)
+NOTES: M — Spec: GitHub #191 (decided 2026-10-23). Security surface (app/api/): mandatory hudo-security-reviewer. Soft delete only. Relies on #187 option (b) (S4-REVIEW-004) for live soft-delete events.
+
+---
+
+- [ ] **S4-REVIEW-003** — Talent resubmit
+
+TASK_ID: S4-REVIEW-003
+TITLE: Talent resubmits after Changes requested (GitHub #192)
+BRANCH: feat/s4-S4-REVIEW-003-resubmit
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S4-REVIEW-001
+ACCEPTANCE_CRITERIA:
+  - On a changes_requested video, the owning talent (only) sees "Changes requested. Upload a new version" with the Upload new version button
+  - The talent dashboard row for a changes_requested video links to /videos/<id>
+  - Uploading v(N+1) flips the video to pending_review and sends the existing agent upload alert (test pins it); no new notification type
+  - canTransition unchanged (talent: pending_review from draft or changes_requested only)
+  - Tests for each criterion; pnpm format:check && pnpm type-check && pnpm lint && pnpm build && pnpm test green; live Preview check: agent requests changes, talent uploads v2, agent sees Pending review
+FILES:
+  - app/(dashboard)/videos/[id]/page.tsx (+ test)
+  - app/(dashboard)/talent/page.tsx (+ page.test.tsx)
+  - lib/talent-dashboard.ts (+ test)
+NOTES: S — Spec: GitHub #192 (decided 2026-10-23). Resubmit is upload-only (no re-review button). #161 (re-open Approved) is a separate follow-up.
+
+---
+
+- [x] **S4-REVIEW-004** — Align comments_select with live
+
+TASK_ID: S4-REVIEW-004
+TITLE: Forward migration dropping the unapplied 0004 soft-delete filter (GitHub #187, option b)
+BRANCH: feat/s4-S4-REVIEW-004-comments-select
+MODEL: sonnet
+STATUS: done
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - New forward migration (next free number at build time; 0024–0026 and 0028 are reserved) recreates comments_select without `deleted_at IS NULL`, matching live
+  - tests/rls/comments.test.sql asserts a member CAN select a soft-deleted comment (replaces "Soft-deleted comment excluded from SELECT"); RLS Policy Tests green
+  - Applied to hudo-dev and hudo-staging via scripts/db-push.sh (--dry-run --include-all first; the dry-run lists only the new file)
+  - API reads still filter deleted_at in app code (unchanged)
+FILES:
+  - supabase/migrations/00NN_comments_select_keep_soft_deleted.sql (new)
+  - tests/rls/comments.test.sql
+NOTES: S — Decision: #187 comment (2026-10-23). Security surface (RLS): mandatory rls-tenancy-auditor. Accepted trade-off: soft-deleted comment text stays readable to agency members via direct reads/Realtime; the UI never shows it.
+
+---
+
 - [ ] **S4-ACCESS-001** — axe audit over five page groups
 
 TASK_ID: S4-ACCESS-001
@@ -305,7 +396,7 @@ TITLE: Automated WCAG 2.1 AA audit (axe) and fixes
 BRANCH: feat/s4-S4-ACCESS-001-axe
 MODEL: sonnet
 STATUS: not_started
-BLOCKED_BY: S4-JOURNEY-004, S4-DELETE-001, S4-ERASE-001, S4-SAVER-001
+BLOCKED_BY: S4-JOURNEY-004, S4-DELETE-001, S4-ERASE-001, S4-SAVER-001, S4-REVIEW-001, S4-REVIEW-002, S4-REVIEW-003
 ACCEPTANCE_CRITERIA:
   - @axe-core/playwright added (flagged in PR for dependency approval)
   - tests/e2e/a11y.spec.ts scans five page groups: auth, dashboard, video player, comments, guest
@@ -340,7 +431,7 @@ TITLE: Seven-flow smoke suite against staging (register, invite, upload, comment
 BRANCH: feat/s4-S4-LAUNCH-002-smoke
 MODEL: sonnet
 STATUS: not_started
-BLOCKED_BY: S4-JOURNEY-004, S4-LAUNCH-004
+BLOCKED_BY: S4-JOURNEY-004, S4-LAUNCH-004, S4-REVIEW-002
 ACCEPTANCE_CRITERIA:
   - Seven flows: register → agency; invite talent → accept; upload; comment and resolve; PDF export; guest link; upgrade in Stripe test mode
   - tests/e2e/ extended using existing page objects and fixtures

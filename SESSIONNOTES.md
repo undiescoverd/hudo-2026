@@ -738,3 +738,141 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - Lows L1 (wording around the `/..//` check, which is defence in depth) and L2 (note that the result must never be percent-decoded again) are fixed in the follow-up commit.
     - The medium, already on main: `/auth/callback` has no Upstash rate limiter. It's queued as a separate task card.
 - **Gotcha (if any):** a redirect guard that checks string prefixes (`startsWith('/') && !startsWith('//')`) is bypassable. Browsers treat `\` as `/` and drop tab/CR/LF, and `searchParams.get` decodes `%09` first. Validate with `new URL(t, base).origin` and return the raw target, never the normalised one.
+
+## 2026-10-23 20:25 — #193 merged; S4-REVIEW-001–004 sprint rows (handoff step 3)
+
+- **Task:** handoff step 3, adding the sprint rows for the gate gaps Ian specced on 2026-10-23
+- **Models:** planner=opus (rows written by opus from the agreed specs; no code)
+- **Outcome:** partial. The rows are in a PR. Their Linear issues aren't created yet, because this session has no Linear access.
+- **Notes:**
+  - **#193 (open-redirect fix)** was squash-merged as `3107320` on Ian's go-ahead once the required checks were green. The DeepSeek bots fail on every PR (402).
+  - **Ian approved a second branch,** `chore/s4-review-rows`, cut from `origin/main`.
+  - **New rows in `tasks/sprint-4.md`:**
+    - `S4-REVIEW-001`: new version upload (#190)
+    - `S4-REVIEW-002`: comment actions (#191)
+    - `S4-REVIEW-003`: talent resubmit (#192), blocked by 001
+    - `S4-REVIEW-004`: forward migration for #187 option (b)
+  - **Dependencies extended:** `S4-ACCESS-001` now waits for REVIEW-001–003 (its note already says it runs after UI changes). `S4-LAUNCH-002` now waits for REVIEW-002, because its smoke flow covers "comment and resolve".
+  - **Linear:** this session has no `LINEAR_API_KEY` and the Linear connector failed to connect, so the four issues still need creating, each title starting with its exact task ID. Until then, `sync-check` shows `⚠ ERROR` for them (Failure Log, 2026-06-16 Linear entry).
+- **Gotcha (if any):** a cloud session can push only its designated branch unless the user OKs another. When one PR is already open on it, ask early for a second branch rather than queueing unrelated work behind the merge.
+
+## 2026-10-23 20:44 — Rate limit on `/auth/callback` (follow-up from the #193 security review)
+
+- **Task:** add the Upstash limiter that `/auth/callback` was missing. It was the only auth route without one. The `hudo-security-reviewer` flagged it as a medium on #193.
+- **Models:** planner=opus, executor=sonnet; security review=hudo-security-reviewer
+- **Outcome:** done; PR #195. It was first stacked on #193's head, because #193 adds the test file, then rebased onto `main` after #193 merged.
+- **Notes:**
+  - **Limit:** `auth:callback:ip:<ip>`, 10 per 15 minutes (`AUTH_RATE_WINDOW`). It uses `checkRateLimit(…, 'fail-closed')`, the same as reset-password and invitations, and runs first, before the code is read or exchanged.
+  - **Choice of response:** a plain 429 + `Retry-After`, not a redirect to `/auth/signin?error=rate_limited`. `Retry-After` on a 3xx means "wait before following the redirect", and browsers ignore it. The sign-in page also renders no `?error=` param, not even the existing `error=auth`. A redirect would therefore land the user on a bare form with no reason given.
+  - **Redis outage:** fail-closed, as the policy in `lib/api-helpers.ts` sets for unauthenticated auth routes. The result is a 503 + `Retry-After: 30`.
+  - **Tests:** 6 new cases in `app/auth/callback/route.test.ts`: under the limit (keyed by IP), keyed by the rightmost `x-forwarded-for`, exactly at the limit (still allowed), over the limit (429, code not spent), Upstash down (503, code not spent), and a request with no code. Without the route change, the 5 that need the limiter fail, and the 15 existing cases still pass. The full suite has 1291 passing before the boundary case was added; format, type-check, lint and build are clean.
+  - **Security review:** no blocker, high or medium issue. The reviewer mutation-tested the limiter: moving it after the exchange, making it fail-open, changing the window, making the key global, and removing it were all caught.
+    - Lows fixed: L1, the 429 text said "try the link again", but the PKCE code may expire during the 15-minute wait, so it now also says "or request a new one". L2, changing the limit from 10 to 3 went uncaught, so an at-the-limit case now pins it.
+    - Lows accepted: L3, code-less requests are counted too, the same as reset-password and invitations. L4, completing confirmation and recovery now also depends on Upstash, which is the fail-closed policy.
+    - Pre-existing, for the backlog: `lib/redis.ts` runs INCR and EXPIRE as two calls. If EXPIRE fails after the first INCR, the key has no TTL and that IP stays blocked on every limited route.
+- **Gotcha (if any):** to stub an Upstash outage in a unit test, return a non-2xx response from the fake Upstash endpoint; don't make `fetch` throw. The SDK throws at once on a non-2xx, but it retries a thrown `fetch` 5 times with exponential backoff (about 4 s per test). It also sends even a single `INCR` as a pipeline (`[["incr", key]]`), so stubs must handle both shapes.
+
+## 2026-10-23 20:55 — S4-REVIEW-004: migration 0029 keeps soft-deleted comments visible to members (#187 option b)
+
+- **Task:** S4-REVIEW-004 (branch `feat/s4-S4-REVIEW-004-comments-select`, built in its own worktree in parallel with S4-REVIEW-002)
+- **Models:** planner=opus, executor=sonnet; RLS audit=rls-tenancy-auditor
+- **Outcome:** partial. The PR is open; applying 0029 to hudo-dev and hudo-staging is left to Ian (no DB credentials in the cloud session).
+- **Notes:**
+  - **What `0029_comments_select_keep_soft_deleted.sql` does:** recreates `comments_select` with the exact 0002 `USING` clause (no `deleted_at IS NULL`). That's what live has, because 0004 was never applied there. 0010 doesn't touch the SELECT policy; it only mentions it in a comment.
+  - **pgTAP Test 13** now checks that a same-agency member (Clara) sees the soft-deleted comment and an other-agency member (Diana) doesn't. Plan is 15. Diana runs first, so Test 14 still runs as Clara.
+  - **No local pgTAP run** (no supabase CLI, Docker daemon unreachable). The executor checked the policy shape and visibility in a scratch Postgres 16 instead; CI's RLS job runs the real file.
+  - **Docs still describe the RLS filter:** `.claude/agents/rls-tenancy-auditor.md` item 4, `docs/Hudo App 2026/tables/comments.md` and `ADR-005-soft-delete-only.md`. They're outside this task's FILES; follow-up task suggested.
+  - **Apply:** `sh scripts/db-push.sh local --dry-run --include-all`, then `staging`. The dry-run should list only 0029. It doesn't change live's policy; it only aligns the tracked history.
+- **Gotcha (if any):** with no RLS `deleted_at` filter on `comments`, app code is the only thing hiding soft-deleted comments. Every new read of `comments` must filter `deleted_at` itself.
+
+## 2026-10-23 21:40 — S4-REVIEW-002: comment actions (reply, resolve, edit, delete)
+
+- **Task:** S4-REVIEW-002 (#191), branch `feat/s4-S4-REVIEW-002-comment-actions`, built in its own worktree in parallel with S4-REVIEW-004
+- **Models:** planner=opus, executor=sonnet; reviews=hudo-security-reviewer (fit to merge) + sonnet code review (simplify included)
+- **Outcome:** partial. The PR is open. The live Preview check (resolve as agent, reply as talent, reply-to-reply 400) still needs `STAGING_SEED_PASSWORD`.
+- **Notes:**
+  - **What was built:**
+    - Per-comment actions, gated by `getCommentPermissions`: Reply on top-level comments, Resolve for agent+, Edit for the author, Delete for the author or agent+.
+    - The viewer's role comes from a client `memberships` read under RLS, as the upload page does.
+    - A "Comment deleted" placeholder when a deleted comment has replies.
+    - The empty state follows what's actually visible.
+    - The POST route returns 400 "Replies can only be one level deep". The 23514 backstop only applies to replies, and logs.
+  - **Security review: fit to merge.** Its two lows are fixed: a stale Realtime UPDATE can no longer resurrect a deleted comment, and the backstop now logs.
+  - **Code review fixes:**
+    - Space on a focused button no longer toggles playback (`usePlayerShortcuts`).
+    - Optimistic resolve and edit only own their fields, and roll back only if those fields are untouched, so concurrent Realtime updates aren't clobbered.
+    - A 404 on PATCH or DELETE marks the comment deleted.
+    - Focus is kept after save, delete and reply.
+    - Regex-on-source tests were replaced by pure extractions (`runCommentDelete`, `editKeyAction`, `resolveCommentTarget`, `itemReducer`).
+    - `buildThreads` owns visibility.
+  - **Decisions:** resolve stays allowed on replies (resolved state only feeds the per-comment PDF status). Timeline markers show top-level comments only.
+  - **FILES deviation:** `page.tsx` (role wiring), `hooks/usePlayerShortcuts.ts` (Space fix) and the new `components/comments/*` helpers.
+  - **Worker restart:** a restart killed one full-suite run mid-way (exit 137). The worktrees survived, and the re-run is green (1443).
+- **Gotcha (if any):** `GET /comments` omits soft-deleted parents, so a reload orphans their replies; `buildThreads` rebuilds a placeholder parent client-side. Two more:
+  - `tsx --test` can't take explicit bracketed paths (`[videoId]`); run those files with `npx tsx "<path>"`.
+  - Rendering components in Node tests needs `globalThis.React = React`, because tsx compiles JSX to classic `React.createElement`.
+
+## 2026-10-24 — S4-JOURNEY-004: middleware moved to project root (PR #188, awaiting live walk + merge)
+
+- **Task:** S4-JOURNEY-004 (RES-221). Also landed PR #185 (merge commit, Ian approved) as handoff step 1.
+- **Models:** planner=opus, executor=sonnet (worktree agent), reviews=hudo-security-reviewer + sonnet code reviewer + 4-angle simplify
+- **Outcome:** partial. PR #188 is open, CI green, task `in_review` (sprint file + Linear). The signed-out live checks passed; the signed-in role walk has not run yet.
+- **Notes:**
+  - `git mv app/middleware.ts middleware.ts`. `next build` now lists `ƒ Middleware 157 kB`, which is the proof Next loads it. `/terms`, `/privacy`, `/dpa` and `/offline` were pre-added to `PUBLIC_PATHS` (Ian's call), so LAUNCH-001 and PWA-001 don't touch middleware.
+  - Review fixes:
+    - Session cookies refreshed by `getUser()` are now copied onto redirect and 403 responses. Before, rotated refresh tokens were dropped.
+    - `?redirect=` keeps the query string.
+    - The role rule is a pure `isForbidden()`.
+  - **Preview signed-out checks (passed):**
+    - `/`, `/dashboard`, `/talent` and `/videos/abc?t=30` return 307 to `/auth/signin?redirect=…` with the query kept.
+    - `/auth/signin`, `/auth/register` and `/guest/invalid` return 200.
+    - A bad guest token returns 307 to `/guest/invalid`, not sign-in.
+    - `POST /api/webhooks/stripe` returns 400 from the app.
+    - No Vercel deployment protection sits in front of the branch Preview.
+  - **Cron returns 500 "Server misconfigured" on Preview:** `CRON_SECRET` isn't set in the Vercel Preview env. The route is reached (not redirected), so it's not this PR.
+  - **Signed-in walk still to do:** `scripts/walk-preview-roles.mjs` on `chore/handoff-s4-next-steps` covers owner, agent, talent and a guest link. Staging has no admin_agent seed user, and a fresh owner sign-up (the #175 loop) needs a new staging user. Both are waiting on Ian.
+  - **Pre-existing open redirect found:** `safeRedirect` (`lib/auth-validation.ts:17`) accepts `/\evil.com`. `app/auth/callback/route.ts` already blocks it. Separate fix pending Ian's OK.
+  - DeepSeek bot reviews still fail with 402, so the pr-fix loop was skipped.
+- **Gotcha (if any):** a matcher exclusion by file extension (`.*\.(png|js|…)$`) lets page paths like `/talent/x.png` skip the auth middleware entirely. Exclude static files by name.
+
+## 2026-10-30 — PR triage: 4 merged, #188 conflict resolved
+
+- **Task:** audit all 13 open PRs for merge readiness; merge the ready ones; unblock #188 (S4-JOURNEY-004)
+- **Models:** planner=opus; PR audit=sonnet (read-only)
+- **Outcome:** partial. Four PRs merged; #188 is conflict-free and waiting on CI and its signed-in role walk.
+- **Notes:**
+  - **CI:** real CI was green on all 13 PRs. The only red checks were "AI Code Review" and pullfrog, which still fail on DeepSeek `402 Insufficient Balance`. No PR has a Claude Approvals check.
+  - **Merged (squash, Ian approved):** #173 (CSP export), #157 (forgot-password link), #177 (Sprint 5 backlog), #196 (0029, S4-REVIEW-004).
+  - **0029 is not applied yet.** Run `sh scripts/db-push.sh local --dry-run`, then `local`, then the same for `staging`.
+  - **#188:** merged main in. The only conflict was SESSIONNOTES.md, where both sides had appended entries; both are kept, in date order. I confirmed `/auth/forgot-password` (linked from #157) is in the root middleware's public paths. Format, type-check, lint, 1303/1303 unit tests and build all pass.
+  - **Merge order for the rest:**
+    - #199 (0030) is stacked on #196, so it is next in the comments chain; #201 (docs) follows it.
+    - #197, #198 and #158 all edit `app/(dashboard)/videos/[id]/page.tsx` and its test, so the second and third of them to merge will conflict.
+    - #175 needs one doc fix: row F25 should read `#143, #144–#148`.
+- **Gotcha (if any):** nearly every PR appends to SESSIONNOTES.md at the same spot, so every merge after the first conflicts there. Resolve by keeping both sides in timestamp order.
+
+## 2026-10-30 10:00 — S4-DELETE-001: delete path foundation (0024 queue + cascades, 0025 purge functions, drainer, cron)
+
+- **Task:** S4-DELETE-001 (#144), branch `feat/s4-S4-DELETE-001-delete-path`, draft PR
+- **Models:** planner=opus, executor=sonnet; reviews=sonnet code reviewer + hudo-security-reviewer + rls-tenancy-auditor
+- **Outcome:** partial. Code, tests and docs are done and the PR is open. Still to do: apply 0024/0025 to hudo-dev and hudo-staging, and the Task 2.4 Step 7 live check.
+- **Notes:**
+  - **FK audit:** only four FKs blocked a purge. Checked against `pg_constraint` on a scratch DB with every migration applied.
+    - `notifications_video_id_fkey`, `notifications_comment_id_fkey` and `guest_links_video_version_id_fkey` went from NO ACTION to CASCADE.
+    - `videos_active_version_id_fkey` went from NO ACTION to SET NULL.
+    - Every other FK onto agencies, videos and video_versions was already CASCADE.
+    - `comments.parent_id` stays NO ACTION. The cascade removes parent and reply in one statement, so it is never violated (tested).
+  - **Reviews: no blocker or high.** Fixed in `8cfa948`:
+    - **Drainer treated any 404 as "already gone".** `NoSuchBucket` is a 404 too, so a misconfigured bucket would have silently marked every row done. Now only `NoSuchKey`/`NotFound` count.
+    - **A prefix slower than `maxDuration` looped forever.** It never reached `maxAttempts`. The fix claims `attempts` before each R2 call and gives each run a 45 s budget.
+    - **Unchecked update errors.** Every bookkeeping update is now checked. A Sentry alert fires every run while any row is parked, because parked erasure rows mean personal data is still in R2.
+    - **`purge_video_version` lock order.** It locks the version, then the video, the reverse of `purge_video`, so the two could deadlock. It also had a race on the active-version check. It now takes the video lock first.
+    - **Shared or foreign keys.** `/upload/complete` has no idempotency guard, so a replay gives two versions one `r2_key`. `purge_video_version` now queues a key only if it is inside the video's own prefix and not shared with another version or the thumbnail. A `storage_deletions_key_shape` CHECK backs that up.
+    - **Schedule.** Purge moved to `0 1 * * *`, before `storage-reconcile` at 02:00. The purge lowers the counter at once, so a purge after reconcile caused a false drift alert every night.
+  - **Not fixed here (follow-up):** an `/upload/complete` running at the same time as a purge leaves the counter too high. `increment_storage_usage` runs in its own transaction after `create_video_version`, and reconcile only alerts, so nothing corrects it. This predates the PR, so it is a separate task.
+  - **Validation:**
+    - **Real pgTAP 1.3.5:** all 17 `tests/rls` files pass on a scratch Postgres 16 with a Supabase stub, including `purge_functions` 33/33 and `storage_deletions` 9/9. pgTAP is plain SQL, so it loads from the source tarball (`sed` on `sql/pgtap.sql.in`) without `make`.
+    - **Unit:** 1317/1317.
+    - **Format, type-check, lint and build:** all clean.
+  - **Apply:** 0027 and 0029 are already applied, so 0024/0025 need `--include-all`. Run `sh scripts/db-push.sh local --dry-run --include-all`; it should list 0024, 0025 and 0029 if 0029 isn't applied yet. Then the same for `staging`.
+- **Gotcha (if any):** `/tmp/claude-0` is root-owned mode 700, so a postgres-owned cluster can't live in the scratchpad. Use `/var/tmp`. To run real pgTAP without a package, generate it: `sed -e 's,MODULE_PATHNAME,$libdir/pgtap,g' -e 's,__OS__,linux,g' -e 's,__VERSION__,1.3,g' sql/pgtap.sql.in > pgtap.sql`, then `psql -f pgtap.sql`.

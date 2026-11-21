@@ -2,8 +2,11 @@
 -- tests/rls/comments.test.sql
 --
 -- PRD Policies enforced:
---   comments_select      — All agency members can read non-deleted
---                          comments; cross-agency read is blocked.
+--   comments_select      — All agency members can read comments in their
+--                          agency, INCLUDING soft-deleted ones (Realtime
+--                          must deliver soft-delete UPDATEs; the API
+--                          filters deleted_at in code; #187, migration
+--                          0029). Cross-agency read is blocked.
 --   comments_insert      — Any authenticated agency member can insert
 --                          a comment (user_id = auth.uid()).
 --   comments_update_own  — Users can soft-delete (deleted_at) or edit
@@ -14,7 +17,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(14);
+SELECT plan(15);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -260,11 +263,33 @@ SELECT is(
 );
 
 
--- ── Test 13: Soft-deleted comments excluded from SELECT ──────────────
--- Clara's comment C2 was soft-deleted in Test 5, then un-deleted for Test 11.
--- Let's soft-delete it again and verify it's excluded.
+-- ── Test 13: Soft-deleted comments stay visible to agency members ────
+-- Decision #187 (option b): comments_select has NO `deleted_at IS NULL`
+-- filter (migration 0029 matches live; the 0004 filter was never applied
+-- there). A soft delete is an UPDATE, and Realtime checks each
+-- subscriber's SELECT policy against the new row, so the filter would
+-- stop other viewers receiving the soft-delete event. The API excludes
+-- deleted rows in app code instead.
+-- Clara's comment C2 was soft-deleted in Test 5, then un-deleted for
+-- Test 11. Soft-delete it again, then verify that a member of another
+-- agency (Diana, Agency D) still cannot see it, and that a same-agency
+-- member (Clara) still can. Clara goes last so Test 14 runs as Clara,
+-- as it did before.
 RESET ROLE;
 UPDATE comments SET deleted_at = now() WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef003-0003-4000-a000-000000000004","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+-- Cross-agency isolation is unchanged for soft-deleted rows.
+SELECT is(
+  (SELECT count(*)::int FROM comments
+    WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid),
+  0,
+  'Soft-deleted comment not visible to a member of another agency (cross-agency isolation; #187)'
+);
+
+RESET ROLE;
 SELECT set_config('request.jwt.claims',
   '{"sub":"dbeef003-0003-4000-a000-000000000002","role":"authenticated"}', true);
 SET LOCAL ROLE authenticated;
@@ -272,8 +297,8 @@ SET LOCAL ROLE authenticated;
 SELECT is(
   (SELECT count(*)::int FROM comments
     WHERE id = 'c0de0003-0003-4000-a000-000000000002'::uuid),
-  0,
-  'Soft-deleted comment excluded from SELECT (deleted_at IS NULL filter)'
+  1,
+  'Soft-deleted comment still visible to agency members (Realtime delivers soft deletes; #187)'
 );
 
 
