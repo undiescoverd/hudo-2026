@@ -7,7 +7,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(42);
+SELECT plan(48);
 
 -- ── Setup ──────────────────────────────────────────────────────
 -- Agency A (usage 300): V1 (v1=100, v2=200 active; comment + reply on v1), V3 (talent's second video)
@@ -201,6 +201,30 @@ SELECT is((SELECT count(*) FROM storage_deletions
   1::bigint, 'the draft''s R2 prefix is queued with reason empty_draft');
 SELECT is(purge_empty_drafts(), 0::integer, 'idempotent: second run purges nothing');
 SELECT is(purge_empty_drafts(interval '30 minutes'), 1::integer, 'p_older_than is honoured (fresh draft now eligible)');
+
+SELECT is((SELECT storage_usage_bytes FROM agencies WHERE id = 'c0ffee25-0000-4000-a000-00000000000e'::uuid), 77::bigint,
+  'sweep leaves the agency storage_usage_bytes unchanged (empty drafts hold no bytes)');
+SELECT ok(has_function_privilege('service_role', 'public.purge_empty_drafts(interval)', 'EXECUTE'), 'service_role can execute purge_empty_drafts');
+SELECT ok(NOT has_function_privilege('anon', 'public.purge_empty_drafts(interval)', 'EXECUTE'), 'anon cannot execute purge_empty_drafts');
+
+-- One row that cannot be purged must not roll back the sweep (per-row exception block).
+INSERT INTO agencies (id, name, slug) VALUES
+  ('c0ffee25-0000-4000-a000-00000000000f'::uuid, 'Purge F', 'rls-purge-f');
+INSERT INTO memberships (user_id, agency_id, role) VALUES
+  ('dbeef025-0025-4000-a000-000000000001'::uuid, 'c0ffee25-0000-4000-a000-00000000000f'::uuid, 'talent');
+INSERT INTO videos (id, agency_id, talent_id, title, status, created_at) VALUES
+  ('c0ffee25-0000-4000-a000-0000000000c1'::uuid, 'c0ffee25-0000-4000-a000-00000000000f'::uuid, 'dbeef025-0025-4000-a000-000000000001'::uuid, 'unpurgeable', 'draft', now() - interval '3 days'),
+  ('c0ffee25-0000-4000-a000-0000000000c2'::uuid, 'c0ffee25-0000-4000-a000-00000000000f'::uuid, 'dbeef025-0025-4000-a000-000000000001'::uuid, 'purgeable', 'draft', now() - interval '2 days');
+CREATE FUNCTION pg_temp.block_c1() RETURNS trigger LANGUAGE plpgsql AS $f$
+BEGIN
+  IF OLD.id = 'c0ffee25-0000-4000-a000-0000000000c1'::uuid THEN RAISE EXCEPTION 'blocked for test'; END IF;
+  RETURN OLD;
+END $f$;
+CREATE TRIGGER block_c1 BEFORE DELETE ON videos FOR EACH ROW EXECUTE FUNCTION pg_temp.block_c1();
+SELECT is(purge_empty_drafts(), 1::integer, 'count only includes rows actually purged');
+SELECT is((SELECT count(*) FROM videos WHERE id = 'c0ffee25-0000-4000-a000-0000000000c2'::uuid), 0::bigint, 'the purgeable draft is purged despite a failing sibling');
+SELECT is((SELECT count(*) FROM videos WHERE id = 'c0ffee25-0000-4000-a000-0000000000c1'::uuid), 1::bigint, 'the failing row is left intact (its subtransaction rolled back)');
+DROP TRIGGER block_c1 ON videos;
 
 SELECT set_config('request.jwt.claims',
   '{"sub":"dbeef025-0025-4000-a000-000000000001","role":"authenticated"}', true);

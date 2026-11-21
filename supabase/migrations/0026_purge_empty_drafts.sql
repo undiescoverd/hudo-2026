@@ -8,6 +8,11 @@
 -- Called by the daily storage-purge cron BEFORE it drains the queue.
 -- ============================================================
 
+-- Limitations / design notes:
+--  * created_at is the age clock. An old draft that is re-presigned for a retry can be swept
+--    immediately: a still-in-flight upload on a draft older than 24h can be lost (upload/complete
+--    then returns 404). Accepted; a completed upload can no longer be lost (see the recheck below).
+--  * Bounded: at most 500 drafts per run (oldest first); the rest go in the next daily run.
 CREATE OR REPLACE FUNCTION purge_empty_drafts(p_older_than interval DEFAULT interval '24 hours')
 RETURNS integer
 LANGUAGE plpgsql
@@ -24,9 +29,28 @@ BEGIN
        AND v.active_version_id IS NULL
        AND NOT EXISTS (SELECT 1 FROM video_versions vv WHERE vv.video_id = v.id)
        AND v.created_at < now() - p_older_than
+     ORDER BY v.created_at
+     LIMIT 500
   LOOP
-    PERFORM purge_video(v_id, 'empty_draft', NULL, 'System');
-    v_count := v_count + 1;
+    BEGIN
+      -- The candidate list above is an unlocked snapshot. upload/complete (create_video_version)
+      -- locks the video row and may commit a version after the snapshot; purge_video would then
+      -- delete that brand-new version and queue its R2 prefix. So re-lock and re-test each row:
+      -- FOR UPDATE blocks/serialises against create_video_version, SKIP LOCKED skips a row being
+      -- written right now (retry tomorrow), and the re-test catches versions committed since.
+      PERFORM 1 FROM videos v
+        WHERE v.id = v_id AND v.status = 'draft' AND v.active_version_id IS NULL
+          AND v.created_at < now() - p_older_than
+          AND NOT EXISTS (SELECT 1 FROM video_versions vv WHERE vv.video_id = v.id)
+        FOR UPDATE SKIP LOCKED;
+      IF FOUND THEN
+        PERFORM purge_video(v_id, 'empty_draft', NULL, 'System');
+        v_count := v_count + 1;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      -- One bad row must not roll back the whole sweep (the subtransaction undoes only this row).
+      RAISE WARNING 'purge_empty_drafts: skipped video %: %', v_id, SQLERRM;
+    END;
   END LOOP;
   RETURN v_count;
 END
