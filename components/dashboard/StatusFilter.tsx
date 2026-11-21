@@ -6,7 +6,8 @@
  */
 
 import { Checkbox } from '@/components/ui/checkbox'
-import { VIDEO_STATUSES, STATUS_STYLES } from '@/lib/video-status'
+import { VIDEO_STATUSES } from '@/lib/video-status'
+import { StatusPill } from '@/components/ui/status-pill'
 import type { VideoStatus } from '@/lib/video-status'
 
 type Props = {
@@ -36,11 +37,7 @@ export function StatusFilter({ selected, onChange }: Props) {
               onCheckedChange={() => toggle(status)}
             />
             <label htmlFor={id} className="cursor-pointer">
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[status]}`}
-              >
-                {status.replace(/_/g, ' ')}
-              </span>
+              <StatusPill status={status} />
             </label>
           </div>
         )
