@@ -83,6 +83,9 @@ export async function GET(_request: NextRequest, { params }: { params: { videoId
 
   return NextResponse.json({
     agencyId: video.agency_id,
+    // Caller's own role in this agency — lets the video page hide agent-only
+    // controls (e.g. Share guest link) instead of showing a button that 403s.
+    role: membership.role,
     versions: (versions ?? []).map((v) => ({
       id: v.id,
       versionNumber: v.version_number,

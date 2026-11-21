@@ -23,6 +23,7 @@ function makeDeps() {
   const updates: Array<Record<string, unknown>> = []
   const queue = [{ id: 1, target: 'a/b/v1.mp4', is_prefix: false, attempts: 0 }]
   const admin = {
+    rpc: async () => ({ data: 2, error: null }),
     from: () => ({
       select: (_c: string, opts?: { head?: boolean }) => {
         const q = {
@@ -74,12 +75,16 @@ describe('GET /api/cron/storage-purge', () => {
     const { deps, updates } = makeDeps()
     const res = await GET(makeRequest(SECRET), deps)
     assert.equal(res.status, 200)
-    assert.deepEqual(await res.json(), { drained: { processed: 1, failed: 0, skipped: 0 } })
+    assert.deepEqual(await res.json(), {
+      emptyDraftsPurged: 2,
+      drained: { processed: 1, failed: 0, skipped: 0 },
+    })
     assert.equal(updates.length, 2, 'claim + completion writes')
   })
 
   it('returns 500 when the queue cannot be read', async () => {
     const admin = {
+      rpc: async () => ({ data: 0, error: null }),
       from: () => ({
         select: () => {
           const q = {
