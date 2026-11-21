@@ -12,6 +12,8 @@ import { getCurrentUserRole } from '@/lib/auth-helpers'
 import { getAgencyVideos } from '@/lib/dashboard'
 import { AgentDashboard } from '@/components/dashboard/AgentDashboard'
 import { DashboardError } from '@/components/dashboard/DashboardError'
+import { OnboardingChecklist } from '@/components/dashboard/OnboardingChecklist'
+import { getOnboardingChecklist } from '@/lib/onboarding-checklist'
 import { VideoStatusLive } from '@/components/dashboard/VideoStatusLive'
 
 const AGENT_PLUS_ROLES = new Set(['owner', 'admin_agent', 'agent'])
@@ -50,6 +52,10 @@ export default async function DashboardPage() {
     console.error('[dashboard-page] getAgencyVideos failed:', error)
   }
 
+  // Owner-only onboarding checklist; null (hidden) when not owner, all done, or on query error.
+  const checklist =
+    role === 'owner' ? await getOnboardingChecklist({ supabase, userId: user.id }) : null
+
   return (
     <main className="max-w-7xl mx-auto px-4 py-8">
       {agent_agency_ids.map((id) => (
@@ -60,6 +66,10 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-1">All videos across your agencies.</p>
       </div>
+
+      {checklist && (
+        <OnboardingChecklist items={checklist.items} agencyName={checklist.agencyName} />
+      )}
 
       {error ? <DashboardError /> : <AgentDashboard initialVideos={initialVideos ?? []} />}
     </main>

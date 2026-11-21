@@ -60,15 +60,16 @@ describe('users/[userId]/data route — source invariants', () => {
   it('denies with a generic 403 before any existence check (no user enumeration)', () => {
     assert.match(
       source,
-      /!canEraseUser\([\s\S]{0,120}\)\s*\)?\s*\{[\s\S]{0,120}error:\s*'Access denied'[\s\S]{0,40}status:\s*403/
+      /!canEraseUser\([\s\S]{0,300}\)\s*\)?\s*\{[\s\S]{0,120}error:\s*'Access denied'[\s\S]{0,40}status:\s*403/
     )
   })
 
   it('delegates the authz decision to canEraseUser (executed matrix coverage lives in lib/erasure.test.ts)', () => {
     assert.match(source, /import \{[^}]*canEraseUser[^}]*\} from '@\/lib\/erasure'/)
+    // Authz is evaluated against the ONE scoped agency (D13), not the whole membership set.
     assert.match(
       source,
-      /canEraseUser\(user\.id,\s*targetUserId,\s*callerMemberships \?\? \[\],\s*targetMemberships \?\? \[\]\)/
+      /canEraseUser\(\s*user\.id,\s*targetUserId,\s*\(callerMemberships \?\? \[\]\)\.filter\(inScope\),\s*\(targetMemberships \?\? \[\]\)\.filter\(inScope\)\s*\)/
     )
   })
 
@@ -84,7 +85,7 @@ describe('users/[userId]/data route — source invariants', () => {
   })
 
   it('sole-owner guard runs on ALL target memberships, not just non-self callers (no early return skips it)', () => {
-    const ownerGuardIdx = source.indexOf("filter((m) => m.role === 'owner')")
+    const ownerGuardIdx = source.indexOf("filter((m) => m.role === 'owner'")
     assert.ok(ownerGuardIdx > -1)
   })
 
@@ -98,7 +99,7 @@ describe('users/[userId]/data route — source invariants', () => {
   })
 
   it('ordering: canEraseUser authz check runs before eraseUser is called', () => {
-    const authzIdx = source.indexOf('canEraseUser(user.id')
+    const authzIdx = source.indexOf('!canEraseUser(')
     const eraseIdx = source.indexOf('eraseUser(admin, targetUserId)')
     assert.ok(authzIdx > -1 && eraseIdx > -1)
     assert.ok(authzIdx < eraseIdx, 'authz must run before erasure')
@@ -168,5 +169,55 @@ describe('users/[userId]/data route — source invariants', () => {
 
   it('uses createSupabaseServerClient for auth', () => {
     assert.match(source, /createSupabaseServerClient/)
+  })
+
+  // ---- S4-ERASE-001 ----------------------------------------------------
+
+  it('non-self callers must pass a valid ?agencyId= or get 400, before any DB read', () => {
+    assert.match(source, /searchParams\.get\('agencyId'\)/)
+    assert.match(source, /!isSelf && \(!agencyIdParam \|\| !isValidUUID\(agencyIdParam\)\)/)
+    assert.match(source, /error:\s*'agencyId is required'[\s\S]{0,40}status:\s*400/)
+    assert.ok(
+      source.indexOf("error: 'agencyId is required'") < source.indexOf('createAdminClient()'),
+      '400 must precede any admin DB access'
+    )
+  })
+
+  it('agency-scoped removal goes through removeMemberWithData (never raw deletes)', () => {
+    assert.match(source, /removeMemberWithData\(admin, targetUserId, scopedAgencyId,/)
+    assert.doesNotMatch(source, /\.from\('videos'\)/)
+    assert.doesNotMatch(source, /\.delete\(\)/)
+  })
+
+  it('self-erasure uses the full eraseUser; non-self uses the scoped path', () => {
+    assert.match(
+      source,
+      /isSelf \|\| !scopedAgencyId\s*\?\s*await eraseUser\(admin, targetUserId\)/
+    )
+  })
+
+  it('sole-owner guard is scoped to the removal agency for non-self callers', () => {
+    assert.match(source, /m\.agency_id === scopedAgencyId/)
+  })
+
+  it('captures the target identity BEFORE erasing, and sends emails after success', () => {
+    const captureIdx = source.indexOf('const targetIdentity')
+    const eraseIdx = source.indexOf('await eraseUser(admin, targetUserId)')
+    const failIdx = source.indexOf("error: 'Erasure failed'")
+    const emailIdx = source.indexOf('await sendErasureEmails(')
+    assert.ok(captureIdx > -1 && captureIdx < eraseIdx, 'identity captured before erasure')
+    assert.ok(emailIdx > failIdx, 'emails only after the failure return')
+  })
+
+  it('an email failure can never fail the erasure (wrapped; response stays 200)', () => {
+    assert.match(source, /try \{\s*await sendErasureEmails\([\s\S]*?\} catch \(err\) \{/)
+    assert.ok(source.indexOf('await sendErasureEmails(') < source.indexOf('{ success: true }'))
+  })
+
+  it('exports only reserved route fields', () => {
+    const exports = [...source.matchAll(/^export\s+(?:async\s+)?(?:function|const)\s+(\w+)/gm)].map(
+      (m) => m[1]
+    )
+    assert.deepStrictEqual(exports, ['DELETE'])
   })
 })

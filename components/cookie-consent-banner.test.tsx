@@ -83,6 +83,11 @@ describe('CookieConsentBanner — source invariants', () => {
     // The consent gate must only ever touch PostHog — auth/session cookies stay active.
     assert.doesNotMatch(source, /supabase|sb-access-token|session/i)
   })
+
+  it('links the Privacy Policy from the banner text (S4-LAUNCH-001)', () => {
+    assert.match(source, /import Link from 'next\/link'/)
+    assert.match(source, /<Link href="\/privacy"[\s\S]*?Privacy Policy\s*<\/Link>/)
+  })
 })
 
 describe('CookieConsentBanner — lib/posthog integration (hudo_cookie_consent key)', () => {

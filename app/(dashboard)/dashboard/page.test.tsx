@@ -39,4 +39,11 @@ describe('/dashboard page — source invariants', () => {
   it('logs the underlying error for observability', () => {
     assert.match(source, /console\.error\('\[dashboard-page\]/)
   })
+
+  it('gates the onboarding checklist on an explicit owner equality', () => {
+    assert.match(source, /role === 'owner'/)
+    assert.match(source, /getOnboardingChecklist\(\{ supabase, userId: user\.id \}\)/)
+    assert.match(source, /checklist &&\s*\(?\s*<OnboardingChecklist/)
+    assert.doesNotMatch(source, /roleAtLeast/)
+  })
 })
