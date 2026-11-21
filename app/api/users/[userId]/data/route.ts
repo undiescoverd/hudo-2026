@@ -3,7 +3,13 @@ import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { type NextRequest, NextResponse } from 'next/server'
 import { isValidUUID } from '@/lib/validation'
 import { checkRateLimit } from '@/lib/api-helpers'
-import { DELETED_USER_NAME, canEraseUser, eraseUser } from '@/lib/erasure'
+import {
+  DELETED_USER_NAME,
+  canEraseUser,
+  eraseUser,
+  removeMemberWithData,
+  sendErasureEmails,
+} from '@/lib/erasure'
 import { logEvent } from '@/lib/audit'
 
 /**
@@ -13,6 +19,18 @@ import { logEvent } from '@/lib/audit'
  * personal data, scrubs their identity from the audit trail, removes their
  * per-user rows, and revokes every Supabase auth session — see lib/erasure.ts
  * for the exact steps and why the users row is UPDATEd rather than DELETEd.
+ *
+ * Scope (S4-ERASE-001, D13):
+ * - Self-erasure (caller === target) erases everything, everywhere: the
+ *   talent's videos in every agency (purge_talent_in_agency), then the account.
+ * - Anyone else MUST pass `?agencyId=` (400 otherwise). The removal is scoped
+ *   to THAT agency only: the target's videos there and their membership are
+ *   deleted; the account is erased only if no membership remains. A talent in
+ *   two agencies removed by one keeps the other agency's videos + account.
+ *   Authorization (canEraseUser) is evaluated against that agency alone.
+ * - After the erasure the erased person gets a confirmation email and, on a
+ *   scoped removal, the agency owners get a receipt (D15). Email failure is
+ *   logged + Sentry'd and never fails the erasure.
  *
  * Authorization (no user enumeration — a generic 403 is returned before any
  * existence check). The decision lives in lib/erasure.ts canEraseUser() so
@@ -93,10 +111,17 @@ export async function DELETE(request: NextRequest, { params }: { params: { userI
   )
   if (rateLimitResponse) return rateLimitResponse
 
+  const isSelf = user.id === targetUserId
+
+  // Non-self callers must name the agency the removal is scoped to (D13).
+  const agencyIdParam = request.nextUrl.searchParams.get('agencyId')
+  if (!isSelf && (!agencyIdParam || !isValidUUID(agencyIdParam))) {
+    return NextResponse.json({ error: 'agencyId is required' }, { status: 400 })
+  }
+  const scopedAgencyId = isSelf ? null : agencyIdParam
+
   // ---- Admin client (service-role, bypasses RLS) ---------------------------
   const admin = createAdminClient()
-
-  const isSelf = user.id === targetUserId
 
   // ---- Fetch the target's memberships — needed for both the authz check
   // (non-self) and the sole-owner guard (both self and non-self). An empty
@@ -133,7 +158,17 @@ export async function DELETE(request: NextRequest, { params }: { params: { userI
       return NextResponse.json({ error: 'Server error' }, { status: 500 })
     }
 
-    if (!canEraseUser(user.id, targetUserId, callerMemberships ?? [], targetMemberships ?? [])) {
+    // Scoped to the one agency named in the request (D13): memberships in any
+    // other agency are irrelevant to this removal, so they're filtered out.
+    const inScope = (m: { agency_id: string }) => m.agency_id === scopedAgencyId
+    if (
+      !canEraseUser(
+        user.id,
+        targetUserId,
+        (callerMemberships ?? []).filter(inScope),
+        (targetMemberships ?? []).filter(inScope)
+      )
+    ) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
   }
@@ -144,7 +179,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { userI
   // the count>1 check — accepted because the endpoint is rate-limited (5/hr,
   // fail-closed) and PostgREST offers no cross-statement transaction here.
   const ownerAgencyIds = (targetMemberships ?? [])
-    .filter((m) => m.role === 'owner')
+    .filter((m) => m.role === 'owner' && (isSelf || m.agency_id === scopedAgencyId))
     .map((m) => m.agency_id as string)
 
   for (const agencyId of ownerAgencyIds) {
@@ -171,7 +206,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { userI
   // unauthorized caller learns nothing about whether the target exists.
   const { data: targetUser, error: targetUserError } = await admin
     .from('users')
-    .select('id')
+    .select('id, email, full_name')
     .eq('id', targetUserId)
     .single()
 
@@ -187,8 +222,31 @@ export async function DELETE(request: NextRequest, { params }: { params: { userI
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
+  // ---- Actor identity for the audit trail / purge audit rows. Self-erasure
+  // uses a null actor + the same "Deleted User" name the tombstone writes —
+  // logging the caller's real identity would re-introduce scrubbed PII.
+  const actorId = isSelf ? null : user.id
+  const actorName = isSelf
+    ? DELETED_USER_NAME
+    : typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
+      ? user.user_metadata.full_name.trim()
+      : (user.email ?? user.id)
+
   // ---- Erase -----------------------------------------------------------
-  const result = await eraseUser(admin, targetUserId)
+  // Capture the target's identity BEFORE the tombstone overwrites it (emails).
+  const targetIdentity = {
+    id: targetUserId,
+    email: (targetUser.email as string | null) ?? null,
+    fullName: (targetUser.full_name as string | null) ?? null,
+  }
+
+  const result =
+    isSelf || !scopedAgencyId
+      ? await eraseUser(admin, targetUserId)
+      : await removeMemberWithData(admin, targetUserId, scopedAgencyId, {
+          id: user.id,
+          name: actorName,
+        })
 
   if (!result.ok) {
     console.error(
@@ -198,16 +256,22 @@ export async function DELETE(request: NextRequest, { params }: { params: { userI
     return NextResponse.json({ error: 'Erasure failed', step: result.step }, { status: 500 })
   }
 
+  // ---- Emails (D15). Awaited — a fire-and-forget send is dropped when
+  // Vercel freezes the function at response time — but sendErasureEmails
+  // never throws, and the catch below is belt-and-braces: the erasure has
+  // already happened and must never be reported as failed because of email.
+  try {
+    await sendErasureEmails(admin, {
+      target: targetIdentity,
+      agencyId: scopedAgencyId,
+      accountErased: 'accountErased' in result ? result.accountErased !== false : true,
+    })
+  } catch (err) {
+    console.error('[users/[userId]/data:DELETE] erasure email step threw:', err)
+  }
+
   // ---- Audit: fire-and-forget, one event per agency the target belonged
-  // to. Self-erasure uses a null actor + the same "Deleted User" name the
-  // tombstone just wrote — logging the caller's real identity here would
-  // re-introduce the PII that was just scrubbed.
-  const actorId = isSelf ? null : user.id
-  const actorName = isSelf
-    ? DELETED_USER_NAME
-    : typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
-      ? user.user_metadata.full_name.trim()
-      : (user.email ?? user.id)
+  // to (just the scoped agency on an agency-scoped removal).
 
   for (const agencyId of result.agencyIds) {
     logEvent({
