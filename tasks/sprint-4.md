@@ -103,13 +103,13 @@ NOTES: L — GitHub #144; plan Phase 2; decision D7. Apply migrations with /appl
 
 ---
 
-- [ ] **S4-ERASE-001** — GDPR erasure scoped to one agency
+- [x] **S4-ERASE-001** — GDPR erasure scoped to one agency
 
 TASK_ID: S4-ERASE-001
 TITLE: GDPR erasure (talent videos deleted on erasure, agency-scoped member removal, erasure emails)
 BRANCH: feat/s4-S4-ERASE-001-gdpr-erasure
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-DELETE-001
 ACCEPTANCE_CRITERIA:
   - Self-erasure permanently deletes the person's videos in every agency they belong to (D12, D13 self); their comments on others' videos keep their text and show "Deleted User"
@@ -124,13 +124,13 @@ NOTES: M — GitHub #145; plan Phase 3. Security surface (app/api/). Needs S4-DE
 
 ---
 
-- [ ] **S4-SAVER-001** — Space savers
+- [x] **S4-SAVER-001** — Space savers
 
 TASK_ID: S4-SAVER-001
 TITLE: Space savers (R2 multipart-abort lifecycle rule, purge empty drafts)
 BRANCH: feat/s4-S4-SAVER-001-space-savers
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-DELETE-001
 ACCEPTANCE_CRITERIA:
   - R2 lifecycle rule aborts incomplete multipart uploads after 1 day, documented with the command in docs/r2-setup.md and applied to the dev and staging buckets
@@ -235,13 +235,13 @@ NOTES: S — Security surface (auth). Mandatory hudo-security-reviewer. Runs alo
 
 ---
 
-- [ ] **S4-LAUNCH-001** — Legal pages
+- [x] **S4-LAUNCH-001** — Legal pages
 
 TASK_ID: S4-LAUNCH-001
 TITLE: Terms, privacy and DPA pages with shared footer and links
 BRANCH: feat/s4-S4-LAUNCH-001-legal-pages
 MODEL: haiku
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - /terms, /privacy and /dpa are public routes (listed in the middleware public paths)
@@ -256,13 +256,13 @@ NOTES: S — Ian reviews the copy before any customer sees it. Human-only: legal
 
 ---
 
-- [ ] **S4-LAUNCH-004** — Onboarding checklist
+- [x] **S4-LAUNCH-004** — Onboarding checklist
 
 TASK_ID: S4-LAUNCH-004
 TITLE: Owner onboarding checklist (invite agent, invite talent, upload), derived from data
 BRANCH: feat/s4-S4-LAUNCH-004-onboarding-checklist
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-JOURNEY-001, S4-JOURNEY-002
 ACCEPTANCE_CRITERIA:
   - Owner-only checklist on /dashboard with three items: invite agent, invite talent, upload a video
@@ -277,13 +277,13 @@ NOTES: S — Reads data via lib/dashboard.ts patterns; any videos↔video_versio
 
 ---
 
-- [ ] **S4-PWA-001** — PWA manifest, icons and service worker
+- [x] **S4-PWA-001** — PWA manifest, icons and service worker
 
 TASK_ID: S4-PWA-001
 TITLE: PWA manifest, icons, offline page and shell-only service worker
 BRANCH: feat/s4-S4-PWA-001-pwa
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-JOURNEY-004
 ACCEPTANCE_CRITERIA:
   - app/manifest.ts and public/ icons exist; placeholder icons until Ian supplies brand icons
@@ -323,13 +323,13 @@ NOTES: M — Spec: GitHub #190 (decided 2026-10-23). Presign/complete already su
 
 ---
 
-- [ ] **S4-REVIEW-002** — Comment actions
+- [x] **S4-REVIEW-002** — Comment actions
 
 TASK_ID: S4-REVIEW-002
 TITLE: Comment actions: reply, resolve, edit, delete (GitHub #191)
 BRANCH: feat/s4-S4-REVIEW-002-comment-actions
 MODEL: sonnet
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Each comment shows only the viewer's allowed actions: Reply (top-level only, any member), Resolve/Unresolve (agent+), Edit (author), Delete (author; agent+ on any)

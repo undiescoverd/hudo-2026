@@ -876,3 +876,31 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - **Format, type-check, lint and build:** all clean.
   - **Apply:** 0027 and 0029 are already applied, so 0024/0025 need `--include-all`. Run `sh scripts/db-push.sh local --dry-run --include-all`; it should list 0024, 0025 and 0029 if 0029 isn't applied yet. Then the same for `staging`.
 - **Gotcha (if any):** `/tmp/claude-0` is root-owned mode 700, so a postgres-owned cluster can't live in the scratchpad. Use `/var/tmp`. To run real pgTAP without a package, generate it: `sed -e 's,MODULE_PATHNAME,$libdir/pgtap,g' -e 's,__OS__,linux,g' -e 's,__VERSION__,1.3,g' sql/pgtap.sql.in > pgtap.sql`, then `psql -f pgtap.sql`.
+
+## 2026-11-21 00:30 — Sprint 4 wave: 6 tasks merged, 4 duplicate/old PRs closed or merged
+
+- **Task:** "do what's next and keep going": the unblocked S4 tasks plus the open PR backlog
+- **Models:** planner=opus; executors=sonnet (ERASE, SAVER, PWA, LAUNCH-004) and haiku (LAUNCH-001) in parallel worktrees; reviewers: hudo-security-reviewer (ERASE, PWA), rls-tenancy-auditor (SAVER), and a sonnet code reviewer (ERASE, LAUNCH-001, LAUNCH-004)
+- **Outcome:** partial. Sprint 4 is at 14/19. Every task that could be built in this container is merged.
+- **Notes:**
+  - **Merged:**
+    - #175 (flow inventory), #203 (S4-DELETE-001), #195 (callback rate limit) and #209 (tracker);
+    - #197 (S4-REVIEW-002) and #158 (guest-link fixes);
+    - #210 (S4-SAVER-001), #211 (S4-PWA-001), #212 (S4-ERASE-001), #213 (S4-LAUNCH-004) and #214 (S4-LAUNCH-001).
+  - **Review findings fixed before merge:**
+    - **SAVER (high):** `purge_empty_drafts` picked its candidates with no lock, so an upload completing at the same moment could lose its new version. Fixed with `FOR UPDATE SKIP LOCKED` plus a recheck on each row, a cap of 500 per run, and an exception block per row.
+    - **ERASE (medium, high in the code review):** a scoped removal deleted the membership before erasing the account, so a failed erasure couldn't be retried by the agency. Now the code counts the other memberships first and deletes nothing until it knows. Also added: a purge of agencies where only videos remain, no raw error text in Sentry, and behavioural route tests.
+    - **LAUNCH-001 (high):** the pages disagreed with the DPA modal owners accept, and the modal linked a dead URL. The pages now name "Resolve Labs Ltd" (to confirm) and the modal links `/dpa#sub-processors`.
+    - **LAUNCH-004 (medium):** the checklist had no defined agency for owners of several. It now covers every owned agency and shows the first incomplete one.
+    - **PWA (lows only):** the cache no longer stores redirected or 206 responses, and tests drive the real fetch handler.
+  - **Merge conflict on #158 vs #197:** both had added a source for the viewer's role on the video page (the versions response, and a `memberships` query). The versions response is now the only source, because two lookups would race on the same state.
+  - **Duplicates:** another session built S4-PWA-001 (#205) and S4-LAUNCH-001 (#206), and marked S4-JOURNEY-004 done (#204), in parallel with this one. Ian chose the reviewed versions, so those three are closed with notes.
+  - **Drafts:** #198, #199, #201 and #202 are updated from main and merge cleanly, but are left as drafts. #199 (0030) passes all 17 RLS files under real pgTAP.
+  - **Still for a human:**
+    - apply migrations 0024, 0025, 0026, 0029 and 0030 to dev and staging with `db-push.sh --include-all`;
+    - apply the R2 multipart-abort lifecycle rule (dev, staging, and prod before launch);
+    - confirm the legal entity name and do the legal review;
+    - supply brand icons and test PWA installs on real phones;
+    - run the live Preview checks (Preview is now behind Vercel SSO).
+  - **Linear:** no `LINEAR_API_KEY` here, so `orchestrate.js done` could not sync. The daily `sync-fix` job will push the new statuses.
+- **Gotcha (if any):** two sessions given the same backlog will build the same tasks. Check `gh pr list` / open PRs for a task ID before starting it, and push to a fresh branch name if the task branch already exists on origin.
