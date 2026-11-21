@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // The smoke suite creates real staging data; it has its own config + workflow (smoke.yml).
+  testIgnore: '**/smoke/**',
   timeout: 30_000,
   expect: { timeout: 5_000 },
   fullyParallel: true,
