@@ -160,15 +160,12 @@ export default function VideoPage({ params }: Props) {
 
   // Status control: explicit role set (owner | admin_agent | agent); talent never see it.
   // The PATCH route re-checks the role server-side.
-  // PR-REVIEW false positives: this useMemo sits ABOVE the notFound() call (no early
-  // return precedes it, so hook order is stable). openCommentCount is the refreshKey
-  // that re-reads the open-comment count the Approve warning shows when comments
-  // are added or resolved live; it is required by the acceptance criteria.
   const canChangeStatus = role !== null && STATUS_CONTROL_ROLES.has(role)
-  const openCommentCount = useMemo(
-    () => comments.filter((c) => !c.resolved && !c.deletedAt && c.parentId === null).length,
-    [comments]
-  )
+  // A plain primitive (no hook): bumping it re-reads the open-comment count that the
+  // Approve warning shows, so live comment adds/resolves keep the warning accurate.
+  const openCommentCount = comments.filter(
+    (c) => !c.resolved && !c.deletedAt && c.parentId === null
+  ).length
 
   if (!isValidId) {
     notFound()

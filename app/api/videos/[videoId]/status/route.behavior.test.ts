@@ -185,6 +185,12 @@ describe('status route — role gate and rate limit (real handlers)', () => {
     assert.equal(auditInserts().length, 0)
   })
 
+  it('membership lookup is scoped to the signed-in user', async () => {
+    await request('PATCH', 'approved')
+    const m = calls.find((c) => c.url.pathname === '/rest/v1/memberships')
+    assert.equal(m?.url.searchParams.get('user_id'), `eq.${USER}`)
+  })
+
   it('PATCH over the limit -> 429 with Retry-After, nothing written', async () => {
     redisCount = 10_000
     const res = await request('PATCH', 'approved')
