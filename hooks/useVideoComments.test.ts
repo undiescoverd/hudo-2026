@@ -137,21 +137,33 @@ describe('createAuthorRefetcher', () => {
     r.request('ghost')
     await tick()
     assert.equal(calls.length, 1)
+    // The dedupe key is the userId: a different user still gets a fetch.
+    r.request('someone-else')
+    assert.equal(calls.length, 2)
   })
 
   it('a failed or non-ok fetch leaves state intact and does not wedge later requests', async () => {
     const { calls, fetchList } = controlled()
     let delivered = 0
     const r = createAuthorRefetcher({ fetchList, onAuthors: () => delivered++ })
-    r.request('a')
-    calls[0].reject()
-    await tick()
-    r.request('b')
-    calls[1].resolve(null)
-    await tick()
-    r.request('c')
-    assert.equal(calls.length, 3)
-    assert.equal(delivered, 0)
+    const unhandled: unknown[] = []
+    const onUnhandled = (e: unknown) => unhandled.push(e)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      r.request('a')
+      calls[0].reject()
+      await tick()
+      await tick()
+      r.request('b')
+      calls[1].resolve(null)
+      await tick()
+      r.request('c')
+      assert.equal(calls.length, 3)
+      assert.equal(delivered, 0)
+      assert.deepEqual(unhandled, [], 'the rejection must be swallowed, not leaked')
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
   })
 
   it('dispose aborts the fetch and drops its stale response; a new refetcher is unaffected', async () => {
@@ -833,6 +845,12 @@ describe('useVideoComments — source invariants', () => {
       ),
     ]
     assert.equal(matches.length, 1, 'must define the comments endpoint exactly once')
+    // Exactly two fetches of the shared URL: the initial load and the refetcher's fetchList.
+    assert.equal(
+      [...source.matchAll(/\bfetch\(url\b/g)].length,
+      2,
+      'unexpected extra fetch call site'
+    )
   })
 
   it('skips the fetch entirely when there is no active version', () => {
