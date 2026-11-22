@@ -63,7 +63,7 @@ describe("author enrichment for another user's live INSERT (S5-FLOW-005)", () =>
     assert.equal(authorsOf([rawFromAlex]).size, 0)
   })
 
-  it('keeps fields the comment already has', () => {
+  it('keeps the fields the comment has and fills only the missing ones', () => {
     const partly = makeComment({ userId: 'u-alex', authorName: 'Own Name', authorAvatarUrl: null })
     const [out] = fillAuthors([partly], authorsOf([alex]))
     assert.equal(out.authorName, 'Own Name')
