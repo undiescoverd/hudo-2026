@@ -14,7 +14,7 @@ import { VideoStatusControl } from '@/components/video/VideoStatusControl'
 import { useVideoComments } from '@/hooks/useVideoComments'
 import { useMarkVideoSeen } from '@/hooks/useMarkVideoSeen'
 import { createClient } from '@/lib/auth'
-import { patchVideoStatus, shouldAutoOpen } from '@/lib/video-status'
+import { isRetryableStatusError, patchVideoStatus, shouldAutoOpen } from '@/lib/video-status'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -164,16 +164,24 @@ export default function VideoPage({ params }: Props) {
   // in_review through the PATCH route (same guards and audit row as a manual change).
   // The server is idempotent, so a lost race or a re-open is a quiet no-op.
   const autoOpenFiredFor = useRef<string | null>(null)
+  const currentIdRef = useRef(params.id)
+  currentIdRef.current = params.id
   useEffect(() => {
     // videoRow must belong to THIS video (not a stale one from a previous id).
     if (autoOpenFiredFor.current === params.id || videoRow?.id !== params.id) return
     if (!shouldAutoOpen(role, videoRow.status)) return
     autoOpenFiredFor.current = params.id
-    patchVideoStatus(params.id, 'in_review', { autoOpen: true })
-      .then(() => fetchVideoRow())
+    const id = params.id
+    patchVideoStatus(id, 'in_review', { autoOpen: true })
+      .then(() => {
+        // Navigated to another video while the PATCH was in flight: skip the stale re-read.
+        if (currentIdRef.current === id) return fetchVideoRow()
+      })
       .catch((err: unknown) => {
-        // Failed (network, 429): allow a later render to retry.
-        autoOpenFiredFor.current = null
+        // Only transient failures (network, 429, 5xx) re-arm a retry; 403/400/409 never will.
+        if (isRetryableStatusError(err) && autoOpenFiredFor.current === id) {
+          autoOpenFiredFor.current = null
+        }
         console.error('[video-page] auto in_review failed:', err)
       })
   }, [role, videoRow, params.id, fetchVideoRow])

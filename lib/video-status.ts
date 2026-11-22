@@ -124,6 +124,22 @@ export function changedByLabel(changedBy: string | null, changedAt: string | nul
   return `Changed by ${changedBy && !isEmailLike(changedBy) ? changedBy : 'a team member'}, ${when}`
 }
 
+/** Error from patchVideoStatus; `status` is the HTTP status, absent for a network failure. */
+export class VideoStatusError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number
+  ) {
+    super(message)
+  }
+}
+
+/** Worth retrying later: a network error, 429 or 5xx. Other 4xx (403, 400, 409) never are. */
+export function isRetryableStatusError(err: unknown): boolean {
+  if (!(err instanceof VideoStatusError)) return true
+  return err.status === undefined || err.status === 429 || err.status >= 500
+}
+
 /** PATCH /api/videos/:id/status. Resolves on success; rejects with the server's message. */
 export async function patchVideoStatus(
   videoId: string,
@@ -138,11 +154,11 @@ export async function patchVideoStatus(
       body: JSON.stringify(opts.autoOpen ? { status, autoOpen: true } : { status }),
     })
   } catch {
-    throw new Error('Could not change status. Check your connection and try again.')
+    throw new VideoStatusError('Could not change status. Check your connection and try again.')
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new Error(body.error ?? `HTTP ${res.status}`)
+    throw new VideoStatusError(body.error ?? `HTTP ${res.status}`, res.status)
   }
 }
 

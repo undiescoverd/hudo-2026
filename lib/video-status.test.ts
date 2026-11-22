@@ -5,6 +5,8 @@ import {
   changedByLabel,
   decideStatusChange,
   isEmailLike,
+  VideoStatusError,
+  isRetryableStatusError,
   patchVideoStatus,
   shouldAutoOpen,
   statusConfirmation,
@@ -176,5 +178,37 @@ describe('patchVideoStatus autoOpen', () => {
     await patchVideoStatus('v', 'in_review', { autoOpen: true })
     await patchVideoStatus('v', 'approved')
     assert.deepEqual(bodies, [{ status: 'in_review', autoOpen: true }, { status: 'approved' }])
+  })
+})
+
+describe('auto-open retry scope', () => {
+  const realFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+  const failWith = async (status: number | 'network') => {
+    globalThis.fetch = (async () => {
+      if (status === 'network') throw new TypeError('offline')
+      return new Response('{}', { status })
+    }) as typeof fetch
+    return patchVideoStatus('v', 'in_review', { autoOpen: true }).then(
+      () => null,
+      (e: unknown) => e
+    )
+  }
+
+  it('retries on network error, 429 and 5xx', async () => {
+    for (const s of ['network', 429, 500, 503] as const) {
+      assert.equal(isRetryableStatusError(await failWith(s)), true, String(s))
+    }
+  })
+
+  it('never retries on 400, 403, 404 or 409', async () => {
+    for (const s of [400, 403, 404, 409] as const) {
+      const err = await failWith(s)
+      assert.ok(err instanceof VideoStatusError)
+      assert.equal(err.status, s)
+      assert.equal(isRetryableStatusError(err), false, String(s))
+    }
   })
 })
