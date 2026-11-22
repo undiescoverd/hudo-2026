@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 
 interface MetadataFormProps {
   videoId: string
@@ -40,19 +41,19 @@ export function MetadataForm({ videoId, defaultTitle, onSaved, onSkip }: Metadat
     }
   }
 
+  const fieldClass =
+    'w-full rounded-lg border border-line bg-surface px-3 text-sm text-gray-900 placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-gray-900'
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
-      <h2 className="mb-4 text-base font-semibold text-gray-900 dark:text-gray-100">
-        Add video details
-      </h2>
+    <div className="rounded-[14px] border border-line bg-surface p-5">
+      <h2 className="mb-4 text-base font-semibold text-gray-900">Add video details</h2>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3.5">
         <div>
           <label
             htmlFor="metadata-title"
-            className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
+            className="mb-1.5 block text-[12.5px] font-medium text-gray-600"
           >
-            Title <span className="text-red-500">*</span>
+            Title <span className="text-status-changes-fg">*</span>
           </label>
           <input
             id="metadata-title"
@@ -61,17 +62,16 @@ export function MetadataForm({ videoId, defaultTitle, onSaved, onSkip }: Metadat
             maxLength={200}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+            className={`${fieldClass} h-10`}
           />
         </div>
 
         <div>
           <label
             htmlFor="metadata-description"
-            className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
+            className="mb-1.5 block text-[12.5px] font-medium text-gray-600"
           >
-            Description{' '}
-            <span className="font-normal text-gray-400 dark:text-gray-500">(optional)</span>
+            Description <span className="font-normal text-faint">(optional)</span>
           </label>
           <textarea
             id="metadata-description"
@@ -79,29 +79,29 @@ export function MetadataForm({ videoId, defaultTitle, onSaved, onSkip }: Metadat
             maxLength={2000}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+            className={`${fieldClass} resize-none py-2`}
             placeholder="Add a description..."
           />
         </div>
 
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-status-changes-fg">
+            {error}
+          </p>
+        )}
 
-        <div className="flex gap-3 pt-1">
-          <button
-            type="submit"
-            disabled={submitting || title.trim().length === 0}
-            className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+        <div className="flex gap-2 pt-1">
+          <Button type="submit" disabled={submitting || title.trim().length === 0}>
             {submitting ? 'Saving...' : 'Save & continue'}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="outline"
             disabled={submitting}
             onClick={() => onSkip(videoId)}
-            className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             Skip
-          </button>
+          </Button>
         </div>
       </form>
     </div>

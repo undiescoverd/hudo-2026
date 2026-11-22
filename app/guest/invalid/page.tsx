@@ -11,10 +11,13 @@ export const metadata: Metadata = {
 
 export default function GuestInvalidPage() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-950 px-4 text-center">
-      <div className="max-w-md space-y-4">
-        <h1 className="text-2xl font-semibold text-gray-100">This link is no longer valid</h1>
-        <p className="text-gray-400">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 text-center">
+      <div className="max-w-md space-y-3 rounded-[14px] border border-line bg-surface p-8">
+        <span className="text-xl font-semibold tracking-tight text-gray-900">hudo</span>
+        <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+          This link is no longer valid
+        </h1>
+        <p className="text-sm text-gray-600">
           This review link is invalid, has expired, or has been revoked. Please ask the person who
           shared it with you for a new link.
         </p>
