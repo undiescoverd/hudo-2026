@@ -3,6 +3,7 @@
  * Server-component-safe. The title link is stretched over the row; the CTA sits above it.
  */
 
+// React is imported for the tsx test runner's classic JSX transform (renderToStaticMarkup tests).
 import React from 'react'
 import Link from 'next/link'
 import { buttonVariants } from '@/components/ui/button'

@@ -324,5 +324,9 @@ describe('getTalentVideos — agency label', async () => {
     const videosCalls = calls.filter((c) => c.table === 'videos')
     assert.equal(videosCalls.length, 1)
     assert.match(videosCalls[0]!.select ?? '', /agencies!videos_agency_id_fkey/)
+    const scopeFilter = videosCalls[0]!.filters.find(
+      (f) => f.method === 'in' && f.args[0] === 'agency_id'
+    )
+    assert.deepEqual(scopeFilter?.args[1], ['ag1', 'ag2'])
   })
 })

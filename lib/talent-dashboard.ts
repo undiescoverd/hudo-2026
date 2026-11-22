@@ -35,6 +35,7 @@ export type TalentVideo = {
 export type GetTalentVideosParams = {
   supabase: SupabaseClient
   user_id: string
+  /** Must be the caller's memberships from getCurrentUserRole, never request input. */
   agency_ids: string[]
 }
 

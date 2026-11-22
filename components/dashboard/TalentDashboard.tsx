@@ -5,6 +5,7 @@
  * "Everything else". Shows an empty state with upload CTA when the list is empty.
  */
 
+// React is imported for the tsx test runner's classic JSX transform (renderToStaticMarkup tests).
 import React from 'react'
 import Link from 'next/link'
 import { buttonVariants } from '@/components/ui/button'
