@@ -33,6 +33,10 @@ export default function VideoPage({ params }: Props) {
   // null = still loading (or not yet retried); passed straight through to
   // VersionSelector so it doesn't issue its own duplicate GET request.
   const [versions, setVersions] = useState<Version[] | null>(null)
+  // The video's status and owning talent, read under RLS (agents see their agency's
+  // videos, talent only their own). null = not loaded or lookup failed: the
+  // resubmit prompt then simply doesn't render.
+  const [videoRow, setVideoRow] = useState<{ status: string; talentId: string | null } | null>(null)
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
 
   // Validate up front, but declare all hooks before the conditional notFound()
@@ -101,6 +105,27 @@ export default function VideoPage({ params }: Props) {
       })
   }, [params.id])
 
+  // Minimum fields for the resubmit prompt. Non-fatal: on failure the prompt is hidden.
+  const fetchVideoRow = useCallback(async () => {
+    try {
+      const { data, error } = await createClient()
+        .from('videos')
+        .select('status, talent_id')
+        .eq('id', params.id)
+        .maybeSingle()
+      if (error) throw error
+      setVideoRow(data ? { status: data.status, talentId: data.talent_id ?? null } : null)
+    } catch (err: unknown) {
+      console.error('[video-page] video status fetch failed:', err)
+    }
+  }, [params.id])
+
+  // Live video events refresh both the versions list and the status.
+  const refreshLive = useCallback(() => {
+    void fetchVersions()
+    void fetchVideoRow()
+  }, [fetchVersions, fetchVideoRow])
+
   const retryBootstrap = useCallback(() => {
     setBootstrapError(null)
     void fetchUser()
@@ -117,6 +142,19 @@ export default function VideoPage({ params }: Props) {
     void fetchVersions()
   }, [isValidId, fetchVersions])
 
+  useEffect(() => {
+    if (!isValidId) return
+    void fetchVideoRow()
+  }, [isValidId, fetchVideoRow])
+
+  // Only the owning talent is prompted to resubmit: the versions endpoint reports
+  // role 'talent' for them, and the video's talent_id must be the signed-in user.
+  const needsResubmit =
+    videoRow?.status === 'changes_requested' &&
+    role === 'talent' &&
+    userId !== null &&
+    videoRow.talentId === userId
+
   if (!isValidId) {
     notFound()
   }
@@ -126,7 +164,7 @@ export default function VideoPage({ params }: Props) {
       {/* This page is a client component fed by client-side fetches, so
           router.refresh() would be a no-op here — pass fetchVersions so live
           video events re-pull the versions list instead. */}
-      {agencyId && <VideoStatusLive agencyId={agencyId} onChange={fetchVersions} />}
+      {agencyId && <VideoStatusLive agencyId={agencyId} onChange={refreshLive} />}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-5 py-3">
         <Link href="/videos" className="text-sm text-faint transition-colors hover:text-foreground">
           ← Back to videos
@@ -138,8 +176,9 @@ export default function VideoPage({ params }: Props) {
             <Link
               href={`/upload?videoId=${params.id}`}
               className={cn(
-                buttonVariants({ variant: 'ghost' }),
-                'h-[34px] ring-1 ring-inset ring-line hover:bg-surface-2'
+                buttonVariants({ variant: needsResubmit ? 'primary' : 'ghost' }),
+                'h-[34px]',
+                !needsResubmit && 'ring-1 ring-inset ring-line hover:bg-surface-2'
               )}
             >
               Upload new version
@@ -148,6 +187,15 @@ export default function VideoPage({ params }: Props) {
           <GuestShareButton videoId={params.id} role={role} />
         </div>
       </div>
+      {needsResubmit && (
+        <div
+          data-testid="resubmit-banner"
+          role="status"
+          className="border-b border-line bg-coral-soft px-5 py-2.5 text-sm font-semibold text-coral-text"
+        >
+          Changes requested. Upload a new version
+        </div>
+      )}
       <div className="px-5 pt-3">
         <VersionSelector
           videoId={params.id}

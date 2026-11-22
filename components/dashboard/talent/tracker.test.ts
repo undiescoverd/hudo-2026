@@ -109,3 +109,17 @@ describe('TalentDashboard source', () => {
     assert.doesNotMatch(dash, /#[0-9a-fA-F]{3,6}\b/)
   })
 })
+
+describe('TrackerRow changes_requested link (S4-REVIEW-003)', () => {
+  const row = fs.readFileSync(
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'TrackerRow.tsx'),
+    'utf8'
+  )
+  it('the stretched title link goes to the video page for every status', () => {
+    assert.match(row, /href=\{`\/videos\/\$\{video\.id\}`\}\s*className="block truncate/)
+  })
+  it('a changes_requested row keeps the direct upload CTA alongside the row link', () => {
+    const a = getRowAction(v({ status: 'changes_requested', id: 'abc', latest_version: 2 }))
+    assert.deepEqual(a, { kind: 'link', label: 'Upload v3', href: '/upload?videoId=abc' })
+  })
+})
