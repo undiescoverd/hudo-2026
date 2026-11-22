@@ -14,13 +14,13 @@
 
 ---
 
-- [ ] **S5-FLOW-001** — Status control on the video page + status-change guards
+- [x] **S5-FLOW-001** — Status control on the video page + status-change guards
 
 TASK_ID: S5-FLOW-001
 TITLE: Status control on the video page + status-change guards
 BRANCH: feat/s5-S5-FLOW-001-status-control-guards
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Status control on the video page for owner, admin_agent and agent only, using PATCH /api/videos/:id/status
@@ -81,13 +81,13 @@ NOTES: GH #161. Paper: Flow 01 edge case "New version on an approved video". Sec
 
 ---
 
-- [ ] **S5-FLOW-004** — "N open comments on vX" note when viewing a newer version
+- [x] **S5-FLOW-004** — "N open comments on vX" note when viewing a newer version
 
 TASK_ID: S5-FLOW-004
 TITLE: Show "N open comments on vX" when viewing a newer version
 BRANCH: feat/s5-S5-FLOW-004-open-comments-note
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Viewing version N shows one note per earlier version with unresolved, non-deleted comments, with the count
@@ -103,13 +103,13 @@ NOTES: GH #162. Paper: Flow 01 edge case "v1 still has open comments when v2 lan
 
 ---
 
-- [ ] **S5-FLOW-005** — Live comment author shows "Unknown" until refresh
+- [x] **S5-FLOW-005** — Live comment author shows "Unknown" until refresh
 
 TASK_ID: S5-FLOW-005
 TITLE: Another user's live comment shows "Unknown" until refresh
 BRANCH: fix/s5-S5-FLOW-005-realtime-author
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - A realtime INSERT from another user shows the correct name and avatar without a refresh
@@ -123,13 +123,13 @@ NOTES: GH #169. See CLAUDE.md Failure Log, Realtime entries. Linear RES-208.
 
 ---
 
-- [ ] **S5-FLOW-006** — Talent unread comment counts never go down
+- [x] **S5-FLOW-006** — Talent unread comment counts never go down
 
 TASK_ID: S5-FLOW-006
 TITLE: Opening a video records last_seen_at so unread counts clear
 BRANCH: fix/s5-S5-FLOW-006-unread-counts
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Opening the video page records comment_reads.last_seen_at for the current user (talent and agents)
@@ -144,13 +144,13 @@ NOTES: GH #168. Prerequisite for S5-FLOW-009. Linear RES-209.
 
 ---
 
-- [ ] **S5-FLOW-007** — Upload resilience: tab-close warning, part retries, clear Retry
+- [x] **S5-FLOW-007** — Upload resilience: tab-close warning, part retries, clear Retry
 
 TASK_ID: S5-FLOW-007
 TITLE: Upload resilience: tab-close warning, part retries, clear Retry
 BRANCH: feat/s5-S5-FLOW-007-upload-resilience
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-UPLOADFIX-001
 ACCEPTANCE_CRITERIA:
   - beforeunload warning while an upload is in progress, removed on finish or failure
@@ -167,13 +167,13 @@ NOTES: GH #164. Paper: Flow 01 edge case "Upload drops halfway". Related: GH #15
 
 ---
 
-- [ ] **S5-FLOW-008** — Agency label for talent in more than one agency
+- [x] **S5-FLOW-008** — Agency label for talent in more than one agency
 
 TASK_ID: S5-FLOW-008
 TITLE: Talent dashboard: agency label for talent in more than one agency
 BRANCH: feat/s5-S5-FLOW-008-agency-label
 MODEL: haiku
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Talent with more than one agency membership sees the agency name on each row
