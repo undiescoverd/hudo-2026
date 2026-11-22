@@ -57,13 +57,13 @@ export default async function DashboardPage() {
     role === 'owner' ? await getOnboardingChecklist({ supabase, userId: user.id }) : null
 
   return (
-    <main className="max-w-7xl mx-auto px-4 py-8">
+    <main className="mx-auto max-w-[1360px] px-7 pb-16 pt-6">
       {agent_agency_ids.map((id) => (
         <VideoStatusLive key={id} agencyId={id} />
       ))}
 
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.03em]">Videos</h1>
         <p className="text-sm text-muted-foreground mt-1">All videos across your agencies.</p>
       </div>
 

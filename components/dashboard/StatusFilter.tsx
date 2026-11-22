@@ -26,7 +26,7 @@ export function StatusFilter({ selected, onChange }: Props) {
 
   return (
     <div className="flex flex-wrap gap-3 items-center">
-      <span className="text-sm text-muted-foreground font-medium">Status:</span>
+      <span className="text-sm font-medium text-faint">Status:</span>
       {VIDEO_STATUSES.map((status) => {
         const id = `status-filter-${status}`
         return (

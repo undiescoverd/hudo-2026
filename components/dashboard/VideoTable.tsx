@@ -61,11 +61,11 @@ export function VideoTable({ videos, selectedIds, onSelectionChange }: Props) {
   }
 
   return (
-    <div className="border rounded-lg overflow-hidden">
+    <div className="overflow-hidden rounded-[10px] bg-surface shadow-[inset_0_0_0_1px_var(--line)]">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-10">
+            <TableHead className="w-10 text-[11.5px] font-medium uppercase tracking-[0.06em] text-faint">
               <Checkbox
                 checked={allSelected}
                 // indeterminate state via data attribute
@@ -74,13 +74,21 @@ export function VideoTable({ videos, selectedIds, onSelectionChange }: Props) {
                 aria-label="Select all"
               />
             </TableHead>
-            <TableHead className="w-16">Thumb</TableHead>
-            <TableHead>Title</TableHead>
-            <TableHead>Talent</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Comments</TableHead>
-            <TableHead>Last activity</TableHead>
-            <TableHead className="text-right">Version</TableHead>
+            <TableHead className="text-[11.5px] font-medium uppercase tracking-[0.06em] text-faint">
+              Video
+            </TableHead>
+            <TableHead className="text-[11.5px] font-medium uppercase tracking-[0.06em] text-faint">
+              Talent
+            </TableHead>
+            <TableHead className="text-[11.5px] font-medium uppercase tracking-[0.06em] text-faint">
+              Status
+            </TableHead>
+            <TableHead className="text-right text-[11.5px] font-medium uppercase tracking-[0.06em] text-faint">
+              Comments
+            </TableHead>
+            <TableHead className="text-[11.5px] font-medium uppercase tracking-[0.06em] text-faint">
+              Last activity
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -90,7 +98,7 @@ export function VideoTable({ videos, selectedIds, onSelectionChange }: Props) {
               <TableRow
                 key={video.id}
                 data-selected={isSelected}
-                className={isSelected ? 'bg-muted/50' : ''}
+                className={isSelected ? 'bg-surface-2' : ''}
               >
                 <TableCell>
                   <Checkbox
@@ -100,26 +108,31 @@ export function VideoTable({ videos, selectedIds, onSelectionChange }: Props) {
                   />
                 </TableCell>
                 <TableCell>
-                  <div className="w-14 h-9 rounded overflow-hidden bg-muted flex items-center justify-center flex-shrink-0">
-                    {video.thumbnail_r2_key ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={`/api/videos/${video.id}/thumbnail`}
-                        alt={video.title}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-muted-foreground text-[10px]">—</span>
-                    )}
+                  <div className="flex items-center gap-3">
+                    <div className="flex aspect-video w-[88px] flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-stage">
+                      {video.thumbnail_r2_key ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={`/api/videos/${video.id}/thumbnail`}
+                          alt={video.title}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-[10px] text-faint">—</span>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <Link
+                        href={`/videos/${video.id}`}
+                        className="line-clamp-2 text-sm font-semibold hover:underline"
+                      >
+                        {video.title}
+                      </Link>
+                      <small className="font-mono text-xs text-faint">
+                        v{video.latest_version}
+                      </small>
+                    </div>
                   </div>
-                </TableCell>
-                <TableCell>
-                  <Link
-                    href={`/videos/${video.id}`}
-                    className="font-medium text-sm hover:underline line-clamp-2"
-                  >
-                    {video.title}
-                  </Link>
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">{video.talent_name}</TableCell>
                 <TableCell>
@@ -130,9 +143,6 @@ export function VideoTable({ videos, selectedIds, onSelectionChange }: Props) {
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                   {formatDate(video.last_activity)}
-                </TableCell>
-                <TableCell className="text-right text-sm tabular-nums">
-                  v{video.latest_version}
                 </TableCell>
               </TableRow>
             )

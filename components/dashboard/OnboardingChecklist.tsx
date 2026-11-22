@@ -17,7 +17,7 @@ export function OnboardingChecklist({ items, agencyName }: Props) {
   return (
     <section
       aria-labelledby="onboarding-heading"
-      className="mb-6 rounded-lg border bg-card p-4"
+      className="mb-6 rounded-[10px] bg-surface p-4 shadow-[inset_0_0_0_1px_var(--line)]"
       data-testid="onboarding-checklist"
     >
       <h2 id="onboarding-heading" className="text-base font-semibold">
