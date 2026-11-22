@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { rowToComment, type Comment } from '@/lib/comments'
+import { TEMP_COMMENT_ID_PREFIX } from '@/components/comments/comment-permissions'
 import { useRealtimeComments } from './useRealtimeComments'
 
 interface UseVideoCommentsResult {
@@ -60,6 +61,35 @@ export function mergeUpdate(prev: Comment[], updated: Comment): Comment[] {
  */
 export function mergeInsert(prev: Comment[], comment: Comment): Comment[] {
   return prev.some((c) => c.id === comment.id) ? mergeUpdate(prev, comment) : [...prev, comment]
+}
+
+/** userId -> author fields, learned only from comment data the client already received. */
+export type AuthorMap = Map<string, { authorName: string | null; authorAvatarUrl: string | null }>
+
+/** Record the author of every comment that carries one. Never overwrites with nulls. */
+export function learnAuthors(map: AuthorMap, comments: Comment[]): void {
+  for (const c of comments) {
+    if (c.authorName !== null || c.authorAvatarUrl !== null) {
+      map.set(c.userId, { authorName: c.authorName, authorAvatarUrl: c.authorAvatarUrl })
+    }
+  }
+}
+
+/**
+ * Fill in missing author fields from the map. A Realtime INSERT from another user
+ * is the raw row (no `users` embed), so its author is looked up by userId. Fields
+ * a comment already has are kept; comments with no map entry come back unchanged.
+ */
+export function fillAuthors(comments: Comment[], map: AuthorMap): Comment[] {
+  return comments.map((c) => {
+    const a = map.get(c.userId)
+    if (!a || (c.authorName !== null && c.authorAvatarUrl !== null)) return c
+    return {
+      ...c,
+      authorName: c.authorName ?? a.authorName,
+      authorAvatarUrl: c.authorAvatarUrl ?? a.authorAvatarUrl,
+    }
+  })
 }
 
 /** Set specific fields on one comment, leaving every other field (and comment) as is. */
@@ -265,8 +295,15 @@ export function useVideoComments(
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const authorsRef = useRef<AuthorMap>(new Map())
+  const versionIdRef = useRef(versionId)
+  versionIdRef.current = versionId
+  const pendingAuthorFetch = useRef(false)
 
   useEffect(() => {
+    authorsRef.current = new Map()
+    pendingAuthorFetch.current = false
+
     if (!versionId) {
       setComments([])
       setLoading(false)
@@ -287,6 +324,7 @@ export function useVideoComments(
       })
       .then(({ comments: data }) => {
         if (!cancelled) {
+          learnAuthors(authorsRef.current, data)
           setComments(data)
           setLoading(false)
         }
@@ -303,11 +341,41 @@ export function useVideoComments(
     }
   }, [videoId, versionId])
 
-  const handleInsert = useCallback((comment: Comment) => {
-    setComments((prev) => mergeInsert(prev, comment))
-  }, [])
+  // A Realtime INSERT from someone not seen yet has no author (raw row). Re-read the
+  // list through the existing comments API (same auth, RLS and rate limit as the
+  // initial load), learn the authors, and fill them in. One fetch in flight at most.
+  const fetchMissingAuthors = useCallback(() => {
+    const vid = versionIdRef.current
+    if (!vid || pendingAuthorFetch.current) return
+    pendingAuthorFetch.current = true
+    fetch(`/api/videos/${encodeURIComponent(videoId)}/versions/${encodeURIComponent(vid)}/comments`)
+      .then((res) => (res.ok ? (res.json() as Promise<{ comments: Comment[] }>) : null))
+      .then((body) => {
+        if (!body || versionIdRef.current !== vid) return
+        learnAuthors(authorsRef.current, body.comments)
+        setComments((prev) => fillAuthors(prev, authorsRef.current))
+      })
+      .catch(() => {
+        // Leave the fallback name; the next load fixes it.
+      })
+      .finally(() => {
+        pendingAuthorFetch.current = false
+      })
+  }, [videoId])
+
+  const handleInsert = useCallback(
+    (comment: Comment) => {
+      learnAuthors(authorsRef.current, [comment])
+      const [filled] = fillAuthors([comment], authorsRef.current)
+      setComments((prev) => mergeInsert(prev, filled))
+      if (filled.authorName === null && !comment.id.startsWith(TEMP_COMMENT_ID_PREFIX))
+        fetchMissingAuthors()
+    },
+    [fetchMissingAuthors]
+  )
 
   const handleUpdate = useCallback((updated: Comment) => {
+    learnAuthors(authorsRef.current, [updated])
     setComments((prev) => mergeUpdate(prev, updated))
   }, [])
 

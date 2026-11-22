@@ -17,10 +17,13 @@ import fs from 'node:fs'
 import type { Comment } from '@/lib/comments'
 import { makeComment } from '../components/comments/comment-fixtures'
 import {
+  type AuthorMap,
   COMMENT_GONE_MESSAGE,
   afterAction,
   CommentGoneError,
+  fillAuthors,
   handleCommentGone,
+  learnAuthors,
   markDeleted,
   mergeInsert,
   mergeUpdate,
@@ -30,6 +33,84 @@ import {
   runCommentDelete,
   runCommentMutation,
 } from './useVideoComments'
+
+describe("author enrichment for another user's live INSERT (S5-FLOW-005)", () => {
+  const alex = makeComment({
+    id: 'c-alex',
+    userId: 'u-alex',
+    authorName: 'Alex Author',
+    authorAvatarUrl: 'https://img/alex.png',
+  })
+  const rawFromAlex = makeComment({
+    id: 'c-new',
+    userId: 'u-alex',
+    authorName: null,
+    authorAvatarUrl: null,
+  })
+
+  it('fills name and avatar of a raw insert from a user seen in the initial fetch', () => {
+    const map: AuthorMap = new Map()
+    learnAuthors(map, [alex])
+    const [filled] = fillAuthors([rawFromAlex], map)
+    assert.equal(filled.authorName, 'Alex Author')
+    assert.equal(filled.authorAvatarUrl, 'https://img/alex.png')
+  })
+
+  it('leaves an unknown user unchanged (the hook then fetches through the comments API)', () => {
+    const map: AuthorMap = new Map()
+    learnAuthors(map, [alex])
+    const stranger = makeComment({ id: 'c-x', userId: 'u-new', authorName: null })
+    assert.deepEqual(fillAuthors([stranger], map), [stranger])
+  })
+
+  it('learnAuthors ignores comments with no author data and never stores nulls', () => {
+    const map: AuthorMap = new Map()
+    learnAuthors(map, [rawFromAlex])
+    assert.equal(map.size, 0)
+  })
+
+  it('keeps fields the comment already has', () => {
+    const map: AuthorMap = new Map()
+    learnAuthors(map, [alex])
+    const partly = makeComment({ userId: 'u-alex', authorName: 'Own Name', authorAvatarUrl: null })
+    const [out] = fillAuthors([partly], map)
+    assert.equal(out.authorName, 'Own Name')
+    assert.equal(out.authorAvatarUrl, 'https://img/alex.png')
+  })
+
+  it('other-user INSERT end to end: raw insert is filled, then merged into the list', () => {
+    const map: AuthorMap = new Map()
+    learnAuthors(map, [alex])
+    const [filled] = fillAuthors([rawFromAlex], map)
+    const next = mergeInsert([alex], filled)
+    assert.equal(next.length, 2)
+    assert.equal(next[1].authorName, 'Alex Author')
+  })
+
+  it('self-echo race still resolves to the named copy in either order', () => {
+    const named = makeComment({ id: 'c-me', userId: 'u-me', authorName: 'Me' })
+    const raw = makeComment({ id: 'c-me', userId: 'u-me', authorName: null })
+    assert.equal(mergeInsert(mergeInsert([], raw), named)[0].authorName, 'Me')
+    assert.equal(mergeInsert(mergeInsert([], named), raw)[0].authorName, 'Me')
+  })
+
+  it('a raw UPDATE still keeps the existing author (merge, not replace)', () => {
+    const raw = makeComment({ id: 'c-alex', userId: 'u-alex', authorName: null, resolved: true })
+    const out = mergeUpdate([alex], raw)[0]
+    assert.equal(out.authorName, 'Alex Author')
+    assert.equal(out.resolved, true)
+  })
+
+  it('hook wires learn/fill into insert and fetches missing authors via the comments API', () => {
+    const src = fs.readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'useVideoComments.ts'),
+      'utf8'
+    )
+    assert.match(src, /fillAuthors\(\[comment\], authorsRef\.current\)/)
+    assert.match(src, /fetchMissingAuthors\(\)/)
+    assert.doesNotMatch(src, /createClient|supabase/i)
+  })
+})
 
 // ---------------------------------------------------------------------------
 // Realtime merge rules (Failure Log, Realtime, 2026-07-05)
@@ -704,7 +785,7 @@ describe('useVideoComments — source invariants', () => {
   })
 
   it('routes Realtime inserts and updates through the merge functions (symmetric)', () => {
-    assert.match(source, /setComments\(\(prev\) => mergeInsert\(prev, comment\)\)/)
+    assert.match(source, /setComments\(\(prev\) => mergeInsert\(prev, filled\)\)/)
     assert.match(source, /setComments\(\(prev\) => mergeUpdate\(prev, updated\)\)/)
     assert.match(source, /onInsert: handleInsert/)
     assert.match(source, /onUpdate: handleUpdate/)
