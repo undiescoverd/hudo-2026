@@ -14,7 +14,7 @@ interface CommentReadsClient {
     upsert(
       row: { user_id: string; video_id: string; last_seen_at: string; updated_at: string },
       options: { onConflict: string }
-    ): PromiseLike<{ error: { message: string } | null }>
+    ): PromiseLike<{ error: { message: string; code?: string } | null }>
   }
 }
 
@@ -32,7 +32,8 @@ export async function markVideoSeen(
       { onConflict: 'user_id,video_id' }
     )
   if (error) {
-    console.error('[comment-reads] upsert failed:', error.message)
+    // 42501 = RLS reject (not a member of the video's agency): expected, not worth logging.
+    if (error.code !== '42501') console.error('[comment-reads] upsert failed:', error.message)
     return { error: error.message }
   }
   return { error: null }

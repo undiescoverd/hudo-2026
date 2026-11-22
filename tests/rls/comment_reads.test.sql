@@ -14,7 +14,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(11);
+SELECT plan(12);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -42,6 +42,16 @@ INSERT INTO memberships (user_id, agency_id, role) VALUES
 -- One video in Agency K, owned by Toby
 INSERT INTO videos (id, agency_id, talent_id, title) VALUES
   ('b1de0010-0010-4000-a000-000000000001'::uuid, 'c0ffee10-0000-4000-a000-000000000001'::uuid, 'dbeef010-0010-4000-a000-000000000002'::uuid, 'Toby Showreel');
+
+-- A second talent (Tina) in Agency K, with her own video (Test 12)
+INSERT INTO auth.users (instance_id, id, email, role, aud, created_at, updated_at, email_confirmed_at, raw_user_meta_data, raw_app_meta_data) VALUES
+  ('00000000-0000-0000-0000-000000000000'::uuid, 'dbeef010-0010-4000-a000-000000000004'::uuid, 'tina@reads.rls', 'authenticated', 'authenticated', now(), now(), now(), '{}', '{}');
+INSERT INTO users (id, email, full_name) VALUES
+  ('dbeef010-0010-4000-a000-000000000004'::uuid, 'tina@reads.rls', 'Talent Tina');
+INSERT INTO memberships (user_id, agency_id, role) VALUES
+  ('dbeef010-0010-4000-a000-000000000004'::uuid, 'c0ffee10-0000-4000-a000-000000000001'::uuid, 'talent');
+INSERT INTO videos (id, agency_id, talent_id, title) VALUES
+  ('b1de0010-0010-4000-a000-000000000002'::uuid, 'c0ffee10-0000-4000-a000-000000000001'::uuid, 'dbeef010-0010-4000-a000-000000000004'::uuid, 'Tina Showreel');
 
 -- Pre-existing read-marker for Alice on that video
 INSERT INTO comment_reads (user_id, video_id, last_seen_at) VALUES
@@ -249,6 +259,27 @@ SELECT throws_ok(
   '42501',
   NULL,
   'No anon policy: unauthenticated INSERT into comment_reads is blocked'
+);
+
+
+-- ── Test 12: talent cannot write a marker for another talent's video ──
+-- Toby and Tina share Agency K, but videos_select_talent hides Tina's video
+-- from Toby, so the membership EXISTS check in the INSERT policy fails.
+RESET ROLE;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"dbeef010-0010-4000-a000-000000000002","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT throws_ok(
+  $$INSERT INTO comment_reads (user_id, video_id, last_seen_at)
+    VALUES (
+      'dbeef010-0010-4000-a000-000000000002'::uuid,
+      'b1de0010-0010-4000-a000-000000000002'::uuid,
+      now()
+    )$$,
+  '42501',
+  NULL,
+  'comment_reads_insert_own: Toby cannot insert a read-marker for Tina''s video (same agency)'
 );
 
 

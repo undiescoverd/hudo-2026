@@ -44,7 +44,22 @@ function makeDb(opts: { commentTimes: string[]; failUpsert?: boolean }) {
         ])
       if (table === 'comment_reads')
         return {
-          ...result(reads),
+          // select().eq().in() honours its filters, so a wrong user/video filter fails tests.
+          select: () => {
+            let rows = [...reads]
+            const chain: any = {
+              eq: (col: keyof Read, v: string) => (
+                (rows = rows.filter((r) => r[col] === v)),
+                chain
+              ),
+              in: (col: keyof Read, vs: string[]) => (
+                (rows = rows.filter((r) => vs.includes(r[col]))),
+                chain
+              ),
+              then: (resolve: (v: unknown) => void) => resolve({ data: rows, error: null }),
+            }
+            return chain
+          },
           upsert: async (row: Read, options: { onConflict: string }) => {
             if (opts.failUpsert) return { error: { message: 'boom' } }
             upserts.push({ row, options })
@@ -104,6 +119,40 @@ describe('markVideoSeen', () => {
 
 describe('unread count after markVideoSeen', () => {
   const t = (s: string) => `2026-03-01T${s}Z`
+
+  it("ignores another user's marker", async () => {
+    const db = makeDb({ commentTimes: [t('09:00:00')] })
+    await markVideoSeen(db.supabase, 'agent1', 'v1', new Date(t('10:00:00')))
+    assert.equal(await unread(db.supabase, 'talent1'), 1)
+  })
+
+  it('compares instants, not strings (Postgres trims fractional zeros)', async () => {
+    // Marker "10:00:00Z" (no fraction); comment "10:00:00.45+00:00" is 450ms LATER.
+    // As strings "Z" > "." so the comment would wrongly compare as older (read).
+    const db = makeDb({ commentTimes: ['2026-03-01T10:00:00.45+00:00', '2026-03-01T09:59:59.9Z'] })
+    await markVideoSeen(db.supabase, 'talent1', 'v1', new Date(t('10:00:00')))
+    db.reads[0].last_seen_at = '2026-03-01T10:00:00Z'
+    assert.equal(await unread(db.supabase), 1)
+  })
+
+  it('does not log the expected RLS reject (42501) but logs other errors', async () => {
+    const logged: unknown[] = []
+    const orig = console.error
+    console.error = (...a: unknown[]) => void logged.push(a)
+    try {
+      const failing = (code: string) => ({
+        from: () => ({
+          upsert: async () => ({ error: { message: 'm', code } }),
+        }),
+      })
+      await markVideoSeen(failing('42501') as any, 'u', 'v')
+      assert.equal(logged.length, 0)
+      await markVideoSeen(failing('XX000') as any, 'u', 'v')
+      assert.equal(logged.length, 1)
+    } finally {
+      console.error = orig
+    }
+  })
 
   it('is all comments before any visit, 0 after opening, and rises for newer comments', async () => {
     const times = [t('09:00:00'), t('09:30:00')]

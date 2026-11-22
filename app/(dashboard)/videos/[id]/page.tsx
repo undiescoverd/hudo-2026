@@ -60,7 +60,7 @@ export default function VideoPage({ params }: Props) {
     deleteComment,
   } = useVideoComments(params.id, activeVersionId)
 
-  useMarkVideoSeen(params.id, userId, isValidId)
+  useMarkVideoSeen(params.id, userId, comments.length, isValidId)
 
   // Timeline markers anchor top-level comments only: a reply continues its parent's
   // thread (it carries the parent's timestamp) and must not add a second marker.

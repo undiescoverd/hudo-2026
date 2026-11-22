@@ -14,6 +14,7 @@ import { TalentDashboard } from '@/components/dashboard/TalentDashboard'
 import { needsTalent } from '@/components/dashboard/talent/tracker'
 import { DashboardError } from '@/components/dashboard/DashboardError'
 import { VideoStatusLive } from '@/components/dashboard/VideoStatusLive'
+import { RefreshOnMount } from '@/components/dashboard/RefreshOnMount'
 
 export default async function TalentPage() {
   const supabase = await createSupabaseServerClient(
@@ -51,6 +52,7 @@ export default async function TalentPage() {
 
   return (
     <main className="max-w-[1360px] mx-auto px-7 pt-6 pb-16">
+      <RefreshOnMount />
       {agency_ids.map((id) => (
         <VideoStatusLive key={id} agencyId={id} />
       ))}

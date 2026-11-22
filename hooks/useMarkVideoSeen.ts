@@ -1,21 +1,55 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { createClient } from '@/lib/auth'
 import { markVideoSeen } from '@/lib/comment-reads'
 
+const DEBOUNCE_MS = 1000
+
 /**
- * Records comment_reads.last_seen_at when the video page opens, and again when
- * it closes (so comments that arrived or were posted while viewing are not
- * counted as unread afterwards). Best-effort: failures are logged, never thrown.
+ * Keeps comment_reads.last_seen_at current while the video page is open:
+ * on mount, whenever the visible comment count changes (debounced ~1s, so
+ * comments seen while viewing count as read), and when the page is hidden or
+ * unloaded (pagehide / visibilitychange). Unmount writes once more as an
+ * extra. Best-effort: failures are logged by markVideoSeen, never thrown.
  */
-export function useMarkVideoSeen(videoId: string, userId: string | null, enabled = true): void {
+export function useMarkVideoSeen(
+  videoId: string,
+  userId: string | null,
+  commentCount: number,
+  enabled = true
+): void {
+  const active = enabled && !!userId
+  const mark = useRef<() => void>(() => {})
+
+  // Mount / identity change: write immediately; unmount: one more best-effort write.
   useEffect(() => {
-    if (!enabled || !userId) return
+    if (!active || !userId) return
     const supabase = createClient()
-    void markVideoSeen(supabase, userId, videoId)
-    return () => {
-      void markVideoSeen(supabase, userId, videoId)
+    mark.current = () => void markVideoSeen(supabase, userId, videoId)
+    mark.current()
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') mark.current()
     }
-  }, [videoId, userId, enabled])
+    const onPageHide = () => mark.current()
+    document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('pagehide', onPageHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', onPageHide)
+      mark.current()
+    }
+  }, [active, userId, videoId])
+
+  // New comments arriving (or posted) while viewing: re-mark after a short debounce.
+  const first = useRef(true)
+  useEffect(() => {
+    if (!active) return
+    if (first.current) {
+      first.current = false
+      return
+    }
+    const t = setTimeout(() => mark.current(), DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [active, commentCount])
 }
