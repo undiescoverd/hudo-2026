@@ -38,17 +38,16 @@ export default function DpaPage() {
           <h2 className="text-xl font-semibold">1. Definitions</h2>
           <p>
             &quot;Data Controller&quot; means the agency using Hudo&apos;s services. &quot;Data
-            Processor&quot; means Resolve Labs Ltd, the operator of Hudo. &quot;Personal Data&quot;
-            has the meaning given in UK GDPR.
+            Processor&quot; means Hudo, the operator of Hudo. &quot;Personal Data&quot; has the
+            meaning given in UK GDPR.
           </p>
         </section>
 
         <section className="space-y-3">
           <h2 className="text-xl font-semibold">2. Purpose and Scope</h2>
           <p>
-            Resolve Labs Ltd processes Personal Data on behalf of the Data Controller solely to
-            provide the Hudo video review platform and associated services as described in the Terms
-            of Service.
+            Hudo processes Personal Data on behalf of the Data Controller solely to provide the Hudo
+            video review platform and associated services as described in the Terms of Service.
           </p>
         </section>
 
@@ -119,8 +118,8 @@ export default function DpaPage() {
             authority to bind their organisation and agree to the terms above.
           </p>
           <p>
-            Company details and contact: Resolve Labs Ltd, [company registration number],
-            [registered address], [legal contact email].
+            Company details and contact: Hudo, [company registration number], [registered address],
+            [legal contact email].
           </p>
         </section>
       </main>

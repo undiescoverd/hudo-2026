@@ -518,13 +518,13 @@ NOTES: M
 
 ---
 
-- [ ] **S4-ACCESS-001** — axe audit over five page groups
+- [x] **S4-ACCESS-001** — axe audit over five page groups
 
 TASK_ID: S4-ACCESS-001
 TITLE: Automated WCAG 2.1 AA audit (axe) and fixes
 BRANCH: feat/s4-S4-ACCESS-001-axe
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-JOURNEY-004, S4-DELETE-001, S4-ERASE-001, S4-SAVER-001, S4-REVIEW-001, S4-REVIEW-002, S4-REVIEW-003, S4-DESIGN-001, S4-DESIGN-002, S4-DESIGN-003, S4-DESIGN-004, S4-DESIGN-005, S4-DESIGN-006
 ACCEPTANCE_CRITERIA:
   - @axe-core/playwright added (flagged in PR for dependency approval)
@@ -553,13 +553,13 @@ NOTES: Human-only. Needs Ian or a tester with NVDA.
 
 ---
 
-- [ ] **S4-LAUNCH-002** — Staging smoke suite
+- [x] **S4-LAUNCH-002** — Staging smoke suite
 
 TASK_ID: S4-LAUNCH-002
 TITLE: Seven-flow smoke suite against staging (register, invite, upload, comment, PDF, guest, upgrade)
 BRANCH: feat/s4-S4-LAUNCH-002-smoke
 MODEL: sonnet
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: S4-JOURNEY-004, S4-LAUNCH-004, S4-REVIEW-002
 ACCEPTANCE_CRITERIA:
   - Seven flows: register → agency; invite talent → accept; upload; comment and resolve; PDF export; guest link; upgrade in Stripe test mode
