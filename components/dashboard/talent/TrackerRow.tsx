@@ -3,6 +3,8 @@
  * Server-component-safe. The title link is stretched over the row; the CTA sits above it.
  */
 
+// React is imported for the tsx test runner's classic JSX transform (renderToStaticMarkup tests).
+import React from 'react'
 import Link from 'next/link'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -50,6 +52,9 @@ export function TrackerRow({ video }: { video: TalentVideo }) {
         >
           {video.title}
         </Link>
+        {video.agency_name ? (
+          <p className="mt-0.5 truncate text-[11.5px] text-faint">{video.agency_name}</p>
+        ) : null}
         <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
           {reason.emphasis && (
             <span className="font-semibold text-coral-text">{reason.emphasis}</span>
