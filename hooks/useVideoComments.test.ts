@@ -17,13 +17,13 @@ import fs from 'node:fs'
 import type { Comment } from '@/lib/comments'
 import { makeComment } from '../components/comments/comment-fixtures'
 import {
-  type AuthorMap,
   COMMENT_GONE_MESSAGE,
   afterAction,
   CommentGoneError,
+  authorsOf,
+  createAuthorRefetcher,
   fillAuthors,
   handleCommentGone,
-  learnAuthors,
   markDeleted,
   mergeInsert,
   mergeUpdate,
@@ -48,40 +48,30 @@ describe("author enrichment for another user's live INSERT (S5-FLOW-005)", () =>
     authorAvatarUrl: null,
   })
 
-  it('fills name and avatar of a raw insert from a user seen in the initial fetch', () => {
-    const map: AuthorMap = new Map()
-    learnAuthors(map, [alex])
-    const [filled] = fillAuthors([rawFromAlex], map)
+  it('fills name and avatar of a raw insert from a user already in the list', () => {
+    const [filled] = fillAuthors([rawFromAlex], authorsOf([alex]))
     assert.equal(filled.authorName, 'Alex Author')
     assert.equal(filled.authorAvatarUrl, 'https://img/alex.png')
   })
 
-  it('leaves an unknown user unchanged (the hook then fetches through the comments API)', () => {
-    const map: AuthorMap = new Map()
-    learnAuthors(map, [alex])
+  it('leaves an unknown user unchanged', () => {
     const stranger = makeComment({ id: 'c-x', userId: 'u-new', authorName: null })
-    assert.deepEqual(fillAuthors([stranger], map), [stranger])
+    assert.deepEqual(fillAuthors([stranger], authorsOf([alex])), [stranger])
   })
 
-  it('learnAuthors ignores comments with no author data and never stores nulls', () => {
-    const map: AuthorMap = new Map()
-    learnAuthors(map, [rawFromAlex])
-    assert.equal(map.size, 0)
+  it('authorsOf ignores comments with no author data', () => {
+    assert.equal(authorsOf([rawFromAlex]).size, 0)
   })
 
   it('keeps fields the comment already has', () => {
-    const map: AuthorMap = new Map()
-    learnAuthors(map, [alex])
     const partly = makeComment({ userId: 'u-alex', authorName: 'Own Name', authorAvatarUrl: null })
-    const [out] = fillAuthors([partly], map)
+    const [out] = fillAuthors([partly], authorsOf([alex]))
     assert.equal(out.authorName, 'Own Name')
     assert.equal(out.authorAvatarUrl, 'https://img/alex.png')
   })
 
   it('other-user INSERT end to end: raw insert is filled, then merged into the list', () => {
-    const map: AuthorMap = new Map()
-    learnAuthors(map, [alex])
-    const [filled] = fillAuthors([rawFromAlex], map)
+    const [filled] = fillAuthors([rawFromAlex], authorsOf([alex]))
     const next = mergeInsert([alex], filled)
     assert.equal(next.length, 2)
     assert.equal(next[1].authorName, 'Alex Author')
@@ -100,15 +90,85 @@ describe("author enrichment for another user's live INSERT (S5-FLOW-005)", () =>
     assert.equal(out.authorName, 'Alex Author')
     assert.equal(out.resolved, true)
   })
+})
 
-  it('hook wires learn/fill into insert and fetches missing authors via the comments API', () => {
-    const src = fs.readFileSync(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'useVideoComments.ts'),
-      'utf8'
-    )
-    assert.match(src, /fillAuthors\(\[comment\], authorsRef\.current\)/)
-    assert.match(src, /fetchMissingAuthors\(\)/)
-    assert.doesNotMatch(src, /createClient|supabase/i)
+describe('createAuthorRefetcher', () => {
+  const named = (userId: string, name: string) =>
+    makeComment({ id: `c-${userId}`, userId, authorName: name })
+  const tick = () => new Promise((r) => setImmediate(r))
+
+  /** A fetchList whose calls resolve only when the test says so. */
+  function controlled() {
+    const calls: {
+      signal: AbortSignal
+      resolve: (l: Comment[] | null) => void
+      reject: () => void
+    }[] = []
+    const fetchList = (signal: AbortSignal) =>
+      new Promise<Comment[] | null>((resolve, reject) => {
+        calls.push({ signal, resolve, reject: () => reject(new Error('boom')) })
+      })
+    return { calls, fetchList }
+  }
+
+  it('rapid unknown inserts: at most 1 in flight + 1 queued, and the last author is filled', async () => {
+    const { calls, fetchList } = controlled()
+    const seen: Comment[][] = []
+    const r = createAuthorRefetcher({ fetchList, onAuthors: (l) => seen.push(l) })
+    for (const u of ['b', 'c', 'd', 'e']) r.request(u)
+    assert.equal(calls.length, 1)
+    calls[0].resolve([named('b', 'B')]) // predates c, d, e
+    await tick()
+    assert.equal(calls.length, 2, 'one follow-up fetch for everyone who arrived mid-flight')
+    calls[1].resolve([named('b', 'B'), named('c', 'C'), named('e', 'E')])
+    await tick()
+    assert.equal(calls.length, 2)
+    assert.equal(seen.length, 2)
+    assert.ok(seen[1].some((c) => c.authorName === 'E'))
+  })
+
+  it('tries each userId once, even if the author can never be learned', async () => {
+    const { calls, fetchList } = controlled()
+    const r = createAuthorRefetcher({ fetchList, onAuthors: () => {} })
+    r.request('ghost')
+    calls[0].resolve([])
+    await tick()
+    r.request('ghost')
+    r.request('ghost')
+    await tick()
+    assert.equal(calls.length, 1)
+  })
+
+  it('a failed or non-ok fetch leaves state intact and does not wedge later requests', async () => {
+    const { calls, fetchList } = controlled()
+    let delivered = 0
+    const r = createAuthorRefetcher({ fetchList, onAuthors: () => delivered++ })
+    r.request('a')
+    calls[0].reject()
+    await tick()
+    r.request('b')
+    calls[1].resolve(null)
+    await tick()
+    r.request('c')
+    assert.equal(calls.length, 3)
+    assert.equal(delivered, 0)
+  })
+
+  it('dispose aborts the fetch and drops its stale response; a new refetcher is unaffected', async () => {
+    const { calls, fetchList } = controlled()
+    let delivered = 0
+    const old = createAuthorRefetcher({ fetchList, onAuthors: () => delivered++ })
+    old.request('a')
+    old.dispose()
+    assert.equal(calls[0].signal.aborted, true)
+    const fresh = createAuthorRefetcher({ fetchList, onAuthors: () => delivered++ })
+    fresh.request('a')
+    calls[0].resolve([named('a', 'A')]) // stale
+    await tick()
+    assert.equal(delivered, 0)
+    calls[1].resolve([named('a', 'A')])
+    await tick()
+    assert.equal(delivered, 1)
   })
 })
 
@@ -766,13 +826,13 @@ describe('useVideoComments — source invariants', () => {
     assert.match(source, /export function useVideoComments/)
   })
 
-  it('fetches the comments endpoint exactly once', () => {
+  it('defines the comments endpoint URL exactly once (initial load and author refetch share it)', () => {
     const matches = [
       ...source.matchAll(
-        /fetch\(\s*`\/api\/videos\/\$\{encodeURIComponent\(videoId\)\}\/versions\/\$\{encodeURIComponent\(versionId\)\}\/comments`/g
+        /`\/api\/videos\/\$\{encodeURIComponent\(videoId\)\}\/versions\/\$\{encodeURIComponent\(versionId\)\}\/comments`/g
       ),
     ]
-    assert.equal(matches.length, 1, 'must fetch the comments endpoint exactly once')
+    assert.equal(matches.length, 1, 'must define the comments endpoint exactly once')
   })
 
   it('skips the fetch entirely when there is no active version', () => {

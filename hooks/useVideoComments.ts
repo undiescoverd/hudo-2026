@@ -3,7 +3,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { rowToComment, type Comment } from '@/lib/comments'
-import { TEMP_COMMENT_ID_PREFIX } from '@/components/comments/comment-permissions'
 import { useRealtimeComments } from './useRealtimeComments'
 
 interface UseVideoCommentsResult {
@@ -66,13 +65,15 @@ export function mergeInsert(prev: Comment[], comment: Comment): Comment[] {
 /** userId -> author fields, learned only from comment data the client already received. */
 export type AuthorMap = Map<string, { authorName: string | null; authorAvatarUrl: string | null }>
 
-/** Record the author of every comment that carries one. Never overwrites with nulls. */
-export function learnAuthors(map: AuthorMap, comments: Comment[]): void {
+/** Map each user to the author fields of any comment that carries them. */
+export function authorsOf(comments: Comment[]): AuthorMap {
+  const map: AuthorMap = new Map()
   for (const c of comments) {
     if (c.authorName !== null || c.authorAvatarUrl !== null) {
       map.set(c.userId, { authorName: c.authorName, authorAvatarUrl: c.authorAvatarUrl })
     }
   }
+  return map
 }
 
 /**
@@ -90,6 +91,55 @@ export function fillAuthors(comments: Comment[], map: AuthorMap): Comment[] {
       authorAvatarUrl: c.authorAvatarUrl ?? a.authorAvatarUrl,
     }
   })
+}
+
+/**
+ * Re-reads the comment list (through the existing comments API) to learn the author of
+ * a Realtime INSERT whose user is not known yet.
+ * - At most one fetch in flight plus one queued: a user arriving mid-flight triggers a
+ *   single follow-up fetch, so a response that predates them can't leave them "Unknown".
+ * - Each userId is tried once: an author the API never returns can't cause a refetch storm.
+ * - `dispose()` aborts the in-flight fetch and drops its response (version change/unmount).
+ * A failed fetch leaves state untouched.
+ */
+export function createAuthorRefetcher(opts: {
+  fetchList: (signal: AbortSignal) => Promise<Comment[] | null>
+  onAuthors: (comments: Comment[]) => void
+}): { request: (userId: string) => void; dispose: () => void } {
+  const attempted = new Set<string>()
+  let current: AbortController | null = null
+  let queued = false
+
+  async function run(): Promise<void> {
+    const ctl = new AbortController()
+    current = ctl
+    try {
+      const list = await opts.fetchList(ctl.signal)
+      if (!ctl.signal.aborted && list) opts.onAuthors(list)
+    } catch {
+      // Leave the fallback name; the next load fixes it.
+    }
+    if (current !== ctl) return // disposed while in flight: the new owner has its own state
+    current = null
+    if (queued) {
+      queued = false
+      void run()
+    }
+  }
+
+  return {
+    request(userId) {
+      if (attempted.has(userId)) return
+      attempted.add(userId)
+      if (current) queued = true
+      else void run()
+    },
+    dispose() {
+      current?.abort()
+      current = null
+      queued = false
+    },
+  }
 }
 
 /** Set specific fields on one comment, leaving every other field (and comment) as is. */
@@ -295,15 +345,12 @@ export function useVideoComments(
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const authorsRef = useRef<AuthorMap>(new Map())
-  const versionIdRef = useRef(versionId)
-  versionIdRef.current = versionId
-  const pendingAuthorFetch = useRef(false)
+  // Latest list, read by the stable handlers below (and by the actions further down).
+  const commentsRef = useRef(comments)
+  commentsRef.current = comments
+  const refetcherRef = useRef<ReturnType<typeof createAuthorRefetcher> | null>(null)
 
   useEffect(() => {
-    authorsRef.current = new Map()
-    pendingAuthorFetch.current = false
-
     if (!versionId) {
       setComments([])
       setLoading(false)
@@ -315,16 +362,23 @@ export function useVideoComments(
     setLoading(true)
     setError(null)
 
-    fetch(
-      `/api/videos/${encodeURIComponent(videoId)}/versions/${encodeURIComponent(versionId)}/comments`
-    )
+    const url = `/api/videos/${encodeURIComponent(videoId)}/versions/${encodeURIComponent(versionId)}/comments`
+    const refetcher = createAuthorRefetcher({
+      fetchList: async (signal) => {
+        const res = await fetch(url, { signal })
+        return res.ok ? ((await res.json()) as { comments: Comment[] }).comments : null
+      },
+      onAuthors: (list) => setComments((prev) => fillAuthors(prev, authorsOf(list))),
+    })
+    refetcherRef.current = refetcher
+
+    fetch(url)
       .then(async (res) => {
         if (!res.ok) throw new Error(await errorMessage(res, 'Failed to load comments'))
         return res.json() as Promise<{ comments: Comment[] }>
       })
       .then(({ comments: data }) => {
         if (!cancelled) {
-          learnAuthors(authorsRef.current, data)
           setComments(data)
           setLoading(false)
         }
@@ -338,44 +392,21 @@ export function useVideoComments(
 
     return () => {
       cancelled = true
+      refetcher.dispose()
+      if (refetcherRef.current === refetcher) refetcherRef.current = null
     }
   }, [videoId, versionId])
 
-  // A Realtime INSERT from someone not seen yet has no author (raw row). Re-read the
-  // list through the existing comments API (same auth, RLS and rate limit as the
-  // initial load), learn the authors, and fill them in. One fetch in flight at most.
-  const fetchMissingAuthors = useCallback(() => {
-    const vid = versionIdRef.current
-    if (!vid || pendingAuthorFetch.current) return
-    pendingAuthorFetch.current = true
-    fetch(`/api/videos/${encodeURIComponent(videoId)}/versions/${encodeURIComponent(vid)}/comments`)
-      .then((res) => (res.ok ? (res.json() as Promise<{ comments: Comment[] }>) : null))
-      .then((body) => {
-        if (!body || versionIdRef.current !== vid) return
-        learnAuthors(authorsRef.current, body.comments)
-        setComments((prev) => fillAuthors(prev, authorsRef.current))
-      })
-      .catch(() => {
-        // Leave the fallback name; the next load fixes it.
-      })
-      .finally(() => {
-        pendingAuthorFetch.current = false
-      })
-  }, [videoId])
-
-  const handleInsert = useCallback(
-    (comment: Comment) => {
-      learnAuthors(authorsRef.current, [comment])
-      const [filled] = fillAuthors([comment], authorsRef.current)
-      setComments((prev) => mergeInsert(prev, filled))
-      if (filled.authorName === null && !comment.id.startsWith(TEMP_COMMENT_ID_PREFIX))
-        fetchMissingAuthors()
-    },
-    [fetchMissingAuthors]
-  )
+  // A Realtime INSERT is the raw row, so its author comes from comments already in the
+  // list; for a user not seen yet the refetcher reads the list through the comments API.
+  const handleInsert = useCallback((comment: Comment) => {
+    const [filled] = fillAuthors([comment], authorsOf(commentsRef.current))
+    const known = commentsRef.current.some((c) => c.id === comment.id)
+    setComments((prev) => mergeInsert(prev, filled))
+    if (filled.authorName === null && !known) refetcherRef.current?.request(comment.userId)
+  }, [])
 
   const handleUpdate = useCallback((updated: Comment) => {
-    learnAuthors(authorsRef.current, [updated])
     setComments((prev) => mergeUpdate(prev, updated))
   }, [])
 
@@ -389,9 +420,6 @@ export function useVideoComments(
 
   // The actions read the current comment (to roll back to) from a ref, so they stay
   // stable across renders and don't re-subscribe anything.
-  const commentsRef = useRef(comments)
-  commentsRef.current = comments
-
   const mutate = useCallback(
     <K extends keyof Comment>(
       commentId: string,
