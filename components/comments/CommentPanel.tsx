@@ -100,14 +100,9 @@ export function CommentPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div
-        className="border-b border-gray-100 px-4 py-3 dark:border-gray-800"
-        title="Comments on this version"
-      >
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-          Comments · {visibleCount}
-        </h2>
-        <p className="text-xs text-gray-500 dark:text-gray-400">This version only</p>
+      <div className="border-b border-line px-[18px] pb-3 pt-4" title="Comments on this version">
+        <h2 className="text-[15px] font-semibold text-foreground">Comments · {visibleCount}</h2>
+        <p className="text-xs text-faint">This version only</p>
       </div>
       <div role="status">
         {notice && (
@@ -127,7 +122,7 @@ export function CommentPanel({
       <div
         ref={listRef}
         tabIndex={-1}
-        className="flex-1 overflow-y-auto divide-y divide-gray-100 focus:outline-none dark:divide-gray-800"
+        className="flex-1 overflow-y-auto px-2 py-1.5 focus:outline-none"
       >
         {loading && (
           <div className="flex items-center justify-center py-12">
@@ -150,7 +145,7 @@ export function CommentPanel({
         {!loading &&
           !error &&
           threads.map(({ parent, replies }) => (
-            <div key={parent.id} className="py-1">
+            <div key={parent.id} className="py-0.5">
               <CommentThread
                 parent={parent}
                 replies={replies}

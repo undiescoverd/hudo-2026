@@ -50,7 +50,7 @@ export function PlayerControls({
         <button
           type="button"
           onClick={playing ? onPause : onPlay}
-          className="flex items-center justify-center rounded hover:text-gray-300"
+          className="flex items-center justify-center rounded hover:text-white/70"
           aria-label={playing ? 'Pause' : 'Play'}
         >
           {playing ? <Pause size={18} /> : <Play size={18} />}
@@ -66,7 +66,7 @@ export function PlayerControls({
           <button
             type="button"
             onClick={onToggleMute}
-            className="flex items-center justify-center rounded hover:text-gray-300"
+            className="flex items-center justify-center rounded hover:text-white/70"
             aria-label={muted ? 'Unmute' : 'Mute'}
           >
             {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
@@ -89,7 +89,7 @@ export function PlayerControls({
           <button
             type="button"
             onClick={onFullscreen}
-            className="flex items-center justify-center rounded hover:text-gray-300"
+            className="flex items-center justify-center rounded hover:text-white/70"
             aria-label="Fullscreen"
           >
             <Maximize size={18} />

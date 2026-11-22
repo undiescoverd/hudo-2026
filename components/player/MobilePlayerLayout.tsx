@@ -9,9 +9,13 @@ interface MobilePlayerLayoutProps {
 
 export function MobilePlayerLayout({ player, panel, input }: MobilePlayerLayoutProps) {
   return (
-    <div className="flex h-full flex-col overflow-x-hidden md:flex-row">
-      <div className="shrink-0 md:w-3/5">{player}</div>
-      {panel && <div className="min-h-0 flex-1 overflow-y-auto md:w-2/5">{panel}</div>}
+    <div className="flex h-full flex-col overflow-x-hidden md:grid md:grid-cols-[1fr_384px]">
+      <div className="min-w-0 shrink-0 p-5">{player}</div>
+      {panel && (
+        <div className="min-h-0 flex-1 overflow-y-auto border-t border-line bg-surface md:border-l md:border-t-0">
+          {panel}
+        </div>
+      )}
       {input && <div className="sticky bottom-0 md:hidden">{input}</div>}
     </div>
   )

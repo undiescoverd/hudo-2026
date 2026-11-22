@@ -53,7 +53,7 @@ function nameInitials(name: string): string {
 }
 
 const actionButtonClass =
-  'rounded px-1.5 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+  'rounded px-1.5 py-0.5 text-xs font-medium text-muted-foreground hover:bg-surface-2 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-coral disabled:cursor-not-allowed disabled:opacity-50'
 const dangerButtonClass =
   'rounded px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300'
 
@@ -228,9 +228,7 @@ export function CommentItem({
       className={[
         'group flex gap-3 rounded-lg p-3 transition-colors',
         isReply ? 'ml-8' : '',
-        isResolved
-          ? 'bg-green-50/60 dark:bg-green-950/20'
-          : 'hover:bg-gray-50 dark:hover:bg-gray-800/50',
+        isResolved ? 'opacity-60 hover:bg-surface-2' : 'hover:bg-surface-2',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -246,27 +244,25 @@ export function CommentItem({
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-            {authorLabel}
-          </span>
+          <span className="text-[13.5px] font-semibold text-foreground">{authorLabel}</span>
 
           {/* Timestamp badge — click to seek */}
           <button
             type="button"
             onClick={() => onSeek(comment.timestampSeconds)}
-            className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-700 hover:bg-blue-100 hover:text-blue-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-blue-900/40 dark:hover:text-blue-400"
+            className="rounded-[5px] bg-coral-soft px-1.5 py-0.5 font-mono text-[11.5px] font-medium tabular-nums text-coral-text hover:brightness-95"
             aria-label={`Seek to ${formatTimecode(comment.timestampSeconds)}`}
           >
             {formatTimecode(comment.timestampSeconds)}
           </button>
 
           {isResolved && (
-            <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
+            <span className="rounded bg-status-approved-bg px-1.5 py-0.5 text-xs font-medium text-status-approved-fg">
               Resolved
             </span>
           )}
 
-          <span className="ml-auto text-xs text-gray-500 dark:text-gray-400">
+          <span className="ml-auto text-xs text-faint">
             {formatRelativeTime(comment.createdAt)}
           </span>
         </div>
@@ -283,7 +279,7 @@ export function CommentItem({
               // must leave the caret where it was so the draft can be retried.
               readOnly={busy}
               aria-label={`Edit comment by ${authorLabel}`}
-              className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 read-only:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+              className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-coral focus:outline-none focus:ring-1 focus:ring-coral read-only:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
             />
             <div className="mt-2 flex items-center justify-between gap-2">
               <span
@@ -318,7 +314,7 @@ export function CommentItem({
         ) : (
           <p
             className={`mt-1 whitespace-pre-wrap text-sm ${
-              isResolved ? 'text-gray-600 dark:text-gray-400' : 'text-gray-800 dark:text-gray-200'
+              isResolved ? 'text-muted-foreground' : 'text-foreground'
             }`}
           >
             {comment.content}

@@ -54,8 +54,8 @@ export function VideoPlayer({
 
   if (error) {
     return (
-      <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-black">
-        <p className="text-sm text-gray-400">Failed to load video</p>
+      <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-[10px] bg-stage">
+        <p className="text-sm text-white/60">Failed to load video</p>
         <button
           type="button"
           onClick={() => fetchUrl(false)}
@@ -70,7 +70,7 @@ export function VideoPlayer({
   return (
     <div className={className ?? 'w-full'}>
       {/* Video + controls */}
-      <div className="relative w-full bg-black">
+      <div className="relative w-full overflow-hidden rounded-[10px] bg-stage">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
@@ -109,7 +109,9 @@ export function VideoPlayer({
 
       {/* Comment timeline bar below video */}
       {showCustomControls && comments && comments.some((c) => c.deletedAt === null) && (
-        <CommentTimeline comments={comments} onSeekToComment={onSeekToComment} />
+        <div className="mt-3 rounded-[10px] bg-surface px-3.5 py-3 ring-1 ring-inset ring-line">
+          <CommentTimeline comments={comments} onSeekToComment={onSeekToComment} />
+        </div>
       )}
     </div>
   )
