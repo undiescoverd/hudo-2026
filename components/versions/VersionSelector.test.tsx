@@ -57,3 +57,66 @@ describe('VersionSelector — source invariants', () => {
     assert.match(source, /controlledVersions === null/)
   })
 })
+
+// ---------------------------------------------------------------------------
+// S5-FLOW-004 — "N open comments on vX" notes (behavioural)
+// ---------------------------------------------------------------------------
+
+describe('EarlierOpenNotes', () => {
+  it('renders one note per earlier version with its count, pluralised', async () => {
+    const React = (await import('react')).default
+    ;(globalThis as { React?: unknown }).React = React
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const { EarlierOpenNotes } = await import('./VersionSelector')
+    const html = renderToStaticMarkup(
+      React.createElement(EarlierOpenNotes, {
+        notes: [
+          { versionId: 'a', versionNumber: 1, openCount: 4 },
+          { versionId: 'b', versionNumber: 2, openCount: 1 },
+        ],
+        onSelect: () => {},
+      })
+    )
+    assert.equal((html.match(/data-testid="earlier-open-note"/g) ?? []).length, 2)
+    assert.match(html, />4 open comments on v1</)
+    assert.match(html, />1 open comment on v2</)
+  })
+
+  it('renders nothing when no earlier version has open comments', async () => {
+    const React = (await import('react')).default
+    ;(globalThis as { React?: unknown }).React = React
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const { EarlierOpenNotes } = await import('./VersionSelector')
+    const html = renderToStaticMarkup(
+      React.createElement(EarlierOpenNotes, { notes: [], onSelect: () => {} })
+    )
+    assert.equal(html, '')
+  })
+
+  it('clicking a note selects that version', async () => {
+    const React = (await import('react')).default
+    ;(globalThis as { React?: unknown }).React = React
+    const { EarlierOpenNotes } = await import('./VersionSelector')
+    const picked: string[] = []
+    const el = EarlierOpenNotes({
+      notes: [{ versionId: 'ver-1', versionNumber: 1, openCount: 2 }],
+      onSelect: (id: string) => picked.push(id),
+    }) as React.ReactElement<{ children: React.ReactElement<{ onClick: () => void }>[] }>
+    el.props.children[0].props.onClick()
+    assert.deepEqual(picked, ['ver-1'])
+  })
+})
+
+describe('VersionSelector — guest isolation', () => {
+  it('is never imported by the guest page tree', () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+    const walk = (d: string): string[] =>
+      fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+        const p = path.join(d, e.name)
+        return e.isDirectory() ? walk(p) : [p]
+      })
+    for (const f of walk(path.join(root, 'app', 'guest')).filter((f) => /\.tsx?$/.test(f))) {
+      assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /VersionSelector/, f)
+    }
+  })
+})

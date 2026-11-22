@@ -2,6 +2,44 @@
 
 import { useEffect, useState } from 'react'
 
+/** One earlier version that still has open (unresolved, non-deleted) comments. */
+export interface EarlierOpen {
+  versionId: string
+  versionNumber: number
+  openCount: number
+}
+
+/** "1 open comment on v1" / "4 open comments on v1". */
+export function earlierOpenLabel(n: EarlierOpen): string {
+  return `${n.openCount} open comment${n.openCount === 1 ? '' : 's'} on v${n.versionNumber}`
+}
+
+/** One slim note per earlier version with open comments; renders nothing when there are none. */
+export function EarlierOpenNotes({
+  notes,
+  onSelect,
+}: {
+  notes: EarlierOpen[]
+  onSelect: (versionId: string) => void
+}) {
+  if (notes.length === 0) return null
+  return (
+    <>
+      {notes.map((n) => (
+        <button
+          key={n.versionId}
+          type="button"
+          data-testid="earlier-open-note"
+          onClick={() => onSelect(n.versionId)}
+          className="rounded-md bg-coral-soft px-2.5 py-1 text-[13px] font-medium text-coral-text hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-coral"
+        >
+          {earlierOpenLabel(n)}
+        </button>
+      ))}
+    </>
+  )
+}
+
 export interface Version {
   id: string
   versionNumber: number
@@ -79,6 +117,25 @@ export function VersionSelector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isControlled, controlledVersions, activeVersionId])
 
+  // Open comments left behind on earlier versions, for the active version. Comments are
+  // never copied between versions, so this keeps unresolved feedback from being lost.
+  // Counted server-side (auth + access checked there); a failure just shows no note.
+  const [earlierOpen, setEarlierOpen] = useState<EarlierOpen[]>([])
+  useEffect(() => {
+    setEarlierOpen([])
+    if (!activeVersionId) return
+    let cancelled = false
+    fetch(`/api/videos/${videoId}/versions/${activeVersionId}/comments?earlierOpen=1`)
+      .then((res) => (res.ok ? (res.json() as Promise<{ earlierOpen: EarlierOpen[] }>) : null))
+      .then((data) => {
+        if (!cancelled && data) setEarlierOpen(data.earlierOpen ?? [])
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [videoId, activeVersionId])
+
   const versions = isControlled ? (controlledVersions ?? []) : fetchedVersions
   const isLoading = isControlled ? controlledVersions === null : loading
 
@@ -101,29 +158,32 @@ export function VersionSelector({
   }
 
   return (
-    <div
-      className="inline-flex items-center gap-0.5 rounded-lg bg-surface-2 p-[3px]"
-      role="group"
-      aria-label="Video versions"
-    >
-      {versions.map((version) => {
-        const isActive = version.id === activeVersionId
-        return (
-          <button
-            key={version.id}
-            type="button"
-            onClick={() => onVersionChange(version.id)}
-            aria-pressed={isActive}
-            className={
-              isActive
-                ? 'rounded-md bg-surface px-2.5 py-1 font-mono text-[13px] font-medium text-foreground shadow-sm'
-                : 'rounded-md px-2.5 py-1 font-mono text-[13px] font-medium text-muted-foreground hover:text-foreground'
-            }
-          >
-            v{version.versionNumber}
-          </button>
-        )
-      })}
+    <div className="flex flex-wrap items-center gap-2">
+      <div
+        className="inline-flex items-center gap-0.5 rounded-lg bg-surface-2 p-[3px]"
+        role="group"
+        aria-label="Video versions"
+      >
+        {versions.map((version) => {
+          const isActive = version.id === activeVersionId
+          return (
+            <button
+              key={version.id}
+              type="button"
+              onClick={() => onVersionChange(version.id)}
+              aria-pressed={isActive}
+              className={
+                isActive
+                  ? 'rounded-md bg-surface px-2.5 py-1 font-mono text-[13px] font-medium text-foreground shadow-sm'
+                  : 'rounded-md px-2.5 py-1 font-mono text-[13px] font-medium text-muted-foreground hover:text-foreground'
+              }
+            >
+              v{version.versionNumber}
+            </button>
+          )
+        })}
+      </div>
+      <EarlierOpenNotes notes={earlierOpen} onSelect={onVersionChange} />
     </div>
   )
 }
