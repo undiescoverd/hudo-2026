@@ -12,6 +12,7 @@ import { CommentPanel } from '@/components/comments/CommentPanel'
 import { VideoStatusLive } from '@/components/dashboard/VideoStatusLive'
 import { VideoStatusControl } from '@/components/video/VideoStatusControl'
 import { useVideoComments } from '@/hooks/useVideoComments'
+import { useMarkVideoSeen } from '@/hooks/useMarkVideoSeen'
 import { createClient } from '@/lib/auth'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -61,6 +62,8 @@ export default function VideoPage({ params }: Props) {
     editComment,
     deleteComment,
   } = useVideoComments(params.id, activeVersionId)
+
+  useMarkVideoSeen(params.id, userId, comments.length, isValidId)
 
   // Timeline markers anchor top-level comments only: a reply continues its parent's
   // thread (it carries the parent's timestamp) and must not add a second marker.

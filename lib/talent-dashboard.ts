@@ -165,12 +165,14 @@ export async function getTalentVideos({
     const timestamps = commentTimestamps.get(row.id) ?? []
 
     let unread_count: number
-    if (!lastSeenAt) {
-      // No read marker → all comments are unread
+    const seenMs = lastSeenAt ? Date.parse(lastSeenAt) : NaN
+    if (Number.isNaN(seenMs)) {
+      // No (or unparseable) read marker → all comments are unread
       unread_count = timestamps.length
     } else {
-      // Count comments created after the last_seen_at marker
-      unread_count = timestamps.filter((ts) => ts > lastSeenAt).length
+      // Compare as instants, not strings: Postgres trims trailing fractional
+      // zeros, so ISO strings within the same second can sort wrongly.
+      unread_count = timestamps.filter((ts) => Date.parse(ts) > seenMs).length
     }
 
     return {
