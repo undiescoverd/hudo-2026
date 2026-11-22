@@ -29,6 +29,8 @@ let videoStatus = 'in_review'
 let activeVersionId: string | null = ACTIVE_VERSION
 let openCount: number | 'error' = 0
 let auditActor: string | null = 'Alex Agent'
+// What Upstash INCR returns: 1 = under any limit, large = limit exceeded.
+let redisCount = 1
 
 let PATCH: (req: NextRequest, ctx: { params: { videoId: string } }) => Promise<Response>
 let GET: (req: NextRequest, ctx: { params: { videoId: string } }) => Promise<Response>
@@ -48,7 +50,7 @@ function installFetch() {
     }
     if (url.origin === REDIS) {
       const n = Array.isArray(body) ? body.length : 1
-      const items = Array.from({ length: n }, () => ({ result: 1 }))
+      const items = Array.from({ length: n }, () => ({ result: redisCount }))
       return Response.json(Array.isArray(body) ? items : items[0])
     }
     calls.push({ method, url, body })
@@ -82,7 +84,8 @@ function installFetch() {
         {
           id: VIDEO,
           agency_id: AGENCY,
-          talent_id: '99999999-9999-4999-8999-999999999999',
+          // A talent caller owns the video, so the 403 comes from canTransition, not access.
+          talent_id: role === 'talent' ? USER : '99999999-9999-4999-8999-999999999999',
           status: videoStatus,
           active_version_id: activeVersionId,
         },
@@ -161,6 +164,41 @@ afterEach(() => {
   activeVersionId = ACTIVE_VERSION
   openCount = 0
   auditActor = 'Alex Agent'
+  redisCount = 1
+})
+
+describe('status route — role gate and rate limit (real handlers)', () => {
+  it('PATCH as talent: only pending_review is allowed, approved is 403 with no audit or update', async () => {
+    role = 'talent'
+    videoStatus = 'draft'
+    const res = await request('PATCH', 'approved')
+    assert.equal(res.status, 403)
+    assert.equal(auditInserts().length, 0)
+    assert.equal(videoUpdates().length, 0)
+  })
+
+  it('PATCH as talent cannot request changes either (guard never reached)', async () => {
+    role = 'talent'
+    openCount = 3
+    const res = await request('PATCH', 'changes_requested')
+    assert.equal(res.status, 403)
+    assert.equal(auditInserts().length, 0)
+  })
+
+  it('PATCH over the limit -> 429 with Retry-After, nothing written', async () => {
+    redisCount = 10_000
+    const res = await request('PATCH', 'approved')
+    assert.equal(res.status, 429)
+    assert.ok(res.headers.get('retry-after'))
+    assert.equal(auditInserts().length, 0)
+  })
+
+  it('GET over the limit -> 429 with Retry-After', async () => {
+    redisCount = 10_000
+    const res = await request('GET')
+    assert.equal(res.status, 429)
+    assert.ok(res.headers.get('retry-after'))
+  })
 })
 
 describe('PATCH status — changes_requested guard (real handler)', () => {
