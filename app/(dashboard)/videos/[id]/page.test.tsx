@@ -173,8 +173,8 @@ describe('VideoPage — talent resubmit prompt (S4-REVIEW-003)', () => {
     source = fs.readFileSync(path.resolve(currentDir, 'page.tsx'), 'utf8')
   })
 
-  it('reads only status + talent_id via the RLS client (no admin client, no new route)', () => {
-    assert.match(source, /\.from\('videos'\)\s*\.select\('status, talent_id'\)/)
+  it('reads only id + status + talent_id via the RLS client (no admin client, no new route)', () => {
+    assert.match(source, /\.from\('videos'\)\s*\.select\('id, status, talent_id'\)/)
     assert.doesNotMatch(source, /supabase-admin|createAdminClient/)
   })
 

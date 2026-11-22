@@ -245,7 +245,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
       return NextResponse.json({ error: 'Failed to update video status' }, { status: 500 })
     }
     if (!flipped || flipped.length === 0) {
-      return NextResponse.json({ id: videoId, status: 'in_review', changed: false })
+      // Lost the race: another opener already moved it, so don't claim a status here.
+      return NextResponse.json({ id: videoId, changed: false })
     }
     const { error: autoAuditError } = await admin.from('audit_log').insert({
       agency_id: video.agency_id,
@@ -254,18 +255,29 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
       action: 'status_changed',
       resource_type: 'video',
       resource_id: video.id,
-      metadata: { old_status: 'pending_review', new_status: 'in_review' },
+      metadata: { old_status: 'pending_review', new_status: 'in_review', trigger: 'auto_open' },
     })
     if (autoAuditError) {
       console.error(
         '[video:status:patch] auto-open audit failed, reverting:',
         autoAuditError.message
       )
-      await admin
+      const { error: revertError } = await admin
         .from('videos')
         .update({ status: 'pending_review' })
         .eq('id', videoId)
         .eq('status', 'in_review')
+      if (revertError) {
+        console.error('[video:status:patch] CRITICAL: auto-open unaudited flip not reverted', {
+          videoId,
+          auditOrphan: true,
+          revertError: revertError.message,
+        })
+        return NextResponse.json(
+          { error: 'Failed to record audit log; status may have changed' },
+          { status: 500 }
+        )
+      }
       return NextResponse.json(
         { error: 'Failed to record audit log; status not changed' },
         { status: 500 }

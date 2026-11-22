@@ -33,7 +33,9 @@ let auditActor: string | null = 'Alex Agent'
 let redisCount = 1
 // Simulates losing the conditional-update race: no row still matches status=pending_review.
 let raceLost = false
+let membershipAgency = AGENCY
 let auditFails = false
+let revertFails = false
 
 let PATCH: (req: NextRequest, ctx: { params: { videoId: string } }) => Promise<Response>
 let GET: (req: NextRequest, ctx: { params: { videoId: string } }) => Promise<Response>
@@ -97,13 +99,15 @@ function installFetch() {
     if (url.pathname === '/rest/v1/videos' && method === 'PATCH') {
       // .select() after .update() asks for return=representation: report matched rows.
       const wantsRows = new Headers(init.headers).get('prefer')?.includes('return=representation')
+      if (revertFails && url.searchParams.get('status') === 'eq.in_review')
+        return json(500, { message: 'revert down' })
       if (!wantsRows) return new Response(null, { status: 204 })
       const guard = url.searchParams.get('status')
       const matches = guard === null || (guard === 'eq.pending_review' && !raceLost)
       return json(200, matches ? [{ id: VIDEO }] : [])
     }
     if (url.pathname === '/rest/v1/memberships') {
-      return rows([{ role, agency_id: AGENCY }])
+      return rows([{ role, agency_id: membershipAgency }])
     }
     if (url.pathname === '/rest/v1/video_versions') {
       return rows([{ id: LATEST_VERSION }])
@@ -177,6 +181,8 @@ afterEach(() => {
   redisCount = 1
   raceLost = false
   auditFails = false
+  membershipAgency = AGENCY
+  revertFails = false
 })
 
 describe('status route — role gate and rate limit (real handlers)', () => {
@@ -334,6 +340,7 @@ describe('PATCH status — auto In review on agent open (S5-FLOW-002)', () => {
     assert.deepEqual((auditInserts()[0].body as { metadata: unknown }).metadata, {
       old_status: 'pending_review',
       new_status: 'in_review',
+      trigger: 'auto_open',
     })
     assert.equal(videoUpdates().length, 1)
     assert.equal(videoUpdates()[0].url.searchParams.get('status'), 'eq.pending_review')
@@ -380,7 +387,7 @@ describe('PATCH status — auto In review on agent open (S5-FLOW-002)', () => {
     raceLost = true
     const res = await request('PATCH', 'in_review', { autoOpen: true })
     assert.equal(res.status, 200)
-    assert.equal(((await res.json()) as { changed: boolean }).changed, false)
+    assert.deepEqual(await res.json(), { id: VIDEO, changed: false })
     assert.equal(videoUpdates().length, 1)
     assert.equal(auditInserts().length, 0)
   })
@@ -408,5 +415,51 @@ describe('PATCH status — auto In review on agent open (S5-FLOW-002)', () => {
     const res = await request('PATCH', 'in_review', { autoOpen: true })
     assert.equal(res.status, 429)
     assert.ok(res.headers.get('retry-after'))
+  })
+
+  it('audit fails AND revert fails: logs CRITICAL orphan and returns an accurate 500', async () => {
+    videoStatus = 'pending_review'
+    auditFails = true
+    revertFails = true
+    const logged: unknown[][] = []
+    const realError = console.error
+    console.error = (...a: unknown[]) => void logged.push(a)
+    let res: Response
+    try {
+      res = await request('PATCH', 'in_review', { autoOpen: true })
+    } finally {
+      console.error = realError
+    }
+    assert.equal(res.status, 500)
+    assert.match(((await res.json()) as { error: string }).error, /may have changed/)
+    assert.ok(
+      logged.some(
+        (a) =>
+          String(a[0]).includes('CRITICAL: auto-open unaudited flip not reverted') &&
+          (a[1] as { videoId: string }).videoId === VIDEO
+      )
+    )
+    assert.equal(videoUpdates()[1].url.searchParams.get('status'), 'eq.in_review')
+  })
+
+  it('cross-agency agent sending autoOpen is refused: 403, no update, no audit', async () => {
+    membershipAgency = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    videoStatus = 'pending_review'
+    const res = await request('PATCH', 'in_review', { autoOpen: true })
+    assert.equal(res.status, 403)
+    assert.equal(videoUpdates().length, 0)
+    assert.equal(auditInserts().length, 0)
+  })
+
+  it('non-boolean autoOpen ("true") is treated as a MANUAL change: audit-first, no trigger tag', async () => {
+    videoStatus = 'pending_review'
+    const res = await request('PATCH', 'in_review', { autoOpen: 'true' })
+    assert.equal(res.status, 200)
+    assert.deepEqual(await res.json(), { id: VIDEO, status: 'in_review' })
+    assert.equal(auditInserts().length, 1)
+    assert.equal(
+      (auditInserts()[0].body as { metadata: { trigger?: string } }).metadata.trigger,
+      undefined
+    )
   })
 })
