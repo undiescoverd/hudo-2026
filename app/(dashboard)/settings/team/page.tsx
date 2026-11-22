@@ -50,8 +50,8 @@ export default async function TeamSettingsPage() {
   const pending = filterPendingInvitations((rows ?? []) as PendingInvitation[])
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-8 space-y-8">
-      <h1 className="text-2xl font-semibold">Team</h1>
+    <div className="space-y-8">
+      <h1 className="text-2xl font-semibold">Members</h1>
       <section className="space-y-3">
         <h2 className="text-lg font-medium">Invite a teammate</h2>
         <InviteForm agencyId={membership.agency_id} inviterRole={membership.role} />
@@ -64,6 +64,6 @@ export default async function TeamSettingsPage() {
           <PendingInvitations invitations={pending} />
         )}
       </section>
-    </main>
+    </div>
   )
 }

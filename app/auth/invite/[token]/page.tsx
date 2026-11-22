@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { validatePassword } from '@/lib/auth-validation'
+import { AuthSplitLayout } from '@/app/auth/_components/AuthSplitLayout'
 
 type InvitationData = {
   valid: boolean
@@ -91,16 +92,16 @@ export default function InviteAcceptPage() {
 
   if (state === 'loading') {
     return (
-      <main className="flex min-h-screen items-center justify-center p-4">
+      <AuthSplitLayout>
         <p className="text-sm text-muted-foreground">Validating invitation...</p>
-      </main>
+      </AuthSplitLayout>
     )
   }
 
   if (state === 'invalid') {
     return (
-      <main className="flex min-h-screen items-center justify-center p-4">
-        <div className="w-full max-w-sm space-y-4 text-center">
+      <AuthSplitLayout>
+        <div className="space-y-4 text-center">
           <h1 className="text-2xl font-semibold">Invalid invitation</h1>
           <p className="text-sm text-muted-foreground">
             This invitation link is invalid or has expired. Please ask your agency admin to send a
@@ -113,14 +114,14 @@ export default function InviteAcceptPage() {
             Go to sign in
           </Link>
         </div>
-      </main>
+      </AuthSplitLayout>
     )
   }
 
   if (state === 'success') {
     return (
-      <main className="flex min-h-screen items-center justify-center p-4">
-        <div className="w-full max-w-sm space-y-4 text-center">
+      <AuthSplitLayout>
+        <div className="space-y-4 text-center">
           <h1 className="text-2xl font-semibold">Welcome aboard!</h1>
           <p className="text-sm text-muted-foreground">
             You&apos;ve joined <strong>{invitation?.agencyName}</strong> as a{' '}
@@ -133,15 +134,15 @@ export default function InviteAcceptPage() {
             Sign in
           </Link>
         </div>
-      </main>
+      </AuthSplitLayout>
     )
   }
 
   const isNewUser = !invitation?.userExists
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm space-y-6">
+    <AuthSplitLayout>
+      <div className="space-y-6">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">
             {isNewUser ? 'Create your account' : 'Accept invitation'}
@@ -177,7 +178,7 @@ export default function InviteAcceptPage() {
                   onChange={(e) => setFullName(e.target.value)}
                   aria-describedby={fieldErrors.fullName ? 'fullName-error' : undefined}
                   className={cn(
-                    'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                    'w-full rounded-md border bg-surface-2 px-3 py-2 text-sm outline-none',
                     'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                     fieldErrors.fullName ? 'border-destructive' : 'border-input'
                   )}
@@ -201,7 +202,7 @@ export default function InviteAcceptPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   aria-describedby={fieldErrors.password ? 'password-error' : 'password-hint'}
                   className={cn(
-                    'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                    'w-full rounded-md border bg-surface-2 px-3 py-2 text-sm outline-none',
                     'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                     fieldErrors.password ? 'border-destructive' : 'border-input'
                   )}
@@ -234,6 +235,6 @@ export default function InviteAcceptPage() {
           </button>
         </form>
       </div>
-    </main>
+    </AuthSplitLayout>
   )
 }

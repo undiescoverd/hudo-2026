@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { validatePassword } from '@/lib/auth-validation'
+import { AuthSplitLayout } from '@/app/auth/_components/AuthSplitLayout'
 
 type FieldError = { fullName?: string; agencyName?: string; email?: string; password?: string }
 
@@ -84,8 +85,8 @@ export default function RegisterPage() {
 
   if (submitted) {
     return (
-      <main className="flex min-h-screen items-center justify-center p-4">
-        <div className="w-full max-w-sm space-y-4 text-center">
+      <AuthSplitLayout>
+        <div className="space-y-4 text-center">
           <h1 className="text-2xl font-semibold">Check your email</h1>
           <p className="text-sm text-muted-foreground">
             We sent a confirmation link to <strong>{email}</strong>. Click the link to activate your
@@ -102,13 +103,13 @@ export default function RegisterPage() {
             .
           </p>
         </div>
-      </main>
+      </AuthSplitLayout>
     )
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm space-y-6">
+    <AuthSplitLayout>
+      <div className="space-y-6">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">Create your account</h1>
           <p className="text-sm text-muted-foreground">
@@ -135,7 +136,7 @@ export default function RegisterPage() {
               onChange={(e) => setFullName(e.target.value)}
               aria-describedby={fieldErrors.fullName ? 'fullName-error' : undefined}
               className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                'w-full rounded-md border bg-surface-2 px-3 py-2 text-sm outline-none',
                 'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                 fieldErrors.fullName ? 'border-destructive' : 'border-input'
               )}
@@ -160,7 +161,7 @@ export default function RegisterPage() {
               onChange={(e) => setAgencyName(e.target.value)}
               aria-describedby={fieldErrors.agencyName ? 'agencyName-error' : undefined}
               className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                'w-full rounded-md border bg-surface-2 px-3 py-2 text-sm outline-none',
                 'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                 fieldErrors.agencyName ? 'border-destructive' : 'border-input'
               )}
@@ -184,7 +185,7 @@ export default function RegisterPage() {
               onChange={(e) => setEmail(e.target.value)}
               aria-describedby={fieldErrors.email ? 'email-error' : undefined}
               className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                'w-full rounded-md border bg-surface-2 px-3 py-2 text-sm outline-none',
                 'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                 fieldErrors.email ? 'border-destructive' : 'border-input'
               )}
@@ -208,7 +209,7 @@ export default function RegisterPage() {
               onChange={(e) => setPassword(e.target.value)}
               aria-describedby={fieldErrors.password ? 'password-error' : 'password-hint'}
               className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                'w-full rounded-md border bg-surface-2 px-3 py-2 text-sm outline-none',
                 'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                 fieldErrors.password ? 'border-destructive' : 'border-input'
               )}
@@ -251,6 +252,6 @@ export default function RegisterPage() {
           .
         </p>
       </div>
-    </main>
+    </AuthSplitLayout>
   )
 }

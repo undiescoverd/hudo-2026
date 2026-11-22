@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { AuthSplitLayout } from '@/app/auth/_components/AuthSplitLayout'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -69,8 +70,8 @@ export default function ForgotPasswordForm() {
 
   if (submitted) {
     return (
-      <main className="flex min-h-screen items-center justify-center p-4">
-        <div className="w-full max-w-sm space-y-4 text-center">
+      <AuthSplitLayout>
+        <div className="space-y-4 text-center">
           <h1 className="text-2xl font-semibold">Check your email</h1>
           <p className="text-sm text-muted-foreground">
             If an account exists for that email address, we&apos;ve sent a password reset link.
@@ -83,13 +84,13 @@ export default function ForgotPasswordForm() {
             Back to sign in
           </Link>
         </div>
-      </main>
+      </AuthSplitLayout>
     )
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm space-y-6">
+    <AuthSplitLayout>
+      <div className="space-y-6">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">Reset your password</h1>
           <p className="text-sm text-muted-foreground">
@@ -110,7 +111,7 @@ export default function ForgotPasswordForm() {
               onChange={(e) => setEmail(e.target.value)}
               aria-describedby={emailError ? 'email-error' : undefined}
               className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                'w-full rounded-md border bg-surface-2 px-3 py-2 text-sm outline-none',
                 'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                 emailError ? 'border-destructive' : 'border-input'
               )}
@@ -144,6 +145,6 @@ export default function ForgotPasswordForm() {
           </Link>
         </p>
       </div>
-    </main>
+    </AuthSplitLayout>
   )
 }
