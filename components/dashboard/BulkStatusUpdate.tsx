@@ -105,7 +105,11 @@ export function BulkStatusUpdate({ selectedCount, videoIds = [], onComplete }: P
           }}
           disabled={noneSelected || applying}
         >
-          <SelectTrigger className="w-44 h-8 text-sm" disabled={noneSelected || applying}>
+          <SelectTrigger
+            aria-label="Set status…"
+            className="w-44 h-8 text-sm"
+            disabled={noneSelected || applying}
+          >
             <SelectValue placeholder="Set status…" />
           </SelectTrigger>
           <SelectContent>

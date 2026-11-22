@@ -114,7 +114,6 @@ export function VersionSelector({
             type="button"
             onClick={() => onVersionChange(version.id)}
             aria-pressed={isActive}
-            aria-label={`Version ${version.versionNumber}`}
             className={
               isActive
                 ? 'rounded-md bg-surface px-2.5 py-1 font-mono text-[13px] font-medium text-foreground shadow-sm'

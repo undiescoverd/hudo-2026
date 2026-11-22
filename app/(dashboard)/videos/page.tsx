@@ -62,7 +62,7 @@ export default async function VideosPage() {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <span className="text-faint text-xs">No thumbnail</span>
+                  <span className="text-xs text-white/60">No thumbnail</span>
                 )}
               </div>
 
