@@ -14,8 +14,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { VIDEO_STATUSES } from '@/lib/video-status'
+import { VIDEO_STATUSES, patchVideoStatus } from '@/lib/video-status'
 import type { VideoStatus } from '@/lib/video-status'
+import * as React from 'react'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -27,7 +28,7 @@ type Props = {
   onComplete?: () => void
 }
 
-type ApplyResult = {
+export type ApplyResult = {
   succeeded: number
   failed: number
   errors: string[]
@@ -37,6 +38,37 @@ type ApplyResult = {
 export function formatRowError(title: string | undefined, reason: unknown): string {
   const message = reason instanceof Error ? reason.message : String(reason)
   return title ? `${title}: ${message}` : message
+}
+
+/** PATCH every id in parallel; each refusal (e.g. 409 no open comments) is named by row. */
+export async function applyBulkStatus(
+  videoIds: string[],
+  status: VideoStatus,
+  videoTitles: Record<string, string> = {},
+  patch: (id: string, status: VideoStatus) => Promise<void> = patchVideoStatus
+): Promise<ApplyResult> {
+  const settled = await Promise.allSettled(videoIds.map((id) => patch(id, status)))
+  return {
+    succeeded: settled.filter((r) => r.status === 'fulfilled').length,
+    failed: settled.filter((r) => r.status === 'rejected').length,
+    errors: settled.flatMap((r, i) =>
+      r.status === 'rejected' ? [formatRowError(videoTitles[videoIds[i]], r.reason)] : []
+    ),
+  }
+}
+
+/** Summary line under the toolbar. */
+export function BulkResultMessage({ result }: { result: ApplyResult }) {
+  return (
+    <p
+      className={`text-xs ${result.failed > 0 ? 'text-destructive' : 'text-green-700'}`}
+      role="status"
+    >
+      {result.succeeded > 0 && `${result.succeeded} updated.`}{' '}
+      {result.failed > 0 &&
+        `${result.failed} failed: ${result.errors.slice(0, 3).join('; ')}${result.errors.length > 3 ? '…' : ''}`}
+    </p>
+  )
 }
 
 export function BulkStatusUpdate({
@@ -72,27 +104,8 @@ export function BulkStatusUpdate({
     setApplying(true)
     setResult(null)
 
-    const settled = await Promise.allSettled(
-      videoIds.map((id) =>
-        fetch(`/api/videos/${id}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: targetStatus }),
-        }).then(async (res) => {
-          if (!res.ok) {
-            const body = (await res.json().catch(() => ({}))) as { error?: string }
-            throw new Error(body.error ?? `HTTP ${res.status}`)
-          }
-          return res.json()
-        })
-      )
-    )
-
-    const succeeded = settled.filter((r) => r.status === 'fulfilled').length
-    const failed = settled.filter((r) => r.status === 'rejected').length
-    const errors = settled.flatMap((r, i) =>
-      r.status === 'rejected' ? [formatRowError(videoTitles[videoIds[i]], r.reason)] : []
-    )
+    const outcome = await applyBulkStatus(videoIds, targetStatus, videoTitles)
+    const { succeeded, failed, errors } = outcome
 
     setResult({ succeeded, failed, errors })
     setApplying(false)
@@ -148,16 +161,7 @@ export function BulkStatusUpdate({
         </button>
       </div>
 
-      {result && (
-        <p
-          className={`text-xs ${result.failed > 0 ? 'text-red-600' : 'text-green-700'}`}
-          role="status"
-        >
-          {result.succeeded > 0 && `${result.succeeded} updated.`}{' '}
-          {result.failed > 0 &&
-            `${result.failed} failed: ${result.errors.slice(0, 3).join('; ')}${result.errors.length > 3 ? '…' : ''}`}
-        </p>
-      )}
+      {result && <BulkResultMessage result={result} />}
     </div>
   )
 }

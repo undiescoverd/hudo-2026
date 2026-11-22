@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit } from '@/lib/api-helpers'
 import { AGENT_ROLES } from '@/lib/auth-helpers'
-import { isVideoStatus, canTransition, statusGuardError } from '@/lib/video-status'
+import { isVideoStatus, canTransition, statusGuardError, isEmailLike } from '@/lib/video-status'
 import { isValidUUID } from '@/lib/validation'
 import type { UserRole } from '@/lib/auth'
 
@@ -23,9 +23,12 @@ import type { UserRole } from '@/lib/auth'
 
 const STATUS_RATE_LIMIT = 20 // max requests per window
 const STATUS_RATE_WINDOW = 60 // 1 minute in seconds
+// GET is re-read as comments stream in, so it gets its own, more generous limit.
+const STATUS_GET_RATE_LIMIT = 60
 
 /**
- * Open (unresolved, undeleted, top-level) comments on the video's current version:
+ * Open (unresolved, undeleted, top-level) comments on the video's CURRENT version
+ * (active_version_id), not whichever older version a viewer has selected:
  * active_version_id, falling back to the highest version_number. Null on query error.
  */
 async function countOpenCommentsForVideo(
@@ -283,7 +286,7 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
     'unknown'
   const rl = await checkRateLimit(
     `video:status:get:ip:${ip}`,
-    STATUS_RATE_LIMIT,
+    STATUS_GET_RATE_LIMIT,
     STATUS_RATE_WINDOW,
     'video:status:get',
     'Too many requests. Please try again later.'
@@ -297,6 +300,15 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
   if (!user) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
+
+  const userRl = await checkRateLimit(
+    `video:status:get:user:${user.id}`,
+    STATUS_GET_RATE_LIMIT,
+    STATUS_RATE_WINDOW,
+    'video:status:get',
+    'Too many requests. Please try again later.'
+  )
+  if (userRl) return userRl
 
   const { data: video } = await supabase
     .from('videos')
@@ -341,8 +353,13 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
   )
 
   return NextResponse.json({
-    changedBy: entry?.actor_name ?? null,
+    // actor_name is the email when the actor has no full name; never expose emails here.
+    changedBy:
+      typeof entry?.actor_name === 'string' && !isEmailLike(entry.actor_name)
+        ? entry.actor_name
+        : null,
     changedAt: entry?.created_at ?? null,
-    openComments: openComments ?? 0,
+    // null = count unknown (query failed); clients must not treat it as zero.
+    openComments,
   })
 }

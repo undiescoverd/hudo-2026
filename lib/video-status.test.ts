@@ -1,6 +1,99 @@
 import assert from 'node:assert/strict'
-import { describe, it } from 'node:test'
-import { NO_OPEN_COMMENTS_MESSAGE, statusConfirmation, statusGuardError } from './video-status'
+import { afterEach, describe, it } from 'node:test'
+import {
+  NO_OPEN_COMMENTS_MESSAGE,
+  changedByLabel,
+  decideStatusChange,
+  isEmailLike,
+  patchVideoStatus,
+  statusConfirmation,
+  statusGuardError,
+} from './video-status'
+
+describe('unknown open-comment count (null) is never treated as zero', () => {
+  it('does not refuse changes_requested', () => {
+    assert.equal(statusGuardError('changes_requested', null), null)
+    assert.deepEqual(decideStatusChange('in_review', 'changes_requested', null), {
+      action: 'apply',
+    })
+  })
+
+  it('does not warn on approve, but still confirms leaving Approved', () => {
+    assert.equal(statusConfirmation('in_review', 'approved', null), null)
+    assert.equal(decideStatusChange('approved', 'in_review', null).action, 'confirm')
+  })
+})
+
+describe('decideStatusChange', () => {
+  it('refuses changes_requested with zero open comments', () => {
+    assert.deepEqual(decideStatusChange('in_review', 'changes_requested', 0), {
+      action: 'refuse',
+      message: NO_OPEN_COMMENTS_MESSAGE,
+    })
+  })
+
+  it('confirms approve with open comments, naming the count', () => {
+    const d = decideStatusChange('in_review', 'approved', 2)
+    assert.equal(d.action, 'confirm')
+    assert.equal(
+      d.action === 'confirm' && d.confirmation.message,
+      '2 comments are still open. Approve anyway?'
+    )
+  })
+
+  it('confirms leaving Approved, applies everything else directly', () => {
+    assert.equal(decideStatusChange('approved', 'changes_requested', 1).action, 'confirm')
+    assert.equal(decideStatusChange('pending_review', 'in_review', 0).action, 'apply')
+    assert.equal(decideStatusChange('in_review', 'approved', 0).action, 'apply')
+  })
+})
+
+describe('changedByLabel', () => {
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString()
+
+  it('reads "Changed by {name}, {relative time}"', () => {
+    assert.equal(changedByLabel('Alex Agent', ago(3 * 3_600_000)), 'Changed by Alex Agent, 3h ago')
+  })
+
+  it('never shows an email; falls back to "a team member"', () => {
+    assert.ok(isEmailLike('a@b.co'))
+    assert.equal(changedByLabel('a@b.co', ago(5 * 60_000)), 'Changed by a team member, 5m ago')
+    assert.equal(changedByLabel(null, ago(5 * 60_000)), 'Changed by a team member, 5m ago')
+  })
+
+  it('is null with no timestamp', () => {
+    assert.equal(changedByLabel('Alex Agent', null), null)
+  })
+})
+
+describe('patchVideoStatus', () => {
+  const realFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  it('rejects with the server message on a 409', async () => {
+    globalThis.fetch = (async () =>
+      Response.json(
+        { error: 'Add an open comment', code: 'no_open_comments' },
+        { status: 409 }
+      )) as typeof fetch
+    await assert.rejects(patchVideoStatus('v1', 'changes_requested'), /Add an open comment/)
+  })
+
+  it('resolves on 200 and sends the status as JSON', async () => {
+    let sent: { url: string; body: string } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      sent = { url, body: String(init.body) }
+      return Response.json({ id: 'v1', status: 'approved' })
+    }) as unknown as typeof fetch
+    await patchVideoStatus('v1', 'approved')
+    assert.deepEqual(sent, {
+      url: '/api/videos/v1/status',
+      body: JSON.stringify({ status: 'approved' }),
+    })
+  })
+})
 
 describe('statusGuardError', () => {
   it('refuses changes_requested with zero open comments', () => {

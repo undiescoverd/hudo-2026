@@ -6,39 +6,60 @@
  * Reads "changed by" + open-comment count from GET /api/videos/:id/status and
  * changes status through PATCH (which re-enforces every rule server-side).
  * Prompts: approving with open comments warns with the count; leaving Approved
- * asks to confirm. Changes requested with no open comments is refused.
+ * asks to confirm. The open count is for the video's current (active) version,
+ * not the version being viewed. An unknown count is never treated as zero: the
+ * PATCH 409 stays authoritative and its message is shown.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import * as React from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { StatusPill, STATUS_PILL_LABELS } from '@/components/ui/status-pill'
 import {
   VIDEO_STATUSES,
+  changedByLabel,
+  decideStatusChange,
   isVideoStatus,
-  statusConfirmation,
-  statusGuardError,
+  patchVideoStatus,
   type StatusConfirmation,
   type VideoStatus,
 } from '@/lib/video-status'
-import { formatRelativeTime } from '@/lib/format-time'
 
-type StatusInfo = { changedBy: string | null; changedAt: string | null; openComments: number }
+export type StatusInfo = {
+  changedBy: string | null
+  changedAt: string | null
+  openComments: number | null
+}
 
 type Props = {
   videoId: string
   status: string
-  /** Changes when comments change, so the open count stays fresh. */
+  /** Changes when comments change, so the open count stays fresh (debounced). */
   refreshKey?: number
   onChanged: () => void
+  /** Pre-loaded info (tests / server render). */
+  initialInfo?: StatusInfo | null
 }
 
-export function VideoStatusControl({ videoId, status, refreshKey = 0, onChanged }: Props) {
-  const [info, setInfo] = useState<StatusInfo | null>(null)
+const REFETCH_DEBOUNCE_MS = 500
+
+export function VideoStatusControl({
+  videoId,
+  status,
+  refreshKey = 0,
+  onChanged,
+  initialInfo = null,
+}: Props) {
+  const [info, setInfo] = useState<StatusInfo | null>(initialInfo)
   const [pending, setPending] = useState<{ to: VideoStatus; prompt: StatusConfirmation } | null>(
     null
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const selectRef = useRef<HTMLSelectElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const hasLoaded = useRef(false)
+  const messageId = useId()
 
   const current: VideoStatus = isVideoStatus(status) ? status : 'draft'
 
@@ -47,35 +68,40 @@ export function VideoStatusControl({ videoId, status, refreshKey = 0, onChanged 
       const res = await fetch(`/api/videos/${videoId}/status`)
       if (!res.ok) return
       setInfo((await res.json()) as StatusInfo)
+      hasLoaded.current = true
     } catch (err: unknown) {
       console.error('[video-status] info fetch failed:', err)
     }
   }, [videoId])
 
+  // First load is immediate; later refreshes (status change, comments streaming in)
+  // are debounced so a burst of comments never trips the GET rate limit.
   useEffect(() => {
-    void loadInfo()
+    const t = setTimeout(() => void loadInfo(), hasLoaded.current ? REFETCH_DEBOUNCE_MS : 0)
+    return () => clearTimeout(t)
   }, [loadInfo, status, refreshKey])
+
+  // Move focus into the confirm prompt when it opens.
+  useEffect(() => {
+    if (pending) cancelRef.current?.focus()
+  }, [pending])
+
+  function dismiss() {
+    setPending(null)
+    selectRef.current?.focus()
+  }
 
   async function apply(to: VideoStatus) {
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch(`/api/videos/${videoId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: to }),
-      })
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string }
-        setPending(null)
-        setError(body.error ?? `Could not change status (HTTP ${res.status})`)
-        return
-      }
+      await patchVideoStatus(videoId, to)
       setPending(null)
+      selectRef.current?.focus()
       onChanged()
-      void loadInfo()
-    } catch {
-      setError('Could not change status. Check your connection and try again.')
+    } catch (err: unknown) {
+      setPending(null)
+      setError(err instanceof Error ? err.message : 'Could not change status.')
     } finally {
       setBusy(false)
     }
@@ -83,24 +109,19 @@ export function VideoStatusControl({ videoId, status, refreshKey = 0, onChanged 
 
   function choose(to: VideoStatus) {
     setError(null)
-    const openComments = info?.openComments ?? 0
-    const guard = statusGuardError(to, openComments)
-    if (guard) {
-      setError(guard)
-      return
-    }
-    const prompt = statusConfirmation(current, to, openComments)
-    if (prompt) {
-      setPending({ to, prompt })
-      return
-    }
-    void apply(to)
+    const decision = decideStatusChange(current, to, info?.openComments ?? null)
+    if (decision.action === 'refuse') setError(decision.message)
+    else if (decision.action === 'confirm') setPending({ to, prompt: decision.confirmation })
+    else void apply(to)
   }
+
+  const changed = info ? changedByLabel(info.changedBy, info.changedAt) : null
 
   return (
     <div data-testid="video-status-control" className="flex flex-wrap items-center gap-3">
       <StatusPill status={current} />
       <select
+        ref={selectRef}
         aria-label="Change status"
         value=""
         disabled={busy}
@@ -116,13 +137,9 @@ export function VideoStatusControl({ videoId, status, refreshKey = 0, onChanged 
           </option>
         ))}
       </select>
-      {info?.changedBy && info.changedAt && (
-        <span className="text-xs text-faint">
-          Changed by {info.changedBy}, {formatRelativeTime(info.changedAt)}
-        </span>
-      )}
+      {changed && <span className="text-xs text-faint">{changed}</span>}
       {error && (
-        <p role="alert" className="w-full text-sm text-red-700 dark:text-red-400">
+        <p role="alert" className="w-full text-sm text-destructive">
           {error}
         </p>
       )}
@@ -130,13 +147,19 @@ export function VideoStatusControl({ videoId, status, refreshKey = 0, onChanged 
         <div
           role="alertdialog"
           aria-label="Confirm status change"
+          aria-describedby={messageId}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') dismiss()
+          }}
           className="flex w-full flex-wrap items-center gap-3 rounded-md border border-line bg-surface-2 px-3 py-2"
         >
-          <p className="text-sm">{pending.prompt.message}</p>
+          <p id={messageId} className="text-sm">
+            {pending.prompt.message}
+          </p>
           <Button size="sm" disabled={busy} onClick={() => void apply(pending.to)}>
             Confirm
           </Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setPending(null)}>
+          <Button ref={cancelRef} size="sm" variant="ghost" disabled={busy} onClick={dismiss}>
             Cancel
           </Button>
         </div>
