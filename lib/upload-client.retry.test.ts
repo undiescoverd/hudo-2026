@@ -82,11 +82,25 @@ describe('withRetry', () => {
     }
   })
 
-  it('classifies 408, 429, 5xx and fetch TypeErrors as retryable', () => {
+  it('wraps the final error with the last failure as its cause', async () => {
+    const last = new UploadHttpError('Part 1 upload failed: 500', 500)
+    await assert.rejects(
+      withRetry(
+        async () => {
+          throw last
+        },
+        { sleep: noSleep }
+      ),
+      (e: Error) => e.cause === last && (e as UploadHttpError).status === 500
+    )
+  })
+
+  it('classifies 408, 429 and 5xx as retryable, but not a stray TypeError', () => {
     for (const s of [408, 429, 500, 502, 503]) {
       assert.equal(isRetryableUploadError(new UploadHttpError('x', s)), true, String(s))
     }
-    assert.equal(isRetryableUploadError(new TypeError('Failed to fetch')), true)
+    assert.equal(isRetryableUploadError(new UploadHttpError('Network error during upload')), true)
+    assert.equal(isRetryableUploadError(new TypeError('x is not a function')), false)
     assert.equal(isRetryableUploadError(new UploadHttpError('x', 400)), false)
   })
 })
@@ -239,6 +253,129 @@ describe('performUpload: retry and abort', () => {
       /Network error during upload \(gave up after 3 attempts\)/
     )
     assert.equal(n, 3)
+  })
+
+  it('a network failure (fetch TypeError) on a part PUT is retried', async () => {
+    stubMultipart({})
+    const inner = globalThis.fetch
+    let failed = false
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === 'https://r2.example/p1' && !failed) {
+        failed = true
+        throw new TypeError('Failed to fetch')
+      }
+      return inner(input, init)
+    }) as typeof fetch
+    const id = await performUpload(bigFile, {
+      agencyId: 'ag-1',
+      onProgress: () => {},
+      retry: { sleep: noSleep },
+      abortMultipart: async () => {},
+    })
+    assert.equal(id, 'vid-1')
+    assert.equal(failed, true)
+  })
+
+  describe('multipart-url (parts beyond the initial batch)', () => {
+    function stubUrlRoute(responses: Response[]) {
+      stubMultipart({})
+      const inner = globalThis.fetch
+      let i = 0
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === '/api/videos/upload/multipart-url') {
+          urls.push('/api/videos/upload/multipart-url')
+          return responses[Math.min(i++, responses.length - 1)].clone()
+        }
+        return inner(input, init)
+      }) as typeof fetch
+    }
+    // Presign only returns part 1's URL, so part 2's URL must come from the route.
+    const withOnlyPart1 = () => {
+      const inner = globalThis.fetch
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === '/api/videos/upload/presign') {
+          return jsonResponse(200, {
+            ...multipartPresign,
+            partUrls: [multipartPresign.partUrls[0]],
+          })
+        }
+        return inner(input, init)
+      }) as typeof fetch
+    }
+
+    it('retries a 503 then succeeds', async () => {
+      stubUrlRoute([
+        jsonResponse(503, { error: 'Failed to generate part upload URLs' }),
+        jsonResponse(200, { partUrls: [{ partNumber: 2, url: 'https://r2.example/p2' }] }),
+      ])
+      withOnlyPart1()
+      const id = await performUpload(bigFile, {
+        agencyId: 'ag-1',
+        onProgress: () => {},
+        retry: { sleep: noSleep },
+        abortMultipart: async () => {},
+      })
+      assert.equal(id, 'vid-1')
+      assert.equal(count('/api/videos/upload/multipart-url'), 2)
+    })
+
+    it('gives up with the real server message, and aborts', async () => {
+      stubUrlRoute([jsonResponse(500, { error: 'Failed to generate part upload URLs' })])
+      withOnlyPart1()
+      const aborted: string[][] = []
+      await assert.rejects(
+        performUpload(bigFile, {
+          agencyId: 'ag-1',
+          onProgress: () => {},
+          retry: { sleep: noSleep },
+          abortMultipart: async (k, u) => void aborted.push([k, u]),
+        }),
+        /Failed to generate part upload URLs \(gave up after 3 attempts\)/
+      )
+      assert.equal(count('/api/videos/upload/multipart-url'), 3)
+      assert.equal(aborted.length, 1)
+    })
+
+    it('does not retry a 429 rate limit and shows its message', async () => {
+      stubUrlRoute([
+        jsonResponse(429, { error: 'Too many part URL requests. Please try again later.' }),
+      ])
+      withOnlyPart1()
+      await assert.rejects(
+        performUpload(bigFile, {
+          agencyId: 'ag-1',
+          onProgress: () => {},
+          retry: { sleep: noSleep },
+          abortMultipart: async () => {},
+        }),
+        { message: 'Too many part URL requests. Please try again later.' }
+      )
+      assert.equal(count('/api/videos/upload/multipart-url'), 1)
+    })
+  })
+
+  it('single PUT resets progress to 0 before each attempt', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) =>
+      String(input) === '/api/videos/upload/presign'
+        ? jsonResponse(200, {
+            videoId: 'vid-1',
+            r2Key: 'k',
+            multipart: false,
+            uploadUrl: 'https://r2.example/put',
+          })
+        : jsonResponse(200, { videoId: 'vid-1' })) as typeof fetch
+    const seen: number[] = []
+    let n = 0
+    await performUpload(smallFile, {
+      agencyId: 'a',
+      onProgress: (p) => void seen.push(p),
+      retry: { sleep: noSleep },
+      putSingle: async (_u, _f, onProgress) => {
+        onProgress(60)
+        if (++n < 2) throw new UploadHttpError('Upload failed: 500', 500)
+      },
+    })
+    assert.deepEqual(seen, [0, 60, 0, 60, 100])
   })
 
   it('Retry after give-up reuses the draft video id (no second empty draft)', async () => {

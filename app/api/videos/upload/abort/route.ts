@@ -4,8 +4,11 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getStorage } from '@/lib/storage'
 import { UPLOAD_RATE_WINDOW } from '@/lib/upload-validation'
 import { requireUploadRole } from '@/lib/api-helpers'
+import { isValidUUID } from '@/lib/validation'
 
 const ABORT_RATE_LIMIT = 30 // abort requests per user per hour
+const MAX_KEY_LENGTH = 512
+const MAX_UPLOAD_ID_LENGTH = 1024
 
 /**
  * POST /api/videos/upload/abort
@@ -31,6 +34,22 @@ export async function POST(request: NextRequest) {
   }
   if (typeof r2UploadId !== 'string' || !r2UploadId.trim()) {
     return NextResponse.json({ error: 'R2 upload ID is required' }, { status: 400 })
+  }
+
+  if (r2Key.length > MAX_KEY_LENGTH || r2UploadId.length > MAX_UPLOAD_ID_LENGTH) {
+    return NextResponse.json({ error: 'Invalid R2 key or upload ID' }, { status: 400 })
+  }
+
+  // Key format: {agencyId}/{videoId}/{uploadId}.ext (see generateR2Key)
+  const [agencyId, keyVideoId] = r2Key.split('/')
+  if (
+    !agencyId ||
+    !keyVideoId ||
+    !isValidUUID(agencyId) ||
+    !isValidUUID(keyVideoId) ||
+    !r2Key.startsWith(`${agencyId}/${keyVideoId}/`)
+  ) {
+    return NextResponse.json({ error: 'Invalid R2 key format' }, { status: 400 })
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -66,12 +85,6 @@ export async function POST(request: NextRequest) {
     console.error('[upload/abort] Rate limit check failed, allowing request:', err)
   }
 
-  const agencyId = r2Key.split('/')[0]
-  const keyVideoId = r2Key.split('/')[1]
-  if (!agencyId || !keyVideoId) {
-    return NextResponse.json({ error: 'Invalid R2 key format' }, { status: 400 })
-  }
-
   const admin = createAdminClient()
   const membership = await requireUploadRole(
     admin,
@@ -81,16 +94,19 @@ export async function POST(request: NextRequest) {
   )
   if (membership instanceof NextResponse) return membership
 
-  if (membership.role === 'talent') {
-    const { data: video, error: videoError } = await admin
-      .from('videos')
-      .select('id, agency_id, talent_id')
-      .eq('id', keyVideoId)
-      .single()
+  // The key's video must exist in the key's agency; talent may only touch their own.
+  const { data: video, error: videoError } = await admin
+    .from('videos')
+    .select('id, agency_id, talent_id')
+    .eq('id', keyVideoId)
+    .eq('agency_id', agencyId)
+    .single()
 
-    if (videoError || !video || video.talent_id !== user.id || video.agency_id !== agencyId) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+  if (videoError || !video || video.agency_id !== agencyId) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  }
+  if (membership.role === 'talent' && video.talent_id !== user.id) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
   try {

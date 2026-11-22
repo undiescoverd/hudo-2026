@@ -20,9 +20,10 @@ export function isQuotaMessage(message: string | null | undefined): boolean {
 export class UploadHttpError extends Error {
   constructor(
     message: string,
-    readonly status?: number
+    readonly status?: number,
+    options?: { cause?: unknown }
   ) {
-    super(message)
+    super(message, options)
     this.name = 'UploadHttpError'
   }
 }
@@ -31,14 +32,22 @@ export class UploadHttpError extends Error {
  * Retry only what can plausibly succeed next time: network failures, 408, 429, 5xx.
  * Any other 4xx (e.g. 403 from an expired/invalid signature) is final, since the same
  * presigned URL would be rejected again. A plain Error (e.g. missing ETag, which is a
- * CORS misconfiguration) is final too.
+ * CORS misconfiguration) or a stray TypeError (a programming error) is final too.
+ * Network failures are tagged explicitly: see `networkFetch` and the XHR transport.
  */
 export function isRetryableUploadError(err: unknown): boolean {
-  if (err instanceof UploadHttpError) {
-    const s = err.status
-    return s === undefined || s === 408 || s === 429 || s >= 500
+  if (!(err instanceof UploadHttpError)) return false
+  const s = err.status
+  return s === undefined || s === 408 || s === 429 || s >= 500
+}
+
+/** fetch() that reports a network-layer failure (TypeError) as a retryable UploadHttpError. */
+async function networkFetch(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init)
+  } catch (err) {
+    throw new UploadHttpError('Network error during upload', undefined, { cause: err })
   }
-  return err instanceof TypeError // fetch() rejects with TypeError on network failure
 }
 
 export interface RetryOptions {
@@ -65,7 +74,8 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions = {}
       if (attempt >= maxAttempts) {
         throw new UploadHttpError(
           `${(err as Error).message} (gave up after ${maxAttempts} attempts)`,
-          err instanceof UploadHttpError ? err.status : undefined
+          (err as UploadHttpError).status,
+          { cause: err }
         )
       }
       await sleep(baseDelayMs * 2 ** (attempt - 1) * (0.5 + random() / 2))
@@ -226,13 +236,18 @@ export interface PerformUploadOptions {
 /** Best-effort abort of an unfinished multipart upload; never throws (the original error matters more). */
 export async function abortMultipartUpload(r2Key: string, r2UploadId: string): Promise<void> {
   try {
-    await fetch('/api/videos/upload/abort', {
+    const res = await fetch('/api/videos/upload/abort', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ r2Key, r2UploadId }),
+      // A hung abort must not delay the real error reaching the user.
+      signal: AbortSignal.timeout(5000),
     })
+    // Never log the key or upload id.
+    if (!res.ok) console.warn(`[upload] multipart abort failed: ${res.status}`)
   } catch {
-    // Orphaned parts are cleaned up by the storage-reconcile cron.
+    // Best effort. Anything left behind is removed by the bucket's R2 lifecycle rule
+    // (AbortIncompleteMultipartUpload after 1 day, see docs/r2-setup.md).
   }
 }
 
@@ -262,7 +277,10 @@ export async function performUpload(file: File, options: PerformUploadOptions): 
   options.onVideoId?.(presign.videoId)
 
   if (!presign.multipart) {
-    await withRetry(() => putSingle(presign.uploadUrl as string, file, onProgress), retry)
+    await withRetry(async () => {
+      onProgress(0) // a retry restarts the transfer, so don't leave the bar at its old value
+      await putSingle(presign.uploadUrl as string, file, onProgress)
+    }, retry)
     onProgress(100)
 
     const completeRes = await fetch('/api/videos/upload/complete', {
@@ -312,26 +330,33 @@ async function uploadMultipart(
     if (existing) {
       url = existing.url
     } else {
-      const urlRes = await fetch('/api/videos/upload/multipart-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          r2Key: presign.r2Key,
-          r2UploadId: presign.r2UploadId,
-          partNumber,
-          agencyId,
-        }),
-      })
-      if (!urlRes.ok) throw new Error('Failed to get part URL')
-      const urlBody = (await urlRes.json()) as { partUrls: { partNumber: number; url: string }[] }
-      const partUrl = urlBody.partUrls[0]
-      if (!partUrl) throw new Error('Failed to get part URL')
-      url = partUrl.url
+      url = await withRetry(async () => {
+        const urlRes = await networkFetch('/api/videos/upload/multipart-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            r2Key: presign.r2Key,
+            r2UploadId: presign.r2UploadId,
+            partNumber,
+            agencyId,
+          }),
+        })
+        if (!urlRes.ok) {
+          const message = await readError(urlRes, `Failed to get part URL: ${urlRes.status}`)
+          // 429 is a rate limit: retrying immediately would only burn more of it.
+          if (urlRes.status === 429) throw new Error(message)
+          throw new UploadHttpError(message, urlRes.status)
+        }
+        const urlBody = (await urlRes.json()) as { partUrls?: { url: string }[] }
+        const partUrl = urlBody.partUrls?.[0]
+        if (!partUrl) throw new Error('Failed to get part URL: empty response')
+        return partUrl.url
+      }, retry)
     }
 
     // Same presigned URL on each attempt: no new presign, so no extra quota/rate-limit hit.
     const etag = await withRetry(async () => {
-      const res = await fetch(url, {
+      const res = await networkFetch(url, {
         method: 'PUT',
         body: chunk,
         headers: { 'Content-Type': 'application/octet-stream' },
