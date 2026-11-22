@@ -98,12 +98,43 @@ describe('EarlierOpenNotes', () => {
     ;(globalThis as { React?: unknown }).React = React
     const { EarlierOpenNotes } = await import('./VersionSelector')
     const picked: string[] = []
-    const el = EarlierOpenNotes({
-      notes: [{ versionId: 'ver-1', versionNumber: 1, openCount: 2 }],
+    const tree = EarlierOpenNotes({
+      notes: [
+        { versionId: 'ver-1', versionNumber: 1, openCount: 2 },
+        { versionId: 'ver-2', versionNumber: 2, openCount: 3 },
+      ],
       onSelect: (id: string) => picked.push(id),
-    }) as React.ReactElement<{ children: React.ReactElement<{ onClick: () => void }>[] }>
-    el.props.children[0].props.onClick()
-    assert.deepEqual(picked, ['ver-1'])
+    })
+    // Find buttons by type and rendered text, not by position in the tree.
+    type El = React.ReactElement<{ children?: unknown; onClick?: () => void }>
+    const buttons: { text: string; click: () => void }[] = []
+    const text = (n: unknown): string =>
+      typeof n === 'string' ? n : Array.isArray(n) ? n.map(text).join('') : ''
+    const walk = (n: unknown) => {
+      if (Array.isArray(n)) return n.forEach(walk)
+      if (!React.isValidElement(n)) return
+      const el = n as El
+      if (el.type === 'button') {
+        buttons.push({ text: text(el.props.children), click: el.props.onClick as () => void })
+      } else walk(el.props.children)
+    }
+    walk(tree)
+    buttons.find((b) => b.text === '3 open comments on v2')?.click()
+    assert.deepEqual(picked, ['ver-2'])
+  })
+
+  it('wraps the notes in a labelled group', async () => {
+    const React = (await import('react')).default
+    ;(globalThis as { React?: unknown }).React = React
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const { EarlierOpenNotes } = await import('./VersionSelector')
+    const html = renderToStaticMarkup(
+      React.createElement(EarlierOpenNotes, {
+        notes: [{ versionId: 'a', versionNumber: 1, openCount: 1 }],
+        onSelect: () => {},
+      })
+    )
+    assert.match(html, /role="group" aria-label="Open comments on earlier versions"/)
   })
 })
 

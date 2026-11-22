@@ -24,7 +24,11 @@ export function EarlierOpenNotes({
 }) {
   if (notes.length === 0) return null
   return (
-    <>
+    <div
+      role="group"
+      aria-label="Open comments on earlier versions"
+      className="flex flex-wrap items-center gap-2"
+    >
       {notes.map((n) => (
         <button
           key={n.versionId}
@@ -36,7 +40,7 @@ export function EarlierOpenNotes({
           {earlierOpenLabel(n)}
         </button>
       ))}
-    </>
+    </div>
   )
 }
 
@@ -122,15 +126,20 @@ export function VersionSelector({
   // Counted server-side (auth + access checked there); a failure just shows no note.
   const [earlierOpen, setEarlierOpen] = useState<EarlierOpen[]>([])
   useEffect(() => {
-    setEarlierOpen([])
-    if (!activeVersionId) return
+    // Keep the previous notes until the new response lands (no flicker on version switch).
+    if (!activeVersionId) {
+      setEarlierOpen([])
+      return
+    }
     let cancelled = false
     fetch(`/api/videos/${videoId}/versions/${activeVersionId}/comments?earlierOpen=1`)
       .then((res) => (res.ok ? (res.json() as Promise<{ earlierOpen: EarlierOpen[] }>) : null))
       .then((data) => {
-        if (!cancelled && data) setEarlierOpen(data.earlierOpen ?? [])
+        if (!cancelled) setEarlierOpen(data?.earlierOpen ?? [])
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setEarlierOpen([])
+      })
     return () => {
       cancelled = true
     }
