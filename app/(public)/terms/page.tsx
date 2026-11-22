@@ -27,9 +27,9 @@ export default function TermsPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold">1. Who we are</h2>
           <p>
-            Hudo is a video review platform for talent agencies, operated by Resolve Labs Ltd,
-            registered in England and Wales under company number [Company registration number], with
-            its registered office at [Registered address].
+            Hudo is a video review platform for talent agencies, operated by Hudo, registered in
+            England and Wales under company number [Company registration number], with its
+            registered office at [Registered address].
           </p>
           <p>
             These Terms of Service (&quot;Terms&quot;) govern your use of Hudo. By creating an

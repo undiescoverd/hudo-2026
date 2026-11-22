@@ -30,8 +30,8 @@ describe('/terms page', () => {
     assert.match(html, /href="\/dpa"/)
   })
 
-  it('names the operator as Resolve Labs Ltd and keeps other details as placeholders', () => {
-    assert.match(html, /operated by Resolve Labs Ltd/)
+  it('names the operator as Hudo and keeps other details as placeholders', () => {
+    assert.match(html, /operated by Hudo/)
     assert.match(html, /\[Company registration number\]/)
   })
 

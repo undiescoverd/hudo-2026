@@ -38,9 +38,9 @@ export default function PrivacyPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold">1. Who we are</h2>
           <p>
-            This policy explains how Resolve Labs Ltd (&quot;we&quot;, &quot;us&quot;) handles
-            personal data when you use Hudo. For account and billing data, we are the controller
-            under the UK GDPR. Contact: [legal contact email], [Registered address].
+            This policy explains how Hudo (&quot;we&quot;, &quot;us&quot;) handles personal data
+            when you use Hudo. For account and billing data, we are the controller under the UK
+            GDPR. Contact: [legal contact email], [Registered address].
           </p>
           <p>
             Where an agency uploads videos or comments about talent, the agency is the controller of

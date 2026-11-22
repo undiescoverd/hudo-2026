@@ -43,8 +43,8 @@ describe('/dpa page', () => {
     }
   })
 
-  it('names the processor as Resolve Labs Ltd, matching the acceptance modal', () => {
-    assert.match(html, /Resolve Labs Ltd/)
+  it('names the processor as Hudo, matching the acceptance modal', () => {
+    assert.match(html, /Hudo/)
   })
 
   it('exposes the sub-processor list at the #sub-processors anchor the modal links to', () => {
