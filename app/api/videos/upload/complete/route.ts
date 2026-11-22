@@ -244,12 +244,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create video version' }, { status: 500 })
   }
 
-  // Audit: fire-and-forget — a logging failure must not break the upload
+  // Audit: awaited (Vercel freezes the fn at response time) but never fatal — a logging failure must not break the upload
   const actorName =
     typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
       ? user.user_metadata.full_name.trim()
       : (user.email ?? user.id)
-  logEvent({
+  await logEvent({
     action: 'version_uploaded',
     resourceType: 'video',
     resourceId: videoId,
@@ -274,6 +274,7 @@ export async function POST(request: NextRequest) {
   // Update first, audit only for the winner (same order as the auto-open path in the
   // status route), so a lost race never leaves an orphan/duplicate audit row. If the
   // audit insert then fails the flip is reverted: no silent unaudited status change.
+  // After a lost race the response reports the pre-race status; the client refetches.
   let flipped = false
   let currentStatus: string = video.status
   if (role === 'talent') {
@@ -291,7 +292,7 @@ export async function POST(request: NextRequest) {
       )
     } else {
       currentStatus = freshVideo.status
-      if (shouldFlipOnTalentUpload(role, currentStatus)) {
+      if (shouldFlipOnTalentUpload(currentStatus)) {
         const previousStatus = currentStatus
         const { data: updatedRows, error: flipUpdateError } = await admin
           .from('videos')
@@ -327,12 +328,25 @@ export async function POST(request: NextRequest) {
               '[upload/complete] Status auto-flip audit insert failed — reverting flip:',
               flipAuditError.message
             )
-            const { error: revertError } = await admin
+            const { data: revertedRows, error: revertError } = await admin
               .from('videos')
               .update({ status: previousStatus, updated_at: new Date().toISOString() })
               .eq('id', videoId)
               .eq('status', 'pending_review')
-            if (revertError) {
+              .select('id')
+            if (!revertError && !revertedRows?.length) {
+              // Status moved again between the flip and the revert: the flip went unaudited
+              // but someone else now owns the status. Report what it actually is.
+              console.warn('[upload/complete] Auto-flip unaudited; revert matched 0 rows', {
+                videoId,
+              })
+              const { data: nowVideo } = await admin
+                .from('videos')
+                .select('status')
+                .eq('id', videoId)
+                .single()
+              currentStatus = nowVideo?.status ?? 'pending_review'
+            } else if (revertError) {
               console.error('[upload/complete] CRITICAL: unaudited auto-flip not reverted', {
                 videoId,
                 auditOrphan: true,

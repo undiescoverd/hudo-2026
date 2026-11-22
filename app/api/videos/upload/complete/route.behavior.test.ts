@@ -34,6 +34,8 @@ let talentOwnerId = USER
 let raceLost = false
 let auditFails = false
 let revertFails = false
+let revertMatchesNothing = false
+let revertSeen = false
 let redisCount = 1
 
 let POST: (req: NextRequest) => Promise<Response>
@@ -97,7 +99,7 @@ function installFetch() {
       const isFreshRead = url.searchParams.get('select') === 'status'
       return rows([
         isFreshRead
-          ? { status: freshStatus }
+          ? { status: revertSeen ? 'in_review' : freshStatus }
           : { id: VIDEO, agency_id: AGENCY, talent_id: talentOwnerId, status: initialStatus },
       ])
     }
@@ -106,6 +108,10 @@ function installFetch() {
       if (revertFails && url.searchParams.get('status') === 'eq.pending_review')
         return json(500, { message: 'revert down' })
       if (!wantsRows) return new Response(null, { status: 204 })
+      if (revertMatchesNothing && url.searchParams.get('status') === 'eq.pending_review') {
+        revertSeen = true
+        return json(200, [])
+      }
       return json(200, raceLost ? [] : [{ id: VIDEO }])
     }
     if (url.pathname === '/rest/v1/audit_log' && method === 'POST') {
@@ -196,6 +202,8 @@ afterEach(() => {
   raceLost = false
   auditFails = false
   revertFails = false
+  revertMatchesNothing = false
+  revertSeen = false
   redisCount = 1
 })
 
@@ -307,6 +315,24 @@ describe('upload complete — talent new version on Approved (S5-FLOW-003)', () 
     assert.equal(res.status, 200)
     assert.equal(((await res.json()) as { status: string }).status, 'pending_review')
     assert.ok(logged.some((a) => String(a[0]).includes('CRITICAL: unaudited auto-flip')))
+    assert.equal(notificationInserts().length, 0)
+  })
+
+  it('audit failure and the revert matches 0 rows: warns unaudited and reports the real status', async () => {
+    auditFails = true
+    revertMatchesNothing = true
+    const warned: unknown[][] = []
+    const realWarn = console.warn
+    console.warn = (...a: unknown[]) => void warned.push(a)
+    let res: Response
+    try {
+      res = (await quietly(complete)).result
+    } finally {
+      console.warn = realWarn
+    }
+    assert.equal(res.status, 200)
+    assert.equal(((await res.json()) as { status: string }).status, 'in_review')
+    assert.ok(warned.some((a) => String(a[0]).includes('revert matched 0 rows')))
     assert.equal(notificationInserts().length, 0)
   })
 

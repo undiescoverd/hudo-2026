@@ -59,19 +59,13 @@ describe('complete route — talent self-upload (S4-UPLOAD-001)', () => {
   it('flips for talent on draft, changes_requested and approved (S5-FLOW-003)', async () => {
     const { shouldFlipOnTalentUpload } = await import('../../../../../lib/video-status')
     for (const status of ['draft', 'changes_requested', 'approved'])
-      assert.equal(shouldFlipOnTalentUpload('talent', status), true, status)
+      assert.equal(shouldFlipOnTalentUpload(status), true, status)
   })
 
   it('never flips for talent on pending_review or in_review, nor on an unknown status', async () => {
     const { shouldFlipOnTalentUpload } = await import('../../../../../lib/video-status')
     for (const status of ['pending_review', 'in_review', 'bogus', null])
-      assert.equal(shouldFlipOnTalentUpload('talent', status), false, String(status))
-  })
-
-  it('never flips for agent+, regardless of status', async () => {
-    const { shouldFlipOnTalentUpload } = await import('../../../../../lib/video-status')
-    for (const r of ['agent', 'admin_agent', 'owner', null])
-      assert.equal(shouldFlipOnTalentUpload(r, 'approved'), false, String(r))
+      assert.equal(shouldFlipOnTalentUpload(status), false, String(status))
   })
 
   it('canTransition is unchanged: talent still cannot re-open Approved via PATCH', async () => {
@@ -190,7 +184,7 @@ describe('complete route — source invariants', () => {
   it('re-reads the CURRENT status before the flip decision (not the stale top-of-route read)', () => {
     // The fresh single-column select must exist and precede the eligibility check.
     const freshReadPos = source.indexOf(".select('status')")
-    const eligibilityPos = source.indexOf('shouldFlipOnTalentUpload(role, currentStatus)')
+    const eligibilityPos = source.indexOf('shouldFlipOnTalentUpload(currentStatus)')
     assert.ok(freshReadPos > -1, 'fresh status re-read must exist')
     assert.ok(eligibilityPos > -1, 'flip eligibility must check currentStatus')
     assert.ok(freshReadPos < eligibilityPos, 'the re-read must happen before the flip decision')

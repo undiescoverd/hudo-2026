@@ -176,12 +176,9 @@ export function shouldAutoOpen(role: string | null, status: string | null): bool
  */
 export const TALENT_UPLOAD_FLIP_FROM = ['draft', 'changes_requested', 'approved'] as const
 
-export function shouldFlipOnTalentUpload(role: string | null, status: string | null): boolean {
-  return (
-    role === 'talent' &&
-    status !== null &&
-    (TALENT_UPLOAD_FLIP_FROM as readonly string[]).includes(status)
-  )
+/** Caller has already established the uploader is talent. */
+export function shouldFlipOnTalentUpload(status: string | null): boolean {
+  return status !== null && (TALENT_UPLOAD_FLIP_FROM as readonly string[]).includes(status)
 }
 
 // ---------------------------------------------------------------------------
