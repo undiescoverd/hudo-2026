@@ -125,13 +125,17 @@ export function changedByLabel(changedBy: string | null, changedAt: string | nul
 }
 
 /** PATCH /api/videos/:id/status. Resolves on success; rejects with the server's message. */
-export async function patchVideoStatus(videoId: string, status: VideoStatus): Promise<void> {
+export async function patchVideoStatus(
+  videoId: string,
+  status: VideoStatus,
+  opts: { autoOpen?: boolean } = {}
+): Promise<void> {
   let res: Response
   try {
     res = await fetch(`/api/videos/${videoId}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(opts.autoOpen ? { status, autoOpen: true } : { status }),
     })
   } catch {
     throw new Error('Could not change status. Check your connection and try again.')
@@ -140,6 +144,13 @@ export async function patchVideoStatus(videoId: string, status: VideoStatus): Pr
     const body = (await res.json().catch(() => ({}))) as { error?: string }
     throw new Error(body.error ?? `HTTP ${res.status}`)
   }
+}
+
+const AUTO_OPEN_ROLES: ReadonlySet<string> = new Set(['owner', 'admin_agent', 'agent'])
+
+/** S5-FLOW-002: agent roles opening a pending_review video flip it to in_review. */
+export function shouldAutoOpen(role: string | null, status: string | null): boolean {
+  return role !== null && AUTO_OPEN_ROLES.has(role) && status === 'pending_review'
 }
 
 // ---------------------------------------------------------------------------

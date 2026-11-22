@@ -31,6 +31,9 @@ let openCount: number | 'error' = 0
 let auditActor: string | null = 'Alex Agent'
 // What Upstash INCR returns: 1 = under any limit, large = limit exceeded.
 let redisCount = 1
+// Simulates losing the conditional-update race: no row still matches status=pending_review.
+let raceLost = false
+let auditFails = false
 
 let PATCH: (req: NextRequest, ctx: { params: { videoId: string } }) => Promise<Response>
 let GET: (req: NextRequest, ctx: { params: { videoId: string } }) => Promise<Response>
@@ -91,8 +94,14 @@ function installFetch() {
         },
       ])
     }
-    if (url.pathname === '/rest/v1/videos' && method === 'PATCH')
-      return new Response(null, { status: 204 })
+    if (url.pathname === '/rest/v1/videos' && method === 'PATCH') {
+      // .select() after .update() asks for return=representation: report matched rows.
+      const wantsRows = new Headers(init.headers).get('prefer')?.includes('return=representation')
+      if (!wantsRows) return new Response(null, { status: 204 })
+      const guard = url.searchParams.get('status')
+      const matches = guard === null || (guard === 'eq.pending_review' && !raceLost)
+      return json(200, matches ? [{ id: VIDEO }] : [])
+    }
     if (url.pathname === '/rest/v1/memberships') {
       return rows([{ role, agency_id: AGENCY }])
     }
@@ -103,7 +112,8 @@ function installFetch() {
       if (openCount === 'error') return json(500, { message: 'boom' })
       return new Response(null, { status: 200, headers: { 'content-range': `*/${openCount}` } })
     }
-    if (url.pathname === '/rest/v1/audit_log' && method === 'POST') return json(201, [])
+    if (url.pathname === '/rest/v1/audit_log' && method === 'POST')
+      return auditFails ? json(500, { message: 'audit down' }) : json(201, [])
     if (url.pathname === '/rest/v1/audit_log' && method === 'GET') {
       return rows(
         auditActor === null
@@ -120,13 +130,13 @@ const auditInserts = () =>
 const videoUpdates = () =>
   calls.filter((c) => c.url.pathname === '/rest/v1/videos' && c.method === 'PATCH')
 
-function request(method: 'PATCH' | 'GET', status?: string) {
+function request(method: 'PATCH' | 'GET', status?: string, extra: Record<string, unknown> = {}) {
   calls = []
   installFetch()
   const req = new Request(`http://localhost:3000/api/videos/${VIDEO}/status`, {
     method,
     headers: { 'content-type': 'application/json' },
-    ...(status ? { body: JSON.stringify({ status }) } : {}),
+    ...(status ? { body: JSON.stringify({ status, ...extra }) } : {}),
   }) as unknown as NextRequest
   const handler = method === 'PATCH' ? PATCH : GET
   return runInScope(() => handler(req, { params: { videoId: VIDEO } }))
@@ -165,6 +175,8 @@ afterEach(() => {
   openCount = 0
   auditActor = 'Alex Agent'
   redisCount = 1
+  raceLost = false
+  auditFails = false
 })
 
 describe('status route — role gate and rate limit (real handlers)', () => {
@@ -309,5 +321,92 @@ describe('GET status — changed-by info (real handler)', () => {
     const body = (await (await request('GET')).json()) as { changedBy: unknown; changedAt: unknown }
     assert.equal(body.changedBy, null)
     assert.equal(body.changedAt, null)
+  })
+})
+
+describe('PATCH status — auto In review on agent open (S5-FLOW-002)', () => {
+  it('agent opening a pending_review video: in_review, one audit row, one conditional update', async () => {
+    videoStatus = 'pending_review'
+    const res = await request('PATCH', 'in_review', { autoOpen: true })
+    assert.equal(res.status, 200)
+    assert.deepEqual(await res.json(), { id: VIDEO, status: 'in_review', changed: true })
+    assert.equal(auditInserts().length, 1)
+    assert.deepEqual((auditInserts()[0].body as { metadata: unknown }).metadata, {
+      old_status: 'pending_review',
+      new_status: 'in_review',
+    })
+    assert.equal(videoUpdates().length, 1)
+    assert.equal(videoUpdates()[0].url.searchParams.get('status'), 'eq.pending_review')
+  })
+
+  it('owner and admin_agent trigger it too', async () => {
+    for (const r of ['owner', 'admin_agent']) {
+      role = r
+      videoStatus = 'pending_review'
+      const res = await request('PATCH', 'in_review', { autoOpen: true })
+      assert.equal(res.status, 200)
+      assert.equal(((await res.json()) as { changed: boolean }).changed, true)
+    }
+  })
+
+  it('talent never triggers it: 403, no update, no audit', async () => {
+    role = 'talent'
+    videoStatus = 'pending_review'
+    const res = await request('PATCH', 'in_review', { autoOpen: true })
+    assert.equal(res.status, 403)
+    assert.equal(videoUpdates().length, 0)
+    assert.equal(auditInserts().length, 0)
+  })
+
+  it('already in_review is an idempotent no-op: 200 changed:false, no update, no audit', async () => {
+    videoStatus = 'in_review'
+    const res = await request('PATCH', 'in_review', { autoOpen: true })
+    assert.equal(res.status, 200)
+    assert.deepEqual(await res.json(), { id: VIDEO, status: 'in_review', changed: false })
+    assert.equal(videoUpdates().length, 0)
+    assert.equal(auditInserts().length, 0)
+  })
+
+  it('never overrides other states (approved stays approved)', async () => {
+    videoStatus = 'approved'
+    const res = await request('PATCH', 'in_review', { autoOpen: true })
+    assert.equal(((await res.json()) as { status: string }).status, 'approved')
+    assert.equal(videoUpdates().length, 0)
+    assert.equal(auditInserts().length, 0)
+  })
+
+  it('losing the concurrent race (conditional update matches 0 rows): no audit row', async () => {
+    videoStatus = 'pending_review'
+    raceLost = true
+    const res = await request('PATCH', 'in_review', { autoOpen: true })
+    assert.equal(res.status, 200)
+    assert.equal(((await res.json()) as { changed: boolean }).changed, false)
+    assert.equal(videoUpdates().length, 1)
+    assert.equal(auditInserts().length, 0)
+  })
+
+  it('audit failure reverts the flip (conditionally) and returns 500', async () => {
+    videoStatus = 'pending_review'
+    auditFails = true
+    const res = await request('PATCH', 'in_review', { autoOpen: true })
+    assert.equal(res.status, 500)
+    const ups = videoUpdates()
+    assert.equal(ups.length, 2)
+    assert.deepEqual((ups[1].body as { status: string }).status, 'pending_review')
+    assert.equal(ups[1].url.searchParams.get('status'), 'eq.in_review')
+  })
+
+  it('autoOpen with any status other than in_review is a 400', async () => {
+    videoStatus = 'pending_review'
+    const res = await request('PATCH', 'approved', { autoOpen: true })
+    assert.equal(res.status, 400)
+    assert.equal(videoUpdates().length, 0)
+  })
+
+  it('is rate limited like every other PATCH', async () => {
+    redisCount = 10_000
+    const res = await request('PATCH', 'in_review', { autoOpen: true })
+    assert.equal(res.status, 429)
+    assert.ok(res.headers.get('retry-after'))
   })
 })

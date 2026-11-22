@@ -119,7 +119,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { status: newStatus } = body as { status?: unknown }
+  const { status: newStatus, autoOpen } = body as { status?: unknown; autoOpen?: unknown }
 
   if (typeof newStatus !== 'string' || !isVideoStatus(newStatus)) {
     return NextResponse.json(
@@ -184,6 +184,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
     return NextResponse.json({ error: 'Server error: invalid stored status' }, { status: 500 })
   }
 
+  // S5-FLOW-002: an agent opening a pending_review video flips it to in_review. The client
+  // fires this on every open, so anything but pending_review is a quiet no-op (idempotent).
+  const isAutoOpen = autoOpen === true
+  if (isAutoOpen && newStatus !== 'in_review') {
+    return NextResponse.json({ error: 'autoOpen only applies to in_review' }, { status: 400 })
+  }
+  if (isAutoOpen && currentStatus !== 'pending_review' && effectiveRole !== 'talent') {
+    return NextResponse.json({ id: videoId, status: currentStatus, changed: false })
+  }
+
   if (!canTransition(currentStatus, newStatus, effectiveRole)) {
     return NextResponse.json(
       {
@@ -218,6 +228,51 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
     typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
       ? user.user_metadata.full_name.trim()
       : (user.email ?? user.id)
+
+  if (isAutoOpen) {
+    // Race-safe: the conditional update decides the winner, and only the winner audits, so two
+    // agents opening at once give one transition and one audit row. Update comes first here
+    // (audit-first would write a duplicate row for the loser); if the audit then fails the
+    // transition is reverted so there is still never a silent, unaudited status change.
+    const { data: flipped, error: flipError } = await admin
+      .from('videos')
+      .update({ status: 'in_review', updated_at: new Date().toISOString() })
+      .eq('id', videoId)
+      .eq('status', 'pending_review')
+      .select('id')
+    if (flipError) {
+      console.error('[video:status:patch] auto-open update failed:', flipError.message)
+      return NextResponse.json({ error: 'Failed to update video status' }, { status: 500 })
+    }
+    if (!flipped || flipped.length === 0) {
+      return NextResponse.json({ id: videoId, status: 'in_review', changed: false })
+    }
+    const { error: autoAuditError } = await admin.from('audit_log').insert({
+      agency_id: video.agency_id,
+      actor_id: user.id,
+      actor_name: actorName,
+      action: 'status_changed',
+      resource_type: 'video',
+      resource_id: video.id,
+      metadata: { old_status: 'pending_review', new_status: 'in_review' },
+    })
+    if (autoAuditError) {
+      console.error(
+        '[video:status:patch] auto-open audit failed, reverting:',
+        autoAuditError.message
+      )
+      await admin
+        .from('videos')
+        .update({ status: 'pending_review' })
+        .eq('id', videoId)
+        .eq('status', 'in_review')
+      return NextResponse.json(
+        { error: 'Failed to record audit log; status not changed' },
+        { status: 500 }
+      )
+    }
+    return NextResponse.json({ id: videoId, status: 'in_review', changed: true })
+  }
 
   // Insert audit_log FIRST — if this fails we must abort (no silent status changes without audit).
   const { error: auditError } = await admin.from('audit_log').insert({

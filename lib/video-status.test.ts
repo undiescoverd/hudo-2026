@@ -6,6 +6,7 @@ import {
   decideStatusChange,
   isEmailLike,
   patchVideoStatus,
+  shouldAutoOpen,
   statusConfirmation,
   statusGuardError,
 } from './video-status'
@@ -141,5 +142,39 @@ describe('statusConfirmation', () => {
     assert.equal(statusConfirmation('pending_review', 'in_review', 4), null)
     assert.equal(statusConfirmation('in_review', 'changes_requested', 2), null)
     assert.equal(statusConfirmation('approved', 'approved', 2), null)
+  })
+})
+
+describe('shouldAutoOpen (S5-FLOW-002)', () => {
+  it('fires for agent roles on pending_review only', () => {
+    for (const r of ['owner', 'admin_agent', 'agent']) {
+      assert.equal(shouldAutoOpen(r, 'pending_review'), true)
+      assert.equal(shouldAutoOpen(r, 'in_review'), false)
+      assert.equal(shouldAutoOpen(r, 'approved'), false)
+    }
+  })
+
+  it('never fires for talent, unknown or not-yet-loaded roles, or an unloaded status', () => {
+    assert.equal(shouldAutoOpen('talent', 'pending_review'), false)
+    assert.equal(shouldAutoOpen('guest', 'pending_review'), false)
+    assert.equal(shouldAutoOpen(null, 'pending_review'), false)
+    assert.equal(shouldAutoOpen('agent', null), false)
+  })
+})
+
+describe('patchVideoStatus autoOpen', () => {
+  const realFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+  it('sends autoOpen only when asked', async () => {
+    const bodies: unknown[] = []
+    globalThis.fetch = (async (_u: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)))
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch
+    await patchVideoStatus('v', 'in_review', { autoOpen: true })
+    await patchVideoStatus('v', 'approved')
+    assert.deepEqual(bodies, [{ status: 'in_review', autoOpen: true }, { status: 'approved' }])
   })
 })

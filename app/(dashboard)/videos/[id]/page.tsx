@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { VideoPlayer } from '@/components/player/VideoPlayer'
@@ -14,6 +14,7 @@ import { VideoStatusControl } from '@/components/video/VideoStatusControl'
 import { useVideoComments } from '@/hooks/useVideoComments'
 import { useMarkVideoSeen } from '@/hooks/useMarkVideoSeen'
 import { createClient } from '@/lib/auth'
+import { patchVideoStatus, shouldAutoOpen } from '@/lib/video-status'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -152,6 +153,18 @@ export default function VideoPage({ params }: Props) {
     if (!isValidId) return
     void fetchVideoRow()
   }, [isValidId, fetchVideoRow])
+
+  // S5-FLOW-002: once per page open, an agent seeing a pending_review video flips it to
+  // in_review through the PATCH route (same guards and audit row as a manual change).
+  // The server is idempotent, so a lost race or a re-open is a quiet no-op.
+  const autoOpenFired = useRef(false)
+  useEffect(() => {
+    if (autoOpenFired.current || !shouldAutoOpen(role, videoRow?.status ?? null)) return
+    autoOpenFired.current = true
+    patchVideoStatus(params.id, 'in_review', { autoOpen: true })
+      .then(() => fetchVideoRow())
+      .catch((err: unknown) => console.error('[video-page] auto in_review failed:', err))
+  }, [role, videoRow?.status, params.id, fetchVideoRow])
 
   // Only the owning talent is prompted to resubmit: the versions endpoint reports
   // role 'talent' for them, and the video's talent_id must be the signed-in user.
