@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input'
 import { VideoTable } from '@/components/dashboard/VideoTable'
 import { StatusFilter } from '@/components/dashboard/StatusFilter'
 import { BulkStatusUpdate } from '@/components/dashboard/BulkStatusUpdate'
+import { NeedsYouStrip } from '@/components/dashboard/NeedsYouStrip'
 import type { AgencyVideoRow } from '@/lib/dashboard'
 import type { VideoStatus } from '@/lib/video-status'
 
@@ -74,8 +75,15 @@ export function AgentDashboard({ initialVideos }: Props) {
     fetchVideos(statusFilter, searchQuery)
   }
 
+  // Needs-you reflects the unfiltered list: current rows when no filter is
+  // active, otherwise the server-loaded rows.
+  const unfiltered = statusFilter.length === 0 && !searchQuery.trim()
+  const needsYouSource = unfiltered ? videos : initialVideos
+
   return (
     <div className="space-y-4">
+      <NeedsYouStrip videos={needsYouSource} />
+
       {/* Filters row */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
         <Input
@@ -83,7 +91,7 @@ export function AgentDashboard({ initialVideos }: Props) {
           placeholder="Search title…"
           value={searchQuery}
           onChange={handleSearchChange}
-          className="max-w-xs h-8 text-sm"
+          className="h-8 max-w-xs bg-surface text-sm"
         />
         <StatusFilter selected={statusFilter} onChange={handleStatusChange} />
       </div>
@@ -91,7 +99,7 @@ export function AgentDashboard({ initialVideos }: Props) {
       {/* Filter-fetch error — initial-load errors are handled by the server
           component instead; this only fires for client-side refetches. */}
       {fetchError && (
-        <div className="flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+        <div className="flex items-center gap-3 rounded-[10px] border border-destructive/30 bg-destructive/5 px-3 py-2">
           <p className="text-sm text-destructive" role="alert">
             {fetchError}
           </p>

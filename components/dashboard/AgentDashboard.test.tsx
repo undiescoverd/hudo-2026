@@ -60,4 +60,9 @@ describe('AgentDashboard — source invariants', () => {
   it('renders the fetch error message with an alert role', () => {
     assert.match(source, /role="alert"/)
   })
+
+  it('mounts the Needs-you strip above the filters', () => {
+    assert.match(source, /import \{ NeedsYouStrip \}/)
+    assert.ok(source.indexOf('<NeedsYouStrip') < source.indexOf('<StatusFilter'))
+  })
 })

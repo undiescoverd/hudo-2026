@@ -28,7 +28,7 @@ export default async function VideosPage() {
 
   if (error) {
     return (
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="mx-auto max-w-[1360px] px-7 pb-16 pt-6">
         <p className="text-sm text-destructive">Failed to load videos.</p>
       </main>
     )
@@ -37,12 +37,12 @@ export default async function VideosPage() {
   const list = (videos ?? []) as Video[]
 
   return (
-    <main className="max-w-7xl mx-auto px-4 py-8">
+    <main className="mx-auto max-w-[1360px] px-7 pb-16 pt-6">
       {agency_ids.map((id) => (
         <VideoStatusLive key={id} agencyId={id} />
       ))}
 
-      <h1 className="text-2xl font-semibold mb-6">Videos</h1>
+      <h1 className="mb-6 text-[26px] font-semibold leading-tight tracking-[-0.03em]">Videos</h1>
 
       {list.length === 0 ? (
         <p className="text-sm text-muted-foreground">No videos yet.</p>
@@ -52,9 +52,9 @@ export default async function VideosPage() {
             <Link
               key={video.id}
               href={`/videos/${video.id}`}
-              className="group block border rounded-lg overflow-hidden hover:border-foreground/30 transition-colors"
+              className="group block overflow-hidden rounded-[10px] bg-surface shadow-[inset_0_0_0_1px_var(--line)] transition-shadow hover:shadow-[inset_0_0_0_1px_var(--faint)]"
             >
-              <div className="aspect-video bg-muted flex items-center justify-center">
+              <div className="aspect-video bg-stage flex items-center justify-center">
                 {video.thumbnail_r2_key ? (
                   <img
                     src={`/api/videos/${video.id}/thumbnail`}
@@ -62,7 +62,7 @@ export default async function VideosPage() {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <span className="text-muted-foreground text-xs">No thumbnail</span>
+                  <span className="text-faint text-xs">No thumbnail</span>
                 )}
               </div>
 
