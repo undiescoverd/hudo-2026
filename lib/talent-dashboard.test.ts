@@ -272,3 +272,57 @@ describe('getTalentVideos — unread count calculation', async () => {
     assert.equal(data[0]?.latest_version, 2)
   })
 })
+
+describe('getTalentVideos — agency label', async () => {
+  const videoRow = {
+    id: 'v1',
+    title: 'Test',
+    status: 'draft',
+    thumbnail_r2_key: null,
+    created_at: '2026-01-01T00:00:00Z',
+    video_versions: [{ id: 'vv1', version_number: 1 }],
+    agencies: { name: 'Agency A' },
+  }
+
+  it('sets agency_name for talent with more than one agency membership', async () => {
+    const { getTalentVideos } = await import('./talent-dashboard')
+    const { supabase } = makeQueryStub([videoRow], [], [])
+
+    const { data, error } = await getTalentVideos({
+      supabase: supabase as any,
+      user_id: 'u1',
+      agency_ids: ['ag1', 'ag2'],
+    })
+
+    assert.equal(error, null)
+    assert.equal(data[0]?.agency_name, 'Agency A')
+  })
+
+  it('leaves agency_name null for talent with a single agency membership', async () => {
+    const { getTalentVideos } = await import('./talent-dashboard')
+    const { supabase } = makeQueryStub([videoRow], [], [])
+
+    const { data } = await getTalentVideos({
+      supabase: supabase as any,
+      user_id: 'u1',
+      agency_ids: ['ag1'],
+    })
+
+    assert.equal(data[0]?.agency_name, null)
+  })
+
+  it('embeds the agency name in the videos query, with no extra round trip', async () => {
+    const { getTalentVideos } = await import('./talent-dashboard')
+    const { supabase, calls } = makeQueryStub([videoRow], [], [])
+
+    await getTalentVideos({
+      supabase: supabase as any,
+      user_id: 'u1',
+      agency_ids: ['ag1', 'ag2'],
+    })
+
+    const videosCalls = calls.filter((c) => c.table === 'videos')
+    assert.equal(videosCalls.length, 1)
+    assert.match(videosCalls[0]!.select ?? '', /agencies!videos_agency_id_fkey/)
+  })
+})

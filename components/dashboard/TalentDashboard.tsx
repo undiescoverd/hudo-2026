@@ -5,6 +5,7 @@
  * "Everything else". Shows an empty state with upload CTA when the list is empty.
  */
 
+import React from 'react'
 import Link from 'next/link'
 import { buttonVariants } from '@/components/ui/button'
 import { TrackerRow } from './talent/TrackerRow'
