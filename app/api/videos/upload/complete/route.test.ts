@@ -264,6 +264,27 @@ describe('complete route — source invariants', () => {
     assert.doesNotMatch(source, /enqueueUploadNotification\([\s\S]*?\)\s*\.catch/)
   })
 
+  // ── Talent resubmit (S4-REVIEW-003): v(N+1) on changes_requested ─────────
+
+  it('resubmit: one flip branch covers draft AND changes_requested, flipping to pending_review', () => {
+    assert.match(source, /currentStatus === 'draft' \|\| currentStatus === 'changes_requested'/)
+    assert.match(source, /\.in\('status', \['draft', 'changes_requested'\]\)/)
+    assert.match(source, /status: 'pending_review', updated_at/)
+  })
+
+  it('resubmit: the flip sends the existing upload alert, and no new notification type exists', async () => {
+    const block = source.slice(source.indexOf('flipped = true'))
+    assert.match(block, /await enqueueUploadNotification\(/)
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const notifications = fs.readFileSync(
+      path.resolve(import.meta.dirname ?? __dirname, '../../../../../lib/notifications.ts'),
+      'utf8'
+    )
+    const types = [...notifications.matchAll(/type: '(\w+)' as const/g)].map((m) => m[1])
+    assert.deepEqual(types.sort(), ['new_comment', 'status_changed'])
+  })
+
   // ── R2 key binding ───────────────────────────────────────────────────────
 
   it('rejects an r2Key that does not belong to this agency/video with 400', () => {

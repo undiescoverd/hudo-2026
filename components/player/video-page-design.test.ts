@@ -33,8 +33,11 @@ describe('video page v3 design', () => {
     assert.match(read('components/player/MobilePlayerLayout.tsx'), /384px/)
   })
 
-  it('upload new version is a ghost button', () => {
+  it('upload new version is a ghost button, coral only when the talent must resubmit', () => {
     const src = read('app/(dashboard)/videos/[id]/page.tsx')
-    assert.match(src, /buttonVariants\(\{ variant: 'ghost' \}\)[\s\S]*Upload new version/)
+    assert.match(
+      src,
+      /buttonVariants\(\{ variant: needsResubmit \? 'primary' : 'ghost' \}\)[\s\S]*Upload new version/
+    )
   })
 })

@@ -164,3 +164,41 @@ describe('VideoPage — comment actions wiring (S4-REVIEW-002)', () => {
     assert.match(source, /resolveComment,\s*editComment,\s*deleteComment,\s*\} = useVideoComments/)
   })
 })
+
+describe('VideoPage — talent resubmit prompt (S4-REVIEW-003)', () => {
+  let source: string
+
+  before(() => {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url))
+    source = fs.readFileSync(path.resolve(currentDir, 'page.tsx'), 'utf8')
+  })
+
+  it('reads only status + talent_id via the RLS client (no admin client, no new route)', () => {
+    assert.match(source, /\.from\('videos'\)\s*\.select\('status, talent_id'\)/)
+    assert.doesNotMatch(source, /supabase-admin|createAdminClient/)
+  })
+
+  it('shows the prompt only for changes_requested AND role talent AND the owning talent', () => {
+    const m = source.match(/const needsResubmit =([\s\S]*?)\n\n/)
+    assert.ok(m, 'needsResubmit must be defined')
+    assert.match(m![1], /status === 'changes_requested'/)
+    assert.match(m![1], /role === 'talent'/)
+    assert.match(m![1], /videoRow\.talentId === userId/)
+  })
+
+  it('renders the exact banner copy only when needsResubmit', () => {
+    assert.match(
+      source,
+      /\{needsResubmit && \([\s\S]*?Changes requested\. Upload a new version[\s\S]*?\)\}/
+    )
+  })
+
+  it('makes Upload new version primary (coral) on that state and ghost otherwise', () => {
+    assert.match(source, /variant: needsResubmit \? 'primary' : 'ghost'/)
+  })
+
+  it('refreshes the status on live video events', () => {
+    assert.match(source, /onChange=\{refreshLive\}/)
+    assert.match(source, /const refreshLive[\s\S]*?fetchVideoRow\(\)/)
+  })
+})
