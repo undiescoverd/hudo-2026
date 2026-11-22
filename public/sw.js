@@ -9,7 +9,7 @@
  */
 
 // Bump the version suffix whenever the shell (offline page, icons, manifest) changes.
-var CACHE_NAME = 'hudo-shell-v1'
+var CACHE_NAME = 'hudo-shell-v2'
 var OFFLINE_URL = '/offline'
 var PRECACHE = [
   '/offline',
