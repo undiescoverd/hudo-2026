@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next'
 
-// Served at /manifest.webmanifest. Placeholder icons until brand icons land.
+// Served at /manifest.webmanifest. Icons: option B (white "h" on coral), exported from Paper.
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Hudo',
