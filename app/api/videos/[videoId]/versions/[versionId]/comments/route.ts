@@ -16,6 +16,59 @@ import { isValidUUID } from '@/lib/validation'
 
 const REPLY_DEPTH_ERROR = 'Replies can only be one level deep'
 
+/** Open-comment counts for the versions before `versionId` (caller already authorised). */
+async function earlierOpenResponse(
+  admin: ReturnType<typeof createAdminClient>,
+  videoId: string,
+  versionId: string
+) {
+  const { data: versions, error: versionsError } = await admin
+    .from('video_versions')
+    .select('id, version_number')
+    .eq('video_id', videoId)
+
+  if (versionsError) {
+    console.error('[comments:GET] earlierOpen versions query failed:', versionsError)
+    return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
+  }
+
+  const current = (versions ?? []).find((v) => v.id === versionId)
+  const earlier = (versions ?? [])
+    .filter((v) => current && v.version_number < current.version_number)
+    .sort((a, b) => a.version_number - b.version_number)
+  if (earlier.length === 0) return NextResponse.json({ earlierOpen: [] })
+
+  const { data: open, error: openError } = await admin
+    .from('comments')
+    .select('video_version_id')
+    .in(
+      'video_version_id',
+      earlier.map((v) => v.id)
+    )
+    .eq('resolved', false)
+    .is('deleted_at', null)
+    .is('parent_id', null)
+
+  if (openError) {
+    console.error('[comments:GET] earlierOpen comments query failed:', openError)
+    return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
+  }
+
+  const counts = new Map<string, number>()
+  for (const row of open ?? []) {
+    counts.set(row.video_version_id, (counts.get(row.video_version_id) ?? 0) + 1)
+  }
+  return NextResponse.json({
+    earlierOpen: earlier
+      .filter((v) => counts.has(v.id))
+      .map((v) => ({
+        versionId: v.id,
+        versionNumber: v.version_number,
+        openCount: counts.get(v.id) as number,
+      })),
+  })
+}
+
 /**
  * GET /api/videos/:videoId/versions/:versionId/comments
  *
@@ -26,9 +79,14 @@ const REPLY_DEPTH_ERROR = 'Replies can only be one level deep'
  * - User must have a membership in the video's agency (403)
  * - Talent users can only see comments on their own videos (403)
  * - soft-deleted comments (deleted_at IS NOT NULL) are excluded
+ *
+ * `?earlierOpen=1` instead returns { earlierOpen: [{ versionId, versionNumber, openCount }] }:
+ * the open (unresolved, non-deleted, top-level) comment count for each EARLIER version of the
+ * same video, omitting versions with none. It runs behind the same auth + access check, and
+ * only ever covers versions of the video the caller was just authorised for.
  */
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { videoId: string; versionId: string } }
 ) {
   const { videoId, versionId } = params
@@ -74,6 +132,10 @@ export async function GET(
   const accessResult = await getVideoVersionWithAccess(admin, user.id, videoId, versionId)
   if ('error' in accessResult) {
     return NextResponse.json({ error: accessResult.error }, { status: accessResult.status })
+  }
+
+  if (new URL(request.url).searchParams.get('earlierOpen') === '1') {
+    return earlierOpenResponse(admin, videoId, versionId)
   }
 
   const { data: comments, error: commentsError } = await admin

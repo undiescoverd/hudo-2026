@@ -195,6 +195,50 @@ describe('status PATCH route — source invariants', () => {
 })
 
 // ---------------------------------------------------------------------------
+// 2b. S5-FLOW-001 guards + GET (source invariants)
+// ---------------------------------------------------------------------------
+
+describe('status route — changes_requested guard (S5-FLOW-001)', () => {
+  let source: string
+
+  before(() => {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url))
+    source = fs.readFileSync(path.resolve(currentDir, 'route.ts'), 'utf8')
+  })
+
+  it('enforces the open-comment guard server-side with a 409 and code', () => {
+    assert.match(source, /newStatus === 'changes_requested'/)
+    assert.match(source, /statusGuardError\(/)
+    assert.match(source, /code: 'no_open_comments'/)
+    assert.match(source, /status: 409/)
+  })
+
+  it('counts only unresolved, undeleted, top-level comments on the current version', () => {
+    assert.match(source, /\.eq\('resolved', false\)/)
+    assert.match(source, /\.is\('deleted_at', null\)/)
+    assert.match(source, /\.is\('parent_id', null\)/)
+    assert.match(source, /active_version_id/)
+  })
+
+  it('runs the guard before the audit_log insert (a refused change is not audited)', () => {
+    const guardIdx = source.indexOf('statusGuardError(newStatus')
+    const auditIdx = source.indexOf("from('audit_log').insert")
+    assert.ok(guardIdx > -1 && auditIdx > -1 && guardIdx < auditIdx)
+  })
+
+  it('does not block approving with open comments (the warning is UI-only)', () => {
+    assert.doesNotMatch(source, /newStatus === 'approved'/)
+  })
+
+  it('exports a GET handler restricted to agent roles that reads status_changed audit rows', () => {
+    assert.match(source, /export async function GET/)
+    assert.match(source, /AGENT_ROLES\.has\(m\.role as UserRole\)/)
+    assert.match(source, /\.eq\('action', 'status_changed'\)/)
+    assert.match(source, /video:status:get:ip:/)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // 3. lib/video-status.ts source invariants — canTransition must be exported
 // ---------------------------------------------------------------------------
 

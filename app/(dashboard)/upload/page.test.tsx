@@ -71,9 +71,7 @@ describe('UploadPage — new version mode', () => {
 
   it('warns before closing the tab while uploading', () => {
     assert.match(source, /if \(!uploading\) return/)
-    assert.match(source, /addEventListener\('beforeunload', handler\)/)
-    assert.match(source, /e\.preventDefault\(\)/)
-    assert.match(source, /e\.returnValue = ''/)
-    assert.match(source, /removeEventListener\('beforeunload', handler\)/)
+    // Guard behaviour is tested in lib/upload-client.retry.test.ts (attachBeforeUnloadGuard).
+    assert.match(source, /return attachBeforeUnloadGuard\(window\)/)
   })
 })

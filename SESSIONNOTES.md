@@ -998,3 +998,20 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - The variable `SMOKE_SUPABASE_PROJECT_REF`.
     - Staging must have `NEXT_PUBLIC_BILLING_ENABLED=true` and the Stripe test webhook.
 - **Gotcha (if any):** Playwright traces and the HTML report record typed passwords and cookies, and artifacts on a public repo are downloadable. Never upload traces from a workflow that types a real credential. Also, `scripts/check-secrets.sh` skips `tests/`.
+
+## 2026-11-23 — S5 Wave 1 build (FLOW-001, 004, 005, 006, 007, 008)
+
+- **Task:** S5-FLOW-001/004/005/006/007/008. FLOW-002 and FLOW-003 are not started: they are `BLOCKED_BY` S5-FLOW-001, which waits on a merge.
+- **Models:** planner=opus, executor=sonnet (FLOW-008 haiku), reviewers=sonnet / hudo-security-reviewer / rls-tenancy-auditor
+- **Outcome:** done, with PRs open and unmerged: #234 (001), #235 (004), #233 (005), #237 (006), #238 (007), #239 (008). Status sync for S4-ACCESS-001 and LAUNCH-002 is in #232.
+- **Notes:**
+  - At most 2 agents ran at once, in worktrees, paired by disjoint FILES lists. Each builder committed locally, was reviewed (code, plus security on app/api, upload and RLS), applied the fixes, then pushed and ran the pr-fix steps inline, capped at 10 iterations. The Ralph loop can't run inside a subagent.
+  - Follow-ups filed: #236 (`comment_reads.last_seen_at` uses the client clock) and #240 (a Retry after a lost `/complete` response creates a duplicate version).
+  - `hooks/useUpload.ts` is dead code. The live upload path is `lib/upload-client.ts`.
+  - The R2 lifecycle rule (AbortIncompleteMultipartUpload, 1 day) is the only cleanup for abandoned multipart parts. It must be on every bucket, including prod.
+  - Expect merge conflicts:
+    - `app/(dashboard)/videos/[id]/page.tsx`: #234 and #237.
+    - `lib/talent-dashboard.ts`: #237 and #239.
+    - `docs/flows/inventory.md`: several PRs.
+  - Cleanup: removed 17 stale agent worktrees for merged or closed PRs and deleted their merged local branches.
+- **Gotcha (if any):** The DeepSeek "AI Code Review" truncates diffs at 8000 chars. It keeps posting "Changes Required" about files it never saw, while its CI check stays green. Fix genuine findings only, then stop. Don't loop to the cap.

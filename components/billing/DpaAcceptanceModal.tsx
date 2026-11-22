@@ -20,10 +20,10 @@ Data Processing Agreement
 Last updated: June 2026
 
 1. Definitions
-"Data Controller" means the agency using Hudo's services. "Data Processor" means Resolve Labs Ltd, the operator of Hudo. "Personal Data" has the meaning given in UK GDPR.
+"Data Controller" means the agency using Hudo's services. "Data Processor" means Hudo, the operator of Hudo. "Personal Data" has the meaning given in UK GDPR.
 
 2. Purpose and Scope
-Resolve Labs Ltd processes Personal Data on behalf of the Data Controller solely to provide the Hudo video review platform and associated services as described in the Terms of Service.
+Hudo processes Personal Data on behalf of the Data Controller solely to provide the Hudo video review platform and associated services as described in the Terms of Service.
 
 3. Instructions
 The Data Processor shall process Personal Data only on the documented instructions of the Data Controller, unless required to do so by applicable law.

@@ -10,11 +10,14 @@ import { MobilePlayerLayout } from '@/components/player/MobilePlayerLayout'
 import { GuestShareButton } from '@/components/guest/GuestShareButton'
 import { CommentPanel } from '@/components/comments/CommentPanel'
 import { VideoStatusLive } from '@/components/dashboard/VideoStatusLive'
+import { VideoStatusControl } from '@/components/video/VideoStatusControl'
 import { useVideoComments } from '@/hooks/useVideoComments'
 import { useMarkVideoSeen } from '@/hooks/useMarkVideoSeen'
 import { createClient } from '@/lib/auth'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+
+const STATUS_CONTROL_ROLES = new Set(['owner', 'admin_agent', 'agent'])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -158,6 +161,15 @@ export default function VideoPage({ params }: Props) {
     userId !== null &&
     videoRow.talentId === userId
 
+  // Status control: explicit role set (owner | admin_agent | agent); talent never see it.
+  // The PATCH route re-checks the role server-side.
+  const canChangeStatus = role !== null && STATUS_CONTROL_ROLES.has(role)
+  // A plain primitive (no hook): bumping it re-reads the open-comment count that the
+  // Approve warning shows, so live comment adds/resolves keep the warning accurate.
+  const openCommentCount = comments.filter(
+    (c) => !c.resolved && !c.deletedAt && c.parentId === null
+  ).length
+
   if (!isValidId) {
     notFound()
   }
@@ -190,6 +202,16 @@ export default function VideoPage({ params }: Props) {
           <GuestShareButton videoId={params.id} role={role} />
         </div>
       </div>
+      {canChangeStatus && videoRow && (
+        <div className="border-b border-line bg-surface px-5 py-2.5">
+          <VideoStatusControl
+            videoId={params.id}
+            status={videoRow.status}
+            refreshKey={openCommentCount}
+            onChanged={refreshLive}
+          />
+        </div>
+      )}
       {needsResubmit && (
         <div
           data-testid="resubmit-banner"

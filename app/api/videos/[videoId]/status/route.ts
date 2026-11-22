@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit } from '@/lib/api-helpers'
 import { AGENT_ROLES } from '@/lib/auth-helpers'
-import { isVideoStatus, canTransition } from '@/lib/video-status'
+import { isVideoStatus, canTransition, statusGuardError, isEmailLike } from '@/lib/video-status'
 import { isValidUUID } from '@/lib/validation'
 import type { UserRole } from '@/lib/auth'
 
@@ -23,6 +23,42 @@ import type { UserRole } from '@/lib/auth'
 
 const STATUS_RATE_LIMIT = 20 // max requests per window
 const STATUS_RATE_WINDOW = 60 // 1 minute in seconds
+// GET is re-read as comments stream in, so it gets its own, more generous limit.
+const STATUS_GET_RATE_LIMIT = 60
+
+/**
+ * Open (unresolved, undeleted, top-level) comments on the video's CURRENT version
+ * (active_version_id), not whichever older version a viewer has selected:
+ * active_version_id, falling back to the highest version_number. Null on query error.
+ */
+async function countOpenCommentsForVideo(
+  admin: ReturnType<typeof createAdminClient>,
+  videoId: string,
+  activeVersionId: string | null
+): Promise<number | null> {
+  let versionId = activeVersionId
+  if (!versionId) {
+    const { data, error } = await admin
+      .from('video_versions')
+      .select('id')
+      .eq('video_id', videoId)
+      .order('version_number', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error) return null
+    if (!data) return 0
+    versionId = data.id as string
+  }
+  const { count, error } = await admin
+    .from('comments')
+    .select('id', { count: 'exact', head: true })
+    .eq('video_version_id', versionId)
+    .eq('resolved', false)
+    .is('deleted_at', null)
+    .is('parent_id', null)
+  if (error) return null
+  return count ?? 0
+}
 
 export async function PATCH(request: NextRequest, { params }: { params: { videoId: string } }) {
   const { videoId } = params
@@ -98,7 +134,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
   // Look up the video using the auth-session client — RLS confirms visibility
   const { data: video, error: videoError } = await supabase
     .from('videos')
-    .select('id, agency_id, talent_id, status')
+    .select('id, agency_id, talent_id, status, active_version_id')
     .eq('id', videoId)
     .maybeSingle()
 
@@ -161,6 +197,23 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
   // audit_log is insert-only — RLS blocks client writes.
   const admin = createAdminClient()
 
+  // Guard: Changes requested needs >=1 open comment on the current version.
+  // Enforced here (not just in the UI) so the bulk toolbar respects it too.
+  if (newStatus === 'changes_requested') {
+    const openComments = await countOpenCommentsForVideo(
+      admin,
+      videoId,
+      (video.active_version_id as string | null) ?? null
+    )
+    if (openComments === null) {
+      return NextResponse.json({ error: 'Failed to check open comments' }, { status: 500 })
+    }
+    const guardError = statusGuardError(newStatus, openComments)
+    if (guardError) {
+      return NextResponse.json({ error: guardError, code: 'no_open_comments' }, { status: 409 })
+    }
+  }
+
   const actorName =
     typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
       ? user.user_metadata.full_name.trim()
@@ -202,4 +255,111 @@ export async function PATCH(request: NextRequest, { params }: { params: { videoI
   }
 
   return NextResponse.json({ id: videoId, status: newStatus })
+}
+
+/**
+ * GET /api/videos/:videoId/status
+ *
+ * Who last changed the status, and when, for the video page ("Changed by …").
+ * Agent roles only (owner | admin_agent | agent) in the video's agency. Reads
+ * audit_log with the service-role client (its RLS limits reads to owners/admins)
+ * and returns only the actor name and timestamp, plus the open-comment count for the
+ * current version (drives the approve warning).
+ */
+export async function GET(request: NextRequest, { params }: { params: { videoId: string } }) {
+  const { videoId } = params
+
+  if (!isValidUUID(videoId)) {
+    return NextResponse.json({ error: 'Invalid video ID format' }, { status: 400 })
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!supabaseUrl || !supabaseAnonKey || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('[video:status:get] Missing Supabase environment variables')
+    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+  }
+
+  const ip =
+    request.headers.get('x-forwarded-for')?.split(',').at(-1)?.trim() ??
+    request.headers.get('x-real-ip') ??
+    'unknown'
+  const rl = await checkRateLimit(
+    `video:status:get:ip:${ip}`,
+    STATUS_GET_RATE_LIMIT,
+    STATUS_RATE_WINDOW,
+    'video:status:get',
+    'Too many requests. Please try again later.'
+  )
+  if (rl) return rl
+
+  const supabase = await createSupabaseServerClient(supabaseUrl, supabaseAnonKey)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+  }
+
+  const userRl = await checkRateLimit(
+    `video:status:get:user:${user.id}`,
+    STATUS_GET_RATE_LIMIT,
+    STATUS_RATE_WINDOW,
+    'video:status:get',
+    'Too many requests. Please try again later.'
+  )
+  if (userRl) return userRl
+
+  const { data: video } = await supabase
+    .from('videos')
+    .select('id, agency_id, active_version_id')
+    .eq('id', videoId)
+    .maybeSingle()
+  if (!video) {
+    return NextResponse.json({ error: 'Video not found' }, { status: 404 })
+  }
+
+  const { data: memberships } = await supabase
+    .from('memberships')
+    .select('role')
+    .eq('user_id', user.id)
+    .eq('agency_id', video.agency_id)
+  const isAgent = ((memberships ?? []) as Array<{ role: string }>).some((m) =>
+    AGENT_ROLES.has(m.role as UserRole)
+  )
+  if (!isAgent) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  }
+
+  const admin = createAdminClient()
+  const { data: entry, error } = await admin
+    .from('audit_log')
+    .select('actor_name, created_at')
+    .eq('resource_type', 'video')
+    .eq('resource_id', videoId)
+    .eq('action', 'status_changed')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) {
+    console.error('[video:status:get] audit_log read failed:', error.message)
+    return NextResponse.json({ error: 'Failed to load status history' }, { status: 500 })
+  }
+
+  const openComments = await countOpenCommentsForVideo(
+    admin,
+    videoId,
+    (video.active_version_id as string | null) ?? null
+  )
+
+  return NextResponse.json({
+    // actor_name is the email when the actor has no full name; never expose emails here.
+    changedBy:
+      typeof entry?.actor_name === 'string' && !isEmailLike(entry.actor_name)
+        ? entry.actor_name
+        : null,
+    changedAt: entry?.created_at ?? null,
+    // null = count unknown (query failed); clients must not treat it as zero.
+    openComments,
+  })
 }

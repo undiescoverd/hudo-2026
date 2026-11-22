@@ -37,14 +37,14 @@ describe('DpaAcceptanceModal — legal links', () => {
     assert.doesNotMatch(read('components/billing/DpaAcceptanceModal.tsx'), /hudo\.io/)
   })
 
-  it('names the processor as Resolve Labs Ltd, matching the /terms, /privacy and /dpa pages', () => {
-    assert.match(html, /Resolve Labs Ltd/)
+  it('names the processor as Hudo, matching the /terms, /privacy and /dpa pages', () => {
+    assert.match(html, /Hudo/)
     for (const page of [
       'app/(public)/terms/page.tsx',
       'app/(public)/privacy/page.tsx',
       'app/(public)/dpa/page.tsx',
     ]) {
-      assert.match(read(page), /Resolve Labs Ltd/, page)
+      assert.match(read(page), /Hudo/, page)
     }
   })
 

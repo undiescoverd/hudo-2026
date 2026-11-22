@@ -28,11 +28,14 @@ export type TalentVideo = {
   created_at: string
   latest_version: number
   unread_count: number
+  /** Owning agency's name, set only when the talent belongs to more than one agency. */
+  agency_name?: string | null
 }
 
 export type GetTalentVideosParams = {
   supabase: SupabaseClient
   user_id: string
+  /** Must be the caller's memberships from getCurrentUserRole, never request input. */
   agency_ids: string[]
 }
 
@@ -43,6 +46,7 @@ type VideoRow = {
   thumbnail_r2_key: string | null
   created_at: string
   video_versions: Array<{ id: string; version_number: number }>
+  agencies?: { name: string } | null
 }
 
 type CommentReadRow = {
@@ -86,7 +90,8 @@ export async function getTalentVideos({
       status,
       thumbnail_r2_key,
       created_at,
-      video_versions!video_versions_video_id_fkey ( id, version_number )
+      video_versions!video_versions_video_id_fkey ( id, version_number ),
+      agencies!videos_agency_id_fkey ( name )
     `
     )
     .eq('talent_id', user_id)
@@ -178,6 +183,7 @@ export async function getTalentVideos({
       created_at: row.created_at,
       latest_version: latestVersion,
       unread_count,
+      agency_name: agency_ids.length > 1 ? (row.agencies?.name ?? null) : null,
     }
   })
 
