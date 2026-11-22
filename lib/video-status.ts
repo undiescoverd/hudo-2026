@@ -53,6 +53,41 @@ export function canTransition(from: VideoStatus, to: VideoStatus, role: UserRole
 }
 
 // ---------------------------------------------------------------------------
+// Status-change guards (S5-FLOW-001)
+// ---------------------------------------------------------------------------
+
+export const NO_OPEN_COMMENTS_MESSAGE =
+  'Add at least one open comment on the current version before requesting changes.'
+
+/** Server-side rule: Changes requested needs at least one open comment. Null = allowed. */
+export function statusGuardError(to: VideoStatus, openComments: number): string | null {
+  if (to === 'changes_requested' && openComments < 1) return NO_OPEN_COMMENTS_MESSAGE
+  return null
+}
+
+export type StatusConfirmation = { kind: 'approve_with_open' | 'leave_approved'; message: string }
+
+/** UI-side prompts: approving with open comments warns; leaving Approved confirms. */
+export function statusConfirmation(
+  from: VideoStatus,
+  to: VideoStatus,
+  openComments: number
+): StatusConfirmation | null {
+  if (from === to) return null
+  if (to === 'approved' && openComments > 0) {
+    const noun = openComments === 1 ? 'comment is' : 'comments are'
+    return {
+      kind: 'approve_with_open',
+      message: `${openComments} ${noun} still open. Approve anyway?`,
+    }
+  }
+  if (from === 'approved') {
+    return { kind: 'leave_approved', message: 'This video is approved. Move it out of Approved?' }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // StatusBadge component (server-component-safe)
 // ---------------------------------------------------------------------------
 

@@ -22,6 +22,8 @@ import { useRouter } from 'next/navigation'
 type Props = {
   selectedCount: number
   videoIds?: string[]
+  /** id -> title, so a refused row is named in the error list. */
+  videoTitles?: Record<string, string>
   onComplete?: () => void
 }
 
@@ -31,7 +33,18 @@ type ApplyResult = {
   errors: string[]
 }
 
-export function BulkStatusUpdate({ selectedCount, videoIds = [], onComplete }: Props) {
+/** One failure line, prefixed with the row's title so a refusal is attributable. */
+export function formatRowError(title: string | undefined, reason: unknown): string {
+  const message = reason instanceof Error ? reason.message : String(reason)
+  return title ? `${title}: ${message}` : message
+}
+
+export function BulkStatusUpdate({
+  selectedCount,
+  videoIds = [],
+  videoTitles = {},
+  onComplete,
+}: Props) {
   const [targetStatus, setTargetStatus] = useState<VideoStatus | ''>('')
   const [applying, setApplying] = useState(false)
   const [result, setResult] = useState<ApplyResult | null>(null)
@@ -77,9 +90,9 @@ export function BulkStatusUpdate({ selectedCount, videoIds = [], onComplete }: P
 
     const succeeded = settled.filter((r) => r.status === 'fulfilled').length
     const failed = settled.filter((r) => r.status === 'rejected').length
-    const errors = settled
-      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-      .map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason)))
+    const errors = settled.flatMap((r, i) =>
+      r.status === 'rejected' ? [formatRowError(videoTitles[videoIds[i]], r.reason)] : []
+    )
 
     setResult({ succeeded, failed, errors })
     setApplying(false)

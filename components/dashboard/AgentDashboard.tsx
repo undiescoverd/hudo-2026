@@ -117,6 +117,7 @@ export function AgentDashboard({ initialVideos }: Props) {
       <BulkStatusUpdate
         selectedCount={selectedIds.length}
         videoIds={selectedIds}
+        videoTitles={Object.fromEntries(videos.map((v) => [v.id, v.title]))}
         onComplete={() => setSelectedIds([])}
       />
 
