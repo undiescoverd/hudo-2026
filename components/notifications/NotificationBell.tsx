@@ -64,11 +64,12 @@ export function NotificationBell() {
       <button
         ref={buttonRef}
         onClick={() => setOpen((prev) => !prev)}
-        aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
         aria-expanded={open}
         aria-haspopup="dialog"
         className="relative rounded-md p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
+        {/* Name comes from content (not aria-label) so the visible count is part of it (WCAG 2.5.3). */}
+        <span className="sr-only">Notifications</span>
         {/* Bell SVG icon */}
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -88,11 +89,9 @@ export function NotificationBell() {
 
         {/* Unread count badge */}
         {unreadCount > 0 && (
-          <span
-            className="absolute right-0.5 top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white"
-            aria-hidden="true"
-          >
+          <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
             {unreadCount > 99 ? '99+' : unreadCount}
+            <span className="sr-only"> unread</span>
           </span>
         )}
       </button>
