@@ -20,6 +20,9 @@ import {
   COMMENT_GONE_MESSAGE,
   afterAction,
   CommentGoneError,
+  authorsOf,
+  createAuthorRefetcher,
+  fillAuthors,
   handleCommentGone,
   markDeleted,
   mergeInsert,
@@ -30,6 +33,174 @@ import {
   runCommentDelete,
   runCommentMutation,
 } from './useVideoComments'
+
+describe("author enrichment for another user's live INSERT (S5-FLOW-005)", () => {
+  const alex = makeComment({
+    id: 'c-alex',
+    userId: 'u-alex',
+    authorName: 'Alex Author',
+    authorAvatarUrl: 'https://img/alex.png',
+  })
+  const rawFromAlex = makeComment({
+    id: 'c-new',
+    userId: 'u-alex',
+    authorName: null,
+    authorAvatarUrl: null,
+  })
+
+  it('fills name and avatar of a raw insert from a user already in the list', () => {
+    const [filled] = fillAuthors([rawFromAlex], authorsOf([alex]))
+    assert.equal(filled.authorName, 'Alex Author')
+    assert.equal(filled.authorAvatarUrl, 'https://img/alex.png')
+  })
+
+  it('leaves an unknown user unchanged', () => {
+    const stranger = makeComment({ id: 'c-x', userId: 'u-new', authorName: null })
+    assert.deepEqual(fillAuthors([stranger], authorsOf([alex])), [stranger])
+  })
+
+  it('authorsOf ignores comments with no author data', () => {
+    assert.equal(authorsOf([rawFromAlex]).size, 0)
+  })
+
+  it('keeps the fields the comment has and fills only the missing ones', () => {
+    const partly = makeComment({ userId: 'u-alex', authorName: 'Own Name', authorAvatarUrl: null })
+    const [out] = fillAuthors([partly], authorsOf([alex]))
+    assert.equal(out.authorName, 'Own Name')
+    assert.equal(out.authorAvatarUrl, 'https://img/alex.png')
+  })
+
+  it('other-user INSERT end to end: raw insert is filled, then merged into the list', () => {
+    const [filled] = fillAuthors([rawFromAlex], authorsOf([alex]))
+    const next = mergeInsert([alex], filled)
+    assert.equal(next.length, 2)
+    assert.equal(next[1].authorName, 'Alex Author')
+  })
+
+  it('self-echo race still resolves to the named copy in either order', () => {
+    const named = makeComment({ id: 'c-me', userId: 'u-me', authorName: 'Me' })
+    const raw = makeComment({ id: 'c-me', userId: 'u-me', authorName: null })
+    assert.equal(mergeInsert(mergeInsert([], raw), named)[0].authorName, 'Me')
+    assert.equal(mergeInsert(mergeInsert([], named), raw)[0].authorName, 'Me')
+  })
+
+  it('a raw echo arriving after the filled copy is merged keeps the name', () => {
+    const [filled] = fillAuthors([rawFromAlex], authorsOf([alex]))
+    const afterEcho = mergeInsert(mergeInsert([alex], filled), rawFromAlex)
+    assert.equal(afterEcho.length, 2)
+    assert.equal(afterEcho[1].authorName, 'Alex Author')
+  })
+
+  it('a raw UPDATE still keeps the existing author (merge, not replace)', () => {
+    const raw = makeComment({ id: 'c-alex', userId: 'u-alex', authorName: null, resolved: true })
+    const out = mergeUpdate([alex], raw)[0]
+    assert.equal(out.authorName, 'Alex Author')
+    assert.equal(out.resolved, true)
+  })
+})
+
+describe('createAuthorRefetcher', () => {
+  const named = (userId: string, name: string) =>
+    makeComment({ id: `c-${userId}`, userId, authorName: name })
+  const tick = () => new Promise((r) => setImmediate(r))
+
+  /** A fetchList whose calls resolve only when the test says so. */
+  function controlled() {
+    const calls: {
+      signal: AbortSignal
+      resolve: (l: Comment[] | null) => void
+      reject: () => void
+    }[] = []
+    const fetchList = (signal: AbortSignal) =>
+      new Promise<Comment[] | null>((resolve, reject) => {
+        calls.push({ signal, resolve, reject: () => reject(new Error('boom')) })
+      })
+    return { calls, fetchList }
+  }
+
+  it('rapid unknown inserts: at most 1 in flight + 1 queued, and the last author is filled', async () => {
+    const { calls, fetchList } = controlled()
+    const seen: Comment[][] = []
+    const r = createAuthorRefetcher({ fetchList, onAuthors: (l) => seen.push(l) })
+    for (const u of ['b', 'c', 'd', 'e']) r.request(u)
+    assert.equal(calls.length, 1)
+    calls[0].resolve([named('b', 'B')]) // predates c, d, e
+    await tick()
+    assert.equal(calls.length, 2, 'one follow-up fetch for everyone who arrived mid-flight')
+    calls[1].resolve([named('b', 'B'), named('c', 'C'), named('e', 'E')])
+    await tick()
+    assert.equal(calls.length, 2)
+    assert.equal(seen.length, 2)
+    assert.ok(seen[1].some((c) => c.authorName === 'E'))
+  })
+
+  it('tries each userId once, even if the author can never be learned', async () => {
+    const { calls, fetchList } = controlled()
+    const r = createAuthorRefetcher({ fetchList, onAuthors: () => {} })
+    r.request('ghost')
+    calls[0].resolve([])
+    await tick()
+    r.request('ghost')
+    r.request('ghost')
+    await tick()
+    assert.equal(calls.length, 1)
+    // The dedupe key is the userId: a different user still gets a fetch.
+    r.request('someone-else')
+    assert.equal(calls.length, 2)
+  })
+
+  it('a duplicate userId during an in-flight fetch does not queue a redundant follow-up', async () => {
+    const { calls, fetchList } = controlled()
+    const r = createAuthorRefetcher({ fetchList, onAuthors: () => {} })
+    r.request('b')
+    r.request('b')
+    r.request('b')
+    calls[0].resolve([])
+    await tick()
+    assert.equal(calls.length, 1)
+  })
+
+  it('a failed or non-ok fetch leaves state intact and does not wedge later requests', async () => {
+    const { calls, fetchList } = controlled()
+    let delivered = 0
+    const r = createAuthorRefetcher({ fetchList, onAuthors: () => delivered++ })
+    const unhandled: unknown[] = []
+    const onUnhandled = (e: unknown) => unhandled.push(e)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      r.request('a')
+      calls[0].reject()
+      await tick()
+      await tick()
+      r.request('b')
+      calls[1].resolve(null)
+      await tick()
+      r.request('c')
+      assert.equal(calls.length, 3)
+      assert.equal(delivered, 0)
+      assert.deepEqual(unhandled, [], 'the rejection must be swallowed, not leaked')
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
+  it('dispose aborts the fetch and drops its stale response; a new refetcher is unaffected', async () => {
+    const { calls, fetchList } = controlled()
+    let delivered = 0
+    const old = createAuthorRefetcher({ fetchList, onAuthors: () => delivered++ })
+    old.request('a')
+    old.dispose()
+    assert.equal(calls[0].signal.aborted, true)
+    const fresh = createAuthorRefetcher({ fetchList, onAuthors: () => delivered++ })
+    fresh.request('a')
+    calls[0].resolve([named('a', 'A')]) // stale
+    await tick()
+    assert.equal(delivered, 0)
+    calls[1].resolve([named('a', 'A')])
+    await tick()
+    assert.equal(delivered, 1)
+  })
+})
 
 // ---------------------------------------------------------------------------
 // Realtime merge rules (Failure Log, Realtime, 2026-07-05)
@@ -685,13 +856,13 @@ describe('useVideoComments — source invariants', () => {
     assert.match(source, /export function useVideoComments/)
   })
 
-  it('fetches the comments endpoint exactly once', () => {
+  it('defines the comments endpoint URL exactly once (initial load and author refetch share it)', () => {
     const matches = [
       ...source.matchAll(
-        /fetch\(\s*`\/api\/videos\/\$\{encodeURIComponent\(videoId\)\}\/versions\/\$\{encodeURIComponent\(versionId\)\}\/comments`/g
+        /`\/api\/videos\/\$\{encodeURIComponent\(videoId\)\}\/versions\/\$\{encodeURIComponent\(versionId\)\}\/comments`/g
       ),
     ]
-    assert.equal(matches.length, 1, 'must fetch the comments endpoint exactly once')
+    assert.equal(matches.length, 1, 'must define the comments endpoint exactly once')
   })
 
   it('skips the fetch entirely when there is no active version', () => {
@@ -704,7 +875,7 @@ describe('useVideoComments — source invariants', () => {
   })
 
   it('routes Realtime inserts and updates through the merge functions (symmetric)', () => {
-    assert.match(source, /setComments\(\(prev\) => mergeInsert\(prev, comment\)\)/)
+    assert.match(source, /setComments\(\(prev\) => mergeInsert\(prev, filled\)\)/)
     assert.match(source, /setComments\(\(prev\) => mergeUpdate\(prev, updated\)\)/)
     assert.match(source, /onInsert: handleInsert/)
     assert.match(source, /onUpdate: handleUpdate/)
