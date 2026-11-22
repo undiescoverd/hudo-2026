@@ -298,13 +298,13 @@ NOTES: S — Human-only: brand icons, install check on a real iOS and Android de
 
 ---
 
-- [ ] **S4-REVIEW-001** — New version upload
+- [x] **S4-REVIEW-001** — New version upload
 
 TASK_ID: S4-REVIEW-001
 TITLE: Upload a new version from the video page (GitHub #190)
 BRANCH: feat/s4-S4-REVIEW-001-new-version
 MODEL: sonnet
-STATUS: in_progress
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - "Upload new version" on the video page for the owning talent and agent+ in the video's agency; hidden from other talent and guests
@@ -347,13 +347,13 @@ NOTES: M — Spec: GitHub #191 (decided 2026-10-23). Security surface (app/api/)
 
 ---
 
-- [ ] **S4-REVIEW-003** — Talent resubmit
+- [x] **S4-REVIEW-003** — Talent resubmit
 
 TASK_ID: S4-REVIEW-003
 TITLE: Talent resubmits after Changes requested (GitHub #192)
 BRANCH: feat/s4-S4-REVIEW-003-resubmit
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-REVIEW-001
 ACCEPTANCE_CRITERIA:
   - On a changes_requested video, the owning talent (only) sees "Changes requested. Upload a new version" with the Upload new version button
@@ -389,13 +389,13 @@ NOTES: S — Decision: #187 comment (2026-10-23). Security surface (RLS): mandat
 
 ---
 
-- [ ] **S4-DESIGN-001** — v3 design foundation
+- [x] **S4-DESIGN-001** — v3 design foundation
 
 TASK_ID: S4-DESIGN-001
 TITLE: Design v3 foundation: tokens, fonts, palette remap, app shell, StatusPill (GitHub #217)
 BRANCH: feat/s4-S4-DESIGN-001-foundation
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - v3 light tokens (Graphite & Coral + st-* status pairs) in app/globals.css; shadcn vars point at v3
@@ -415,13 +415,13 @@ NOTES: M — Reskin-only. Light theme only. Unblocks DESIGN-002..006.
 
 ---
 
-- [ ] **S4-DESIGN-002** — Video page v3 layout
+- [x] **S4-DESIGN-002** — Video page v3 layout
 
 TASK_ID: S4-DESIGN-002
 TITLE: Port v3 player + video page layout (GitHub #217)
 BRANCH: feat/s4-S4-DESIGN-002-video-page
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-DESIGN-001, S4-REVIEW-001
 ACCEPTANCE_CRITERIA:
   - Video page matches player.html (coral) + Paper 'Screens · Video page states': dark stage, mono timecodes, comment rail, coral markers
@@ -437,13 +437,13 @@ NOTES: M
 
 ---
 
-- [ ] **S4-DESIGN-003** — Agent dashboard v3
+- [x] **S4-DESIGN-003** — Agent dashboard v3
 
 TASK_ID: S4-DESIGN-003
 TITLE: Port v3 agent dashboard, layout E Needs you + list (GitHub #217)
 BRANCH: feat/s4-S4-DESIGN-003-agent-dashboard
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-DESIGN-001
 ACCEPTANCE_CRITERIA:
   - /dashboard matches dashboard.html#l=hybrid: Needs you strip (max 4 cards, +N more) over the filterable table
@@ -457,13 +457,13 @@ NOTES: M
 
 ---
 
-- [ ] **S4-DESIGN-004** — Talent dashboard v3
+- [x] **S4-DESIGN-004** — Talent dashboard v3
 
 TASK_ID: S4-DESIGN-004
 TITLE: Port v3 talent dashboard, layout C progress tracker (GitHub #217)
 BRANCH: feat/s4-S4-DESIGN-004-talent-dashboard
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-DESIGN-001
 ACCEPTANCE_CRITERIA:
   - /talent matches talent.html#l=track: one row per video, 4-step stage bar, Your move / Everything else groups
@@ -476,13 +476,13 @@ NOTES: M
 
 ---
 
-- [ ] **S4-DESIGN-005** — Upload + guest v3
+- [x] **S4-DESIGN-005** — Upload + guest v3
 
 TASK_ID: S4-DESIGN-005
 TITLE: Port v3 upload page and guest page (GitHub #217)
 BRANCH: feat/s4-S4-DESIGN-005-upload-guest
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-DESIGN-001, S4-REVIEW-001
 ACCEPTANCE_CRITERIA:
   - /upload matches upload.html#l=page (new video + new-version modes, error states)
@@ -497,13 +497,13 @@ NOTES: M
 
 ---
 
-- [ ] **S4-DESIGN-006** — Settings + auth v3
+- [x] **S4-DESIGN-006** — Settings + auth v3
 
 TASK_ID: S4-DESIGN-006
 TITLE: Port v3 settings (side nav) and auth family, layout A (GitHub #217)
 BRANCH: feat/s4-S4-DESIGN-006-settings-auth
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S4-DESIGN-001
 ACCEPTANCE_CRITERIA:
   - Settings matches settings.html#l=sidenav (Members, Billing, Notifications, Account; talent sees Notifications, Account)
