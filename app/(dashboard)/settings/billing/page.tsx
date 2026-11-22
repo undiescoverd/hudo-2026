@@ -15,12 +15,12 @@ import { createAdminClient } from '@/lib/supabase-admin'
 export default async function BillingSettingsPage() {
   if (!isBillingEnabled()) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
+      <div>
         <div className="mb-6">
           <h1 className="text-2xl font-semibold">Billing</h1>
         </div>
         <p className="text-sm text-muted-foreground">Billing is not available yet.</p>
-      </main>
+      </div>
     )
   }
 
@@ -119,7 +119,7 @@ export default async function BillingSettingsPage() {
   const hasDpa = !!typedAgency.dpa_accepted_at
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-8">
+    <div>
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Billing</h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -155,6 +155,6 @@ export default async function BillingSettingsPage() {
               }
         }
       />
-    </main>
+    </div>
   )
 }

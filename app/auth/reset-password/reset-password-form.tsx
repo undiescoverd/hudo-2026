@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createBrowserClient } from '@supabase/ssr'
 import { validatePassword } from '@/lib/auth-validation'
 import { cn } from '@/lib/utils'
+import { AuthSplitLayout } from '@/app/auth/_components/AuthSplitLayout'
 
 type PageState = 'form' | 'success' | 'error'
 
@@ -97,8 +98,8 @@ export default function ResetPasswordForm() {
 
   if (pageState === 'error') {
     return (
-      <main className="flex min-h-screen items-center justify-center p-4">
-        <div className="w-full max-w-sm space-y-4 text-center">
+      <AuthSplitLayout>
+        <div className="space-y-4 text-center">
           <h1 className="text-2xl font-semibold">Link expired</h1>
           <p className="text-sm text-muted-foreground">
             {tokenError ??
@@ -111,14 +112,14 @@ export default function ResetPasswordForm() {
             Request new link
           </Link>
         </div>
-      </main>
+      </AuthSplitLayout>
     )
   }
 
   if (pageState === 'success') {
     return (
-      <main className="flex min-h-screen items-center justify-center p-4">
-        <div className="w-full max-w-sm space-y-4 text-center">
+      <AuthSplitLayout>
+        <div className="space-y-4 text-center">
           <h1 className="text-2xl font-semibold">Password updated</h1>
           <p className="text-sm text-muted-foreground">
             Your password has been changed. You can now sign in with your new password.
@@ -130,13 +131,13 @@ export default function ResetPasswordForm() {
             Sign in
           </Link>
         </div>
-      </main>
+      </AuthSplitLayout>
     )
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm space-y-6">
+    <AuthSplitLayout>
+      <div className="space-y-6">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">Set new password</h1>
           <p className="text-sm text-muted-foreground">Enter and confirm your new password.</p>
@@ -155,7 +156,7 @@ export default function ResetPasswordForm() {
               onChange={(e) => setPassword(e.target.value)}
               aria-describedby={fieldErrors.password ? 'password-error' : 'password-hint'}
               className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                'w-full rounded-md border bg-surface-2 px-3 py-2 text-sm outline-none',
                 'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                 fieldErrors.password ? 'border-destructive' : 'border-input'
               )}
@@ -183,7 +184,7 @@ export default function ResetPasswordForm() {
               onChange={(e) => setConfirm(e.target.value)}
               aria-describedby={fieldErrors.confirm ? 'confirm-error' : undefined}
               className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                'w-full rounded-md border bg-surface-2 px-3 py-2 text-sm outline-none',
                 'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                 fieldErrors.confirm ? 'border-destructive' : 'border-input'
               )}
@@ -210,6 +211,6 @@ export default function ResetPasswordForm() {
           </button>
         </form>
       </div>
-    </main>
+    </AuthSplitLayout>
   )
 }

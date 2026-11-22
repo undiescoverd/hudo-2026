@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { safeRedirect } from '@/lib/auth-validation'
 import { cn } from '@/lib/utils'
+import { AuthSplitLayout } from '@/app/auth/_components/AuthSplitLayout'
 
 type FieldError = { email?: string; password?: string }
 
@@ -74,8 +75,8 @@ export default function SignInForm() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm space-y-6">
+    <AuthSplitLayout>
+      <div className="space-y-6">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">Sign in</h1>
           <p className="text-sm text-muted-foreground">
@@ -102,7 +103,7 @@ export default function SignInForm() {
               onChange={(e) => setEmail(e.target.value)}
               aria-describedby={fieldErrors.email ? 'email-error' : undefined}
               className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                'w-full rounded-md border bg-surface-2 px-3 py-2 text-sm outline-none',
                 'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                 fieldErrors.email ? 'border-destructive' : 'border-input'
               )}
@@ -126,7 +127,7 @@ export default function SignInForm() {
               onChange={(e) => setPassword(e.target.value)}
               aria-describedby={fieldErrors.password ? 'password-error' : undefined}
               className={cn(
-                'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none',
+                'w-full rounded-md border bg-surface-2 px-3 py-2 text-sm outline-none',
                 'focus:ring-2 focus:ring-ring focus:ring-offset-2',
                 fieldErrors.password ? 'border-destructive' : 'border-input'
               )}
@@ -162,6 +163,6 @@ export default function SignInForm() {
           </button>
         </form>
       </div>
-    </main>
+    </AuthSplitLayout>
   )
 }

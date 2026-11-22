@@ -34,7 +34,7 @@ export default async function NotificationSettingsPage() {
   const batchWindowMinutes = (prefs?.batch_window_minutes ?? 15) as 5 | 15 | 30 | 60
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-8">
+    <div>
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Notification settings</h1>
         <p className="text-sm text-muted-foreground mt-1">Manage how you receive notifications.</p>
@@ -44,6 +44,6 @@ export default async function NotificationSettingsPage() {
         initialEmailEnabled={emailEnabled}
         initialBatchWindowMinutes={batchWindowMinutes}
       />
-    </main>
+    </div>
   )
 }
