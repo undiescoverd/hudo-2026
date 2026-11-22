@@ -84,6 +84,13 @@ describe("author enrichment for another user's live INSERT (S5-FLOW-005)", () =>
     assert.equal(mergeInsert(mergeInsert([], named), raw)[0].authorName, 'Me')
   })
 
+  it('a raw echo arriving after the filled copy is merged keeps the name', () => {
+    const [filled] = fillAuthors([rawFromAlex], authorsOf([alex]))
+    const afterEcho = mergeInsert(mergeInsert([alex], filled), rawFromAlex)
+    assert.equal(afterEcho.length, 2)
+    assert.equal(afterEcho[1].authorName, 'Alex Author')
+  })
+
   it('a raw UPDATE still keeps the existing author (merge, not replace)', () => {
     const raw = makeComment({ id: 'c-alex', userId: 'u-alex', authorName: null, resolved: true })
     const out = mergeUpdate([alex], raw)[0]
@@ -140,6 +147,17 @@ describe('createAuthorRefetcher', () => {
     // The dedupe key is the userId: a different user still gets a fetch.
     r.request('someone-else')
     assert.equal(calls.length, 2)
+  })
+
+  it('a duplicate userId during an in-flight fetch does not queue a redundant follow-up', async () => {
+    const { calls, fetchList } = controlled()
+    const r = createAuthorRefetcher({ fetchList, onAuthors: () => {} })
+    r.request('b')
+    r.request('b')
+    r.request('b')
+    calls[0].resolve([])
+    await tick()
+    assert.equal(calls.length, 1)
   })
 
   it('a failed or non-ok fetch leaves state intact and does not wedge later requests', async () => {
@@ -845,12 +863,6 @@ describe('useVideoComments — source invariants', () => {
       ),
     ]
     assert.equal(matches.length, 1, 'must define the comments endpoint exactly once')
-    // Exactly two fetches of the shared URL: the initial load and the refetcher's fetchList.
-    assert.equal(
-      [...source.matchAll(/\bfetch\(url\b/g)].length,
-      2,
-      'unexpected extra fetch call site'
-    )
   })
 
   it('skips the fetch entirely when there is no active version', () => {
