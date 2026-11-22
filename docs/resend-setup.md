@@ -15,24 +15,27 @@ Both are set in Vercel and pulled locally via `vercel env pull .env.local --yes`
 
 ## Sender Address
 
-**No custom domain yet:** use `onboarding@resend.dev` — pre-verified by Resend, works immediately across all environments.
+**Verified domain: `hudoapp.com`** (Resend, eu-west-1). Staging (Vercel Preview) sends from `noreply@hudoapp.com` as of 2026-11-23.
 
-**Once `hudo.app` is purchased:**
-1. Go to [resend.com/domains](https://resend.com/domains) → Add Domain → `hudo.app`
-2. Add the DNS records Resend provides (SPF, DKIM, DMARC)
-3. Wait for verification (usually minutes)
-4. Update `RESEND_FROM_EMAIL` in Vercel to `noreply@hudo.app` for all environments
+Still to do: check `RESEND_FROM_EMAIL` on **Production** and **Development** and set it to `noreply@hudoapp.com` if it is still `onboarding@resend.dev` (Resend's sandbox sender, which only delivers to the Resend account owner). Use `--no-sensitive` so the value stays readable by `vercel env pull`:
+
+```bash
+vercel env rm RESEND_FROM_EMAIL production --yes
+printf '%s' 'noreply@hudoapp.com' | vercel env add RESEND_FROM_EMAIL production --no-sensitive
+```
+
+A leftover `hudoapp.com` entry in ap-northeast-1 (status Not Started) can be deleted from the Resend dashboard; `tdhagency.com` on the same account is a different business and must not be used for Hudo email.
 
 ## API Keys
 
 One key is currently shared across all environments. When approaching production:
 - Create separate keys in [resend.com/api-keys](https://resend.com/api-keys) named `hudo-dev`, `hudo-staging`, `hudo-prod`
-- Use `sending_access` permission, scoped to `hudo.app` domain once verified
+- Use `sending_access` permission, scoped to `hudoapp.com` once verified
 - Update each Vercel environment separately:
   ```bash
-  echo "re_..." | vercel env add RESEND_API_KEY development
-  echo "re_..." | vercel env add RESEND_API_KEY preview
-  echo "re_..." | vercel env add RESEND_API_KEY production
+  printf '%s' "re_..." | vercel env add RESEND_API_KEY development --no-sensitive
+  printf '%s' "re_..." | vercel env add RESEND_API_KEY preview --no-sensitive
+  printf '%s' "re_..." | vercel env add RESEND_API_KEY production --no-sensitive
   ```
 
 ## Local Development
