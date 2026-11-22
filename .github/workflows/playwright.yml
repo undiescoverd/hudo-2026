@@ -13,7 +13,7 @@ on:
 jobs:
   e2e:
     name: E2E Tests (Chromium)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright has no chromium build for ubuntu-latest (26.04) yet
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,7 +63,7 @@ jobs:
 
   notify-slack:
     name: Slack notification
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright has no chromium build for ubuntu-latest (26.04) yet
     needs: e2e
     if: always()
     env:
