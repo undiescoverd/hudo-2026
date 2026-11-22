@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/button'
 import { UploadZone } from '@/components/upload/UploadZone'
 import { UploadProgress } from '@/components/upload/UploadProgress'
 import { MetadataForm } from '@/components/upload/MetadataForm'
@@ -169,31 +170,30 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
   const zoneDisabled = uploading || !ready || (needsTalent && !talentId)
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12">
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+    <main className="mx-auto max-w-2xl px-4 py-10">
+      <div className="mb-6">
+        <h1 className="text-[26px] font-semibold leading-tight tracking-tight text-gray-900">
           {targetVideoId ? 'Upload new version' : 'Upload video'}
         </h1>
         {targetVideoId && targetTitle && (
-          <p className="mt-1 text-sm font-medium text-gray-700 dark:text-gray-300">
-            of “{targetTitle}”
-          </p>
+          <p className="mt-1 text-sm font-medium text-gray-900">of “{targetTitle}”</p>
         )}
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Drag and drop or select an MP4 or MOV file
+        <p className="mt-1 text-sm text-gray-600">
+          {targetVideoId
+            ? 'Drag and drop or select an MP4 or MOV file. Status stays as it is.'
+            : 'Drag and drop or select an MP4 or MOV file'}
         </p>
       </div>
 
       {setupError && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-red-50 p-3 dark:bg-red-950/40">
-          <p className="text-sm text-red-700 dark:text-red-400">{setupError}</p>
-          <button
-            type="button"
-            onClick={() => void loadContext()}
-            className="shrink-0 rounded-md bg-red-100 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-200"
-          >
+        <div
+          role="alert"
+          className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-status-changes-bg p-3"
+        >
+          <p className="text-sm text-status-changes-fg">{setupError}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void loadContext()}>
             Retry
-          </button>
+          </Button>
         </div>
       )}
 
@@ -202,14 +202,14 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
           {ready && needsTalent && (
             <div>
               {noTalent ? (
-                <p className="text-sm text-gray-700 dark:text-gray-300">
+                <p className="text-sm text-gray-700">
                   Invite a talent to this agency before uploading
                 </p>
               ) : (
                 <>
                   <label
                     htmlFor="upload-talent"
-                    className="mb-1 block text-sm font-medium text-gray-900 dark:text-gray-100"
+                    className="mb-1.5 block text-[12.5px] font-medium text-gray-600"
                   >
                     Talent
                   </label>
@@ -217,7 +217,7 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
                     id="upload-talent"
                     value={talentId}
                     onChange={(e) => setTalentId(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+                    className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
                   >
                     <option value="">Select a talent…</option>
                     {roster.map((t) => (
@@ -230,7 +230,11 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
               )}
             </div>
           )}
-          <UploadZone onFileSelected={handleFileSelected} disabled={zoneDisabled || noTalent} />
+          <UploadZone
+            onFileSelected={handleFileSelected}
+            disabled={zoneDisabled || noTalent}
+            isNewVersion={Boolean(targetVideoId)}
+          />
         </div>
       ) : (
         <div className="space-y-4">
@@ -244,7 +248,7 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
 
           {uploadedVideoId ? (
             <>
-              {role === 'talent' && <p className="text-sm text-gray-500">Submitted for review</p>}
+              {role === 'talent' && <p className="text-sm text-gray-600">Submitted for review</p>}
               <MetadataForm
                 videoId={uploadedVideoId}
                 defaultTitle={fileNameWithoutExtension(uploadedFileName)}
@@ -254,8 +258,9 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
             </>
           ) : (
             !uploading && (
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => {
                   setFile(null)
                   setError(null)
@@ -263,10 +268,10 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
                   setUploadedVideoId(null)
                   draftVideoIdRef.current = targetVideoId
                 }}
-                className="w-full rounded-lg border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                className="w-full"
               >
                 Choose different file
-              </button>
+              </Button>
             )
           )}
         </div>

@@ -30,20 +30,21 @@ export default async function GuestPage({ params }: { params: { token: string } 
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
-      {/* Minimal header */}
-      <header className="border-b border-gray-800 px-4 py-3">
-        <p className="text-sm text-gray-400">Hudo — Video Review</p>
+    <div className="min-h-screen bg-gray-50 text-gray-900">
+      <header className="flex h-14 items-center border-b border-line bg-surface px-5">
+        <span className="text-xl font-semibold tracking-tight">hudo</span>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
-        {/* Video title */}
-        <h1 className="mb-4 text-xl font-semibold text-gray-100">{data.video.title}</h1>
+      <main className="mx-auto max-w-5xl px-4 py-6">
+        <h1 className="mb-4 text-[26px] font-semibold leading-tight tracking-tight">
+          {data.video.title}
+        </h1>
 
+        {/* Guests see the video only: no comments (flow decision). */}
         {data.version ? (
-          <GuestReview token={token} comments={data.comments} />
+          <GuestReview token={token} />
         ) : (
-          <p className="text-sm text-gray-500">No video version is available yet.</p>
+          <p className="text-sm text-gray-600">No video version is available yet.</p>
         )}
       </main>
     </div>

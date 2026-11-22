@@ -142,8 +142,8 @@ export function GuestPlayer({ token, videoRef: externalRef }: GuestPlayerProps) 
 
   if (error) {
     return (
-      <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-black">
-        <p className="text-sm text-gray-400">Failed to load video</p>
+      <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-stage">
+        <p className="text-sm text-gray-300">Failed to load video</p>
         <button
           type="button"
           onClick={() => fetchUrl(false)}
@@ -156,7 +156,7 @@ export function GuestPlayer({ token, videoRef: externalRef }: GuestPlayerProps) 
   }
 
   return (
-    <div className="relative w-full bg-black">
+    <div className="relative w-full bg-stage">
       {loading && (
         <div className="absolute inset-0 flex aspect-video items-center justify-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
