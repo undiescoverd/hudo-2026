@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { VideoPlayer } from '@/components/player/VideoPlayer'
@@ -14,6 +14,7 @@ import { VideoStatusControl } from '@/components/video/VideoStatusControl'
 import { useVideoComments } from '@/hooks/useVideoComments'
 import { useMarkVideoSeen } from '@/hooks/useMarkVideoSeen'
 import { createClient } from '@/lib/auth'
+import { isRetryableStatusError, patchVideoStatus, shouldAutoOpen } from '@/lib/video-status'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -40,7 +41,11 @@ export default function VideoPage({ params }: Props) {
   // The video's status and owning talent, read under RLS (agents see their agency's
   // videos, talent only their own). null = not loaded or lookup failed: the
   // resubmit prompt then simply doesn't render.
-  const [videoRow, setVideoRow] = useState<{ status: string; talentId: string | null } | null>(null)
+  const [videoRow, setVideoRow] = useState<{
+    id: string
+    status: string
+    talentId: string | null
+  } | null>(null)
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
 
   // Validate up front, but declare all hooks before the conditional notFound()
@@ -116,11 +121,13 @@ export default function VideoPage({ params }: Props) {
     try {
       const { data, error } = await createClient()
         .from('videos')
-        .select('status, talent_id')
+        .select('id, status, talent_id')
         .eq('id', params.id)
         .maybeSingle()
       if (error) throw error
-      setVideoRow(data ? { status: data.status, talentId: data.talent_id ?? null } : null)
+      setVideoRow(
+        data ? { id: data.id, status: data.status, talentId: data.talent_id ?? null } : null
+      )
     } catch (err: unknown) {
       console.error('[video-page] video status fetch failed:', err)
     }
@@ -152,6 +159,32 @@ export default function VideoPage({ params }: Props) {
     if (!isValidId) return
     void fetchVideoRow()
   }, [isValidId, fetchVideoRow])
+
+  // S5-FLOW-002: once per page open, an agent seeing a pending_review video flips it to
+  // in_review through the PATCH route (same guards and audit row as a manual change).
+  // The server is idempotent, so a lost race or a re-open is a quiet no-op.
+  const autoOpenFiredFor = useRef<string | null>(null)
+  const currentIdRef = useRef(params.id)
+  currentIdRef.current = params.id
+  useEffect(() => {
+    // videoRow must belong to THIS video (not a stale one from a previous id).
+    if (autoOpenFiredFor.current === params.id || videoRow?.id !== params.id) return
+    if (!shouldAutoOpen(role, videoRow.status)) return
+    autoOpenFiredFor.current = params.id
+    const id = params.id
+    patchVideoStatus(id, 'in_review', { autoOpen: true })
+      .then(() => {
+        // Navigated to another video while the PATCH was in flight: skip the stale re-read.
+        if (currentIdRef.current === id) return fetchVideoRow()
+      })
+      .catch((err: unknown) => {
+        // Only transient failures (network, 429, 5xx) re-arm a retry; 403/400/409 never will.
+        if (isRetryableStatusError(err) && autoOpenFiredFor.current === id) {
+          autoOpenFiredFor.current = null
+        }
+        console.error('[video-page] auto in_review failed:', err)
+      })
+  }, [role, videoRow, params.id, fetchVideoRow])
 
   // Only the owning talent is prompted to resubmit: the versions endpoint reports
   // role 'talent' for them, and the video's talent_id must be the signed-in user.
