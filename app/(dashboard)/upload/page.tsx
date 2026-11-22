@@ -8,7 +8,7 @@ import { UploadProgress } from '@/components/upload/UploadProgress'
 import { MetadataForm } from '@/components/upload/MetadataForm'
 import { createClient } from '@/lib/auth'
 import { MULTIPART_THRESHOLD_BYTES } from '@/lib/upload-validation'
-import { performUpload } from '@/lib/upload-client'
+import { attachBeforeUnloadGuard, performUpload } from '@/lib/upload-client'
 import { parseTargetVideoId } from '@/lib/new-version-upload'
 import { fetchTalentRoster, isAgentClassRole, type TalentRosterEntry } from '@/lib/talent-roster'
 
@@ -108,12 +108,7 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
   // Warn before closing the tab mid-upload (first uploads and new versions).
   useEffect(() => {
     if (!uploading) return
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-      e.returnValue = ''
-    }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
+    return attachBeforeUnloadGuard(window)
   }, [uploading])
 
   const runUpload = useCallback(

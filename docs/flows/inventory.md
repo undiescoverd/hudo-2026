@@ -46,7 +46,7 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 | F6 | Invite and onboard a talent | Flow 03, invitee and accept steps | Mapped | — | Partial (accept returns 400 for existing talent) | Not checked |
 | F7 | First-run onboarding | Flow 03, steps 12–13; Flow 05, steps 15–16 | Partial | — | Partial | Not checked |
 | F8 | Role dashboards | Flow 01 (dashboards, Needs you strip); Flow 06, step 06 | Partial | — | Partial | Not checked |
-| F9 | Talent uploads media | Flow 01, steps 01–04; Flow 06, steps 01–04, 11–12 | Partial | #149, #150, #151, #164 | Partial | Not checked |
+| F9 | Talent uploads media | Flow 01, steps 01–04; Flow 06, steps 01–04, 11–12 | Partial | #149, #150, #151, #164 | Partial (S5-FLOW-007: part retries, abort on give-up, tab-close warning) | Not checked |
 | F10 | Needs attention list: seen-by now, owner later | Flow 01 "Needs attention" strip (renamed in Paper 2026-10-22) | Decided | #176 (spec, not yet confirmed ready) | No | Not checked |
 | F11 | Agent reviews with voice feedback | Flow 01, steps 05–07 (typed comments only) | Conflict | #169 | Partial (typed comments work; no voice recording code found) | Not checked |
 | F12 | Complete review and export edit list | Flow 01, steps 09–11; Flow 06, steps 09–10 | Conflict | #159, #160, #161 | Partial (PDF is HTML, no export) | Not checked |
