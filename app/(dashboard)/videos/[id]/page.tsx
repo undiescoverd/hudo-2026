@@ -12,6 +12,8 @@ import { CommentPanel } from '@/components/comments/CommentPanel'
 import { VideoStatusLive } from '@/components/dashboard/VideoStatusLive'
 import { useVideoComments } from '@/hooks/useVideoComments'
 import { createClient } from '@/lib/auth'
+import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -120,16 +122,13 @@ export default function VideoPage({ params }: Props) {
   }
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen bg-background">
       {/* This page is a client component fed by client-side fetches, so
           router.refresh() would be a no-op here — pass fetchVersions so live
           video events re-pull the versions list instead. */}
       {agencyId && <VideoStatusLive agencyId={agencyId} onChange={fetchVersions} />}
-      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-        <Link
-          href="/videos"
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-5 py-3">
+        <Link href="/videos" className="text-sm text-faint transition-colors hover:text-foreground">
           ← Back to videos
         </Link>
         <div className="flex items-center gap-2">
@@ -138,7 +137,10 @@ export default function VideoPage({ params }: Props) {
           {agencyId && (
             <Link
               href={`/upload?videoId=${params.id}`}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              className={cn(
+                buttonVariants({ variant: 'ghost' }),
+                'h-[34px] ring-1 ring-inset ring-line hover:bg-surface-2'
+              )}
             >
               Upload new version
             </Link>
@@ -146,7 +148,7 @@ export default function VideoPage({ params }: Props) {
           <GuestShareButton videoId={params.id} role={role} />
         </div>
       </div>
-      <div className="px-4 pt-2">
+      <div className="px-5 pt-3">
         <VersionSelector
           videoId={params.id}
           activeVersionId={activeVersionId}

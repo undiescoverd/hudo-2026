@@ -15,7 +15,7 @@ export function CommentTimeline({ comments, onSeekToComment }: CommentTimelinePr
   const visible = comments.filter((c) => c.deletedAt === null)
 
   if (duration === 0) {
-    return <div className="h-2 w-full bg-gray-200 dark:bg-gray-700" />
+    return <div className="h-1 w-full rounded-sm bg-surface-2" />
   }
 
   // Group badges by rounded percentage position to handle overlap
@@ -50,7 +50,7 @@ export function CommentTimeline({ comments, onSeekToComment }: CommentTimelinePr
       rendered.push(
         <span
           key={`overflow-${bucket}`}
-          className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 select-none rounded bg-gray-800 px-0.5 text-[9px] leading-none text-white"
+          className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 select-none rounded bg-foreground px-0.5 font-mono text-[9px] leading-none text-background"
           style={{ left: `${leftPct}%` }}
           title={`${overflow} more comment${overflow === 1 ? '' : 's'}`}
         >
@@ -61,8 +61,6 @@ export function CommentTimeline({ comments, onSeekToComment }: CommentTimelinePr
   }
 
   return (
-    <div className="relative h-2 w-full overflow-visible bg-gray-200 dark:bg-gray-700">
-      {rendered}
-    </div>
+    <div className="relative h-2 w-full overflow-visible rounded-sm bg-surface-2">{rendered}</div>
   )
 }

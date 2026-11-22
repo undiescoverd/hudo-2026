@@ -86,7 +86,7 @@ export function VersionSelector({
     return (
       <div className="flex items-center gap-2" aria-label="Loading versions">
         {[1, 2].map((i) => (
-          <div key={i} className="h-8 w-10 animate-pulse rounded-md bg-gray-200" />
+          <div key={i} className="h-8 w-10 animate-pulse rounded-md bg-surface-2" />
         ))}
       </div>
     )
@@ -101,7 +101,11 @@ export function VersionSelector({
   }
 
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="Video versions">
+    <div
+      className="inline-flex items-center gap-0.5 rounded-lg bg-surface-2 p-[3px]"
+      role="group"
+      aria-label="Video versions"
+    >
       {versions.map((version) => {
         const isActive = version.id === activeVersionId
         return (
@@ -113,8 +117,8 @@ export function VersionSelector({
             aria-label={`Version ${version.versionNumber}`}
             className={
               isActive
-                ? 'rounded-md px-3 py-1.5 text-sm font-medium bg-gray-900 text-white'
-                : 'rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                ? 'rounded-md bg-surface px-2.5 py-1 font-mono text-[13px] font-medium text-foreground shadow-sm'
+                : 'rounded-md px-2.5 py-1 font-mono text-[13px] font-medium text-muted-foreground hover:text-foreground'
             }
           >
             v{version.versionNumber}

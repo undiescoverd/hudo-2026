@@ -246,14 +246,14 @@ export function CommentInput({
       className={
         isReply
           ? 'mx-3 mb-2 ml-11 rounded-lg border border-gray-200 p-3 dark:border-gray-700'
-          : 'border-t border-gray-200 p-3 dark:border-gray-800'
+          : 'border-t border-line p-3.5'
       }
     >
       {isReply ? (
         <p className="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400">{replyLabel}</p>
       ) : (
         <div className="mb-2 flex items-center gap-2">
-          <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+          <span className="rounded-[5px] bg-coral-soft px-1.5 py-0.5 font-mono text-[11.5px] font-medium tabular-nums text-coral-text">
             {stamp}
           </span>
           <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -274,7 +274,7 @@ export function CommentInput({
             ? 'Write a reply… (Enter to send, Shift+Enter for newline, Esc to cancel)'
             : 'Leave a comment… (Enter to send, Shift+Enter for newline)'
         }
-        className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+        className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-coral focus:outline-none focus:ring-1 focus:ring-coral dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
       />
 
       <div className="mt-2 flex items-center justify-between">
@@ -298,7 +298,7 @@ export function CommentInput({
             type="button"
             disabled={!canSubmit}
             onClick={() => void submit()}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-coral px-3 py-1.5 text-sm font-semibold text-coral-on hover:bg-coral-text disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? 'Posting…' : isReply ? 'Reply' : 'Post'}
           </button>
