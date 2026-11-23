@@ -540,4 +540,172 @@ describe('--ci exit codes and sync-fix', () => {
     assert.equal(process.exitCode, 1)
     process.exitCode = before
   })
+  it('sync-fix leaves a Canceled-only task alone: no create, no update, exit 0', async () => {
+    const linear = fakeLinear([
+      issue('R-1', 'S9-A-001 — One', 'Done'),
+      issue('R-2', 'S9-A-002 — Two', 'In Review'),
+      issue('R-3', 'S9-A-003 — Three', 'Canceled', 'canceled'),
+    ])
+    const logs: string[] = []
+    const log = console.log
+    console.log = (m: string) => void logs.push(String(m))
+    let res
+    try {
+      res = await cmdSyncFix({ ci: true, tasks, client: linear.client, gitDrift: () => [] })
+    } finally {
+      console.log = log
+    }
+    assert.deepEqual(linear.calls, [])
+    assert.equal(res.canceledCount, 1)
+    assert.equal(res.missingCount, 0)
+    assert.equal(res.exitCode, 0)
+    assert.ok(
+      logs.some((l) =>
+        l.includes(
+          'S9-A-003 is Canceled in Linear (R-3); markdown says not_started; not touching it'
+        )
+      )
+    )
+    process.exitCode = 0
+  })
+
+  it('never pushes a merged (git-drift) task back from Done to its markdown state', async () => {
+    const linear = fakeLinear([
+      issue('R-1', 'S9-A-001 — One', 'Done'),
+      issue('R-2', 'S9-A-002 — Two', 'Done'),
+      issue('R-3', 'S9-A-003 — Three', 'Backlog'),
+    ])
+    const mergedTwo = [
+      { id: 'S9-A-002', branch: '', markdownStatus: 'in_review', mergedIn: 'main', evidence: 'e' },
+    ]
+    // markdown flip succeeds: Linear already Done, nothing to update
+    const ok = await quiet(() =>
+      cmdSyncFix({ tasks, client: linear.client, gitDrift: () => mergedTwo, flipDone: () => true })
+    )
+    assert.deepEqual(linear.calls, [])
+    assert.equal(ok.gitDriftCount, 0)
+    // markdown flip fails: still never touched in Linear
+    const bad = await quiet(() =>
+      cmdSyncFix({ tasks, client: linear.client, gitDrift: () => mergedTwo, flipDone: () => false })
+    )
+    assert.deepEqual(linear.calls, [])
+    assert.equal(bad.exitCode, 1)
+  })
+
+  it('refuses to create more than 10 issues without --create-all', async () => {
+    const many = Array.from({ length: 11 }, (_, n) => ({
+      id: `S9-B-${String(n + 1).padStart(3, '0')}`,
+      title: `T${n}`,
+      status: 'not_started',
+      filePath: '/x/tasks/sprint-9.md',
+    }))
+    const capped = fakeLinear([])
+    const refused = await quiet(() =>
+      cmdSyncFix({ tasks: many, client: capped.client, gitDrift: () => [] })
+    )
+    assert.deepEqual(capped.calls, [])
+    assert.equal(refused.missingCount, 11)
+    assert.equal(refused.exitCode, 1)
+
+    const allowed = fakeLinear([])
+    const done = await quiet(() =>
+      cmdSyncFix({ tasks: many, client: allowed.client, gitDrift: () => [], createAll: true })
+    )
+    assert.equal(allowed.calls.length, 11)
+    assert.equal(done.exitCode, 0)
+  })
+
+  it('titles a create with just the ID when the markdown title is empty', () => {
+    const t = { id: 'S9-C-001', title: 'S9-C-001', status: 'not_started' }
+    assert.equal(buildCreateInput(t, []).title, 'S9-C-001')
+    assert.equal(buildCreateInput({ ...t, title: '' }, []).title, 'S9-C-001')
+  })
+
+  it('counts ambiguous matches without failing --ci', async () => {
+    const linear = fakeLinear([
+      issue('R-1', 'S9-A-001 — One', 'Done'),
+      issue('R-9', 'S9-A-001 — One again', 'Done'),
+      issue('R-2', 'S9-A-002 — Two', 'In Review'),
+      issue('R-3', 'S9-A-003 — Three', 'Backlog'),
+    ])
+    const res = await quiet(() =>
+      cmdSyncCheck({ tasks, client: linear.client, gitDrift: () => [] })
+    )
+    assert.equal(res.ambiguousCount, 1)
+    assert.equal(res.exitCode, 0)
+  })
+})
+
+describe('non-idempotent Linear requests (issueCreate)', () => {
+  const ok = () => new Response(JSON.stringify({ data: { ok: true } }), { status: 200 })
+  const opts = { apiKey: 'test-key', sleepFn: async () => {} }
+
+  it('is not retried on a 502', async () => {
+    let calls = 0
+    const client = createLinearClient({
+      ...opts,
+      fetchFn: async () => (calls++, new Response('', { status: 502 })),
+    })
+    await assert.rejects(client.request('m', {}, { idempotent: false }), /outcome unknown/)
+    assert.equal(calls, 1)
+  })
+
+  it('is not retried on a network error or timeout', async () => {
+    let calls = 0
+    const client = createLinearClient({
+      ...opts,
+      fetchFn: async () => {
+        calls++
+        throw new TypeError('fetch failed')
+      },
+    })
+    await assert.rejects(client.request('m', {}, { idempotent: false }), /outcome unknown/)
+    assert.equal(calls, 1)
+  })
+
+  it('IS retried on a 429', async () => {
+    let calls = 0
+    const client = createLinearClient({
+      ...opts,
+      fetchFn: async () => (++calls < 3 ? new Response('', { status: 429 }) : ok()),
+    })
+    assert.deepEqual(await client.request('m', {}, { idempotent: false }), { ok: true })
+    assert.equal(calls, 3)
+    assert.equal(client.stats.retries, 2)
+  })
+
+  it('idempotent requests still retry network errors, and pass an abort signal', async () => {
+    let calls = 0
+    let sawSignal = false
+    const client = createLinearClient({
+      ...opts,
+      fetchFn: async (_url: string, init: { signal?: AbortSignal }) => {
+        sawSignal = init.signal instanceof AbortSignal
+        if (++calls < 2) throw new TypeError('fetch failed')
+        return ok()
+      },
+    })
+    await client.request('q')
+    assert.equal(calls, 2)
+    assert.ok(sawSignal)
+  })
+})
+
+describe('canceled classification', () => {
+  it('records canceled-only matches separately from live ones', () => {
+    const { map, canceled } = buildTaskIssueMap(
+      [
+        issue('R-1', 'S9-X-001 — a', 'Canceled', 'canceled'),
+        issue('R-2', 'S9-X-002 — b', 'Duplicate', 'canceled'),
+        issue('R-3', 'S9-X-002 — b', 'Done', 'completed'),
+      ],
+      ['S9-X-001', 'S9-X-002']
+    )
+    assert.equal(map.has('S9-X-001'), false)
+    assert.equal(canceled.get('S9-X-001')?.identifier, 'R-1')
+    assert.equal(map.get('S9-X-002')?.identifier, 'R-3')
+    assert.equal(canceled.has('S9-X-002'), false)
+    const r = classifyTasks([{ id: 'S9-X-001', status: 'done' }], map, canceled)
+    assert.equal(r[0].status, 'canceled')
+  })
 })

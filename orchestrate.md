@@ -195,13 +195,14 @@ Per-task results:
 | `in sync` | Linear state matches the markdown status |
 | `DRIFTED` | Linear state contradicts the markdown status |
 | `MISSING` | No live Linear issue has this task ID as its title prefix |
+| `CANCELED` | The only matching issues are Canceled / Duplicate. They are never created over or updated (no un-cancelling); a warning is printed and the count shown. Does not fail `--ci` |
 | `ERROR` | Linear could not be read (API down, bad key, rate limit after retries): every task is reported as `ERROR` |
 
 A `not_started` task counts as drifted only if Linear shows it Done. In Progress and In Review are normal while its feature branch is open: the status bump lives on the branch, and `linear-update.yml` moves Linear on push and PR open. Every other status must match its Linear state exactly.
 
 It also lists tasks that look merged into a release ref (`main`, `production`, `preview/wave-*`) but are not marked done. The branch-ancestor check is the strongest evidence. The fallback only counts a task ID that appears in a commit *subject*, and ignores `chore` commits: bodies of plan/spec commits list future task IDs, and chore commits add sprint rows or bump status without building anything.
 
-`--ci` turns off colour and exits 1 if any task is `DRIFTED`, `MISSING`, `ERROR` or merged-but-not-done; otherwise 0. Without `--ci` the exit code is always 0.
+Several live issues for one ID are counted as "ambiguous" (warning only). `--ci` turns off colour and exits 1 if any task is `DRIFTED`, `MISSING`, `ERROR` or merged-but-not-done; otherwise 0. In GitHub Actions a report is also written to the step summary. Without `--ci` the exit code is always 0.
 
 ---
 
@@ -209,8 +210,10 @@ It also lists tasks that look merged into a release ref (`main`, `production`, `
 Repairs everything `sync-check` reports, then re-checks Linear:
 
 - **DRIFTED**: pushes the markdown status to Linear (a drifted `not_started` task is moved back to Backlog). Markdown stays the source of truth.
-- **MISSING**: creates the Linear issue in team `Resolvelabs`, titled `<TASK_ID> — <TITLE>`, with a short description (source `tasks/sprint-N.md`, created by sync-fix) and the state mapped from the markdown status (`not_started` becomes Backlog). The project is the one most used by existing issues with the same `S<N>-` prefix; if none has a project the issue is created without one and the output says so. Each created identifier is printed.
+- **MISSING**: creates (at most 10 per run; more are refused and listed unless `--create-all` is passed, and `--ci` then fails) the Linear issue in team `Resolvelabs`, titled `<TASK_ID> — <TITLE>`, with a short description (source `tasks/sprint-N.md`, created by sync-fix) and the state mapped from the markdown status (`not_started` becomes Backlog). The project is the one most used by existing issues with the same `S<N>-` prefix; if none has a project the issue is created without one and the output says so. Each created identifier is printed.
 - **Merged into a release ref but not done**: the task is flipped to `done` in markdown, then Linear is set to Done.
+
+`issueCreate` is never retried after a 5xx, timeout or network error (the outcome is unknown, and a retry could duplicate); only 429 is retried. The re-check, or the next run, reconciles by title. A task with merge evidence is never pushed back from Done. In CI the markdown flip is not committed, so the daily job keeps Linear correct and posts the merged-but-not-done task IDs to Slack for a human to mark done on `main`. The workflow runs under a `linear-sync` concurrency group so two runs cannot overlap.
 
 Updates go straight to the issue by id (`issueUpdate`), so no per-task search is needed. Idempotent: safe to run repeatedly.
 

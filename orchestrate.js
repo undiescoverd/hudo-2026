@@ -97,7 +97,8 @@ function syncLinear(taskId, orchestratorStatus) {
     try {
       execFileSync('bash', [script, taskId, linearStatus], {
         stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 15000,
+        // update-linear-task.sh: 30s per request, retry waits capped at 5s (4 attempts ≈ 135s worst case)
+        timeout: 150000,
       });
       console.log(col(c.grey, `  ↗  Linear: ${taskId} → ${linearStatus}`));
       return true;
@@ -134,7 +135,6 @@ function extractTaskIdFromBranch(branch) {
 
 const LINEAR_API_URL   = 'https://api.linear.app/graphql';
 const LINEAR_TEAM_NAME = process.env.LINEAR_TEAM_NAME || 'Resolvelabs';
-const linearStats = { requests: 0, retries: 0 };
 
 /** LINEAR_API_KEY from the environment, else from .env.linear. Never logged. */
 function readLinearApiKey() {
@@ -161,9 +161,14 @@ function parseRetryAfter(value) {
 
 /**
  * Create a Linear GraphQL client. `fetchFn` and `sleepFn` are injectable for tests.
- * request() retries HTTP 429, HTTP 5xx, GraphQL RATELIMITED and network errors with
- * exponential backoff (honouring Retry-After), at most `maxAttempts` tries.
- * @param {{ apiKey?: string, fetchFn?: Function, sleepFn?: Function, maxAttempts?: number, baseDelayMs?: number, maxDelayMs?: number }} [options]
+ * request() retries HTTP 429, GraphQL RATELIMITED, and (for idempotent calls only)
+ * HTTP 5xx, timeouts and network errors, with exponential backoff (honouring
+ * Retry-After), at most `maxAttempts` tries. Non-idempotent calls (issueCreate) pass
+ * `{ idempotent: false }`: a 5xx / timeout / network error leaves the outcome unknown,
+ * so they are NOT retried (a retry could create a duplicate); only 429 / RATELIMITED,
+ * where the request is known not processed, is retried.
+ * `client.stats` counts requests and retries.
+ * @param {{ apiKey?: string, fetchFn?: Function, sleepFn?: Function, maxAttempts?: number, baseDelayMs?: number, maxDelayMs?: number, timeoutMs?: number }} [options]
  */
 function createLinearClient({
   apiKey,
@@ -172,24 +177,34 @@ function createLinearClient({
   maxAttempts = 4,
   baseDelayMs = 1000,
   maxDelayMs = 60000,
+  timeoutMs = 30000,
 } = {}) {
-  async function request(query, variables = {}) {
+  const stats = { requests: 0, retries: 0 };
+
+  async function request(query, variables = {}, { idempotent = true } = {}) {
     const key = apiKey || readLinearApiKey();
     if (!key) throw new Error('LINEAR_API_KEY not set (environment or .env.linear)');
+
+    const unknownOutcome = (err) =>
+      Object.assign(new Error(`${err.message} (not retried: outcome unknown)`), { fatal: true });
 
     let lastError;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       let retryAfterMs = null;
       try {
-        linearStats.requests++;
+        stats.requests++;
         const res = await fetchFn(LINEAR_API_URL, {
           method: 'POST',
           headers: { Authorization: key, 'Content-Type': 'application/json' },
           body: JSON.stringify({ query, variables }),
+          signal: AbortSignal.timeout(timeoutMs),
         });
-        if (res.status === 429 || res.status >= 500) {
+        if (res.status === 429) {
           retryAfterMs = parseRetryAfter(res.headers && res.headers.get && res.headers.get('retry-after'));
+          lastError = new Error('Linear API HTTP 429');
+        } else if (res.status >= 500) {
           lastError = new Error(`Linear API HTTP ${res.status}`);
+          if (!idempotent) throw unknownOutcome(lastError);
         } else {
           let body = null;
           try { body = await res.json(); } catch { /* handled below */ }
@@ -207,24 +222,26 @@ function createLinearClient({
         }
       } catch (err) {
         if (err.fatal) throw err;
-        lastError = err; // network failure: retryable
+        // Network failure or timeout (AbortError): retryable only when idempotent
+        if (!idempotent) throw unknownOutcome(err);
+        lastError = err;
       }
       if (attempt < maxAttempts) {
-        linearStats.retries++;
+        stats.retries++;
         const backoff = baseDelayMs * 2 ** (attempt - 1);
         await sleepFn(Math.min(maxDelayMs, retryAfterMs !== null ? retryAfterMs : backoff));
       }
     }
     throw new Error(`${lastError.message} (gave up after ${maxAttempts} attempts)`);
   }
-  return { request };
+  return { request, stats };
 }
 
 // includeArchived: Linear auto-archives old Done issues; they still exist and must not look MISSING
 // (sync-fix would otherwise create duplicates).
 const ISSUES_QUERY = `query($team: String!, $after: String) {
   issues(includeArchived: true, filter: { team: { name: { eq: $team } } }, first: 100, after: $after) {
-    nodes { id identifier title state { id name type } project { id name } labels(first: 10) { nodes { name } } }
+    nodes { id identifier title state { id name type } project { id name } }
     pageInfo { hasNextPage endCursor }
   }
 }`;
@@ -268,38 +285,51 @@ const issueNumber = (issue) => Number(String(issue.identifier).split('-').pop())
 /**
  * Map each TASK_ID to its Linear issue by title prefix (`title.toUpperCase()` starts
  * with the ID, followed by a non-alphanumeric so S4-X-001 never claims S4-X-0011).
- * Canceled / Duplicate issues are ignored. If several live issues match, the lowest
- * identifier wins and the ambiguity is reported.
- * Returns { map: Map<taskId, issue>, ambiguous: [{ id, chosen, others }] }.
+ * Live issues win. If several live issues match, the lowest identifier is used and the
+ * ambiguity is reported. Canceled / Duplicate issues are only recorded in `canceled`,
+ * for tasks that have no live match, so callers can leave them alone.
+ * Returns { map, canceled, ambiguous: [{ id, chosen, others }] }.
  */
 function buildTaskIssueMap(issues, taskIds) {
   const live = issues.filter(i => !isCancelledIssue(i));
+  const dead = issues.filter(isCancelledIssue);
+  const matchesFor = (pool, id) => pool.filter(i => {
+    const title = String(i.title).toUpperCase();
+    return title.startsWith(id.toUpperCase()) && !/[A-Z0-9]/.test(title.charAt(id.length));
+  }).sort((a, b) => issueNumber(a) - issueNumber(b));
   const map = new Map();
+  const canceled = new Map();
   const ambiguous = [];
   for (const id of taskIds) {
-    const matches = live.filter(i => {
-      const title = String(i.title).toUpperCase();
-      return title.startsWith(id.toUpperCase()) && !/[A-Z0-9]/.test(title.charAt(id.length));
-    }).sort((a, b) => issueNumber(a) - issueNumber(b));
-    if (matches.length === 0) continue;
+    const matches = matchesFor(live, id);
+    if (matches.length === 0) {
+      const gone = matchesFor(dead, id);
+      if (gone.length > 0) canceled.set(id, gone[0]);
+      continue;
+    }
     map.set(id, matches[0]);
     if (matches.length > 1) {
       ambiguous.push({ id, chosen: matches[0].identifier, others: matches.slice(1).map(m => m.identifier) });
     }
   }
-  return { map, ambiguous };
+  return { map, canceled, ambiguous };
 }
 
 /**
- * Classify each Linear-tracked task: ok | drifted | missing | error.
+ * Classify each Linear-tracked task: ok | drifted | missing | canceled | error.
+ * `canceled` = the only matching Linear issues are Canceled/Duplicate (never touched).
  * `issueMap` null means the Linear fetch failed, so every task is an error.
  */
-function classifyTasks(tasks, issueMap) {
+function classifyTasks(tasks, issueMap, canceledMap = new Map()) {
   return tasks.filter(t => statusToLinear[t.status]).map(t => {
     const base = { id: t.id, markdown: t.status, expected: statusToLinear[t.status] };
     if (!issueMap) return { ...base, actual: null, status: 'error' };
     const issue = issueMap.get(t.id);
-    if (!issue) return { ...base, actual: null, status: 'missing' };
+    if (!issue) {
+      const dead = canceledMap.get(t.id);
+      if (dead) return { ...base, actual: dead.state.name, issue: dead, status: 'canceled' };
+      return { ...base, actual: null, status: 'missing' };
+    }
     const actual = issue.state.name;
     return { ...base, actual, issue, status: linearDrifted(t.status, actual) ? 'drifted' : 'ok' };
   });
@@ -328,7 +358,7 @@ function inferSprintProject(taskId, issues) {
 function buildCreateInput(task, issues) {
   const project = inferSprintProject(task.id, issues);
   return {
-    title: `${task.id} — ${task.title}`,
+    title: task.title && task.title !== task.id ? `${task.id} — ${task.title}` : task.id,
     description: `Source: ${task.filePath ? 'tasks/' + path.basename(task.filePath) : 'sprint file'} (${task.id}). Created by \`orchestrate.js sync-fix\`.`,
     stateName: statusToLinear[task.status],
     project,
@@ -1004,6 +1034,12 @@ function linearDrifted(markdownStatus, linearState) {
   return expected !== undefined && actual !== expected.toLowerCase();
 }
 
+/** sync-fix creates at most this many issues per run unless --create-all is passed. */
+const MAX_CREATE_PER_RUN = 10;
+
+const statsLine = (client) =>
+  client.stats ? `  Linear API requests: ${client.stats.requests} (${client.stats.retries} retried)\n` : '';
+
 /**
  * Fetch Linear once and classify every Linear-tracked task. Never throws: a failed
  * fetch yields `fetchError` and every task classified as `error`.
@@ -1011,17 +1047,19 @@ function linearDrifted(markdownStatus, linearState) {
 async function runSyncCheck({ tasks, client, gitDrift }) {
   let issues = [];
   let issueMap = null;
+  let canceledMap = new Map();
   let ambiguous = [];
   let fetchError = null;
   try {
     issues = await fetchLinearIssues(client);
     const built = buildTaskIssueMap(issues, tasks.map(t => t.id));
     issueMap = built.map;
+    canceledMap = built.canceled;
     ambiguous = built.ambiguous;
   } catch (err) {
     fetchError = err.message;
   }
-  const results = classifyTasks(tasks, issueMap);
+  const results = classifyTasks(tasks, issueMap, canceledMap);
   const count = (s) => results.filter(r => r.status === s).length;
   const gd = gitDrift ? gitDrift(tasks) : detectGitDrift(tasks);
   return {
@@ -1030,6 +1068,8 @@ async function runSyncCheck({ tasks, client, gitDrift }) {
     driftCount: count('drifted'),
     missingCount: count('missing'),
     errorCount: count('error'),
+    canceledCount: count('canceled'),
+    ambiguousCount: ambiguous.length,
     gitDrift: gd,
     gitDriftCount: gd.length,
   };
@@ -1054,10 +1094,15 @@ function printSyncCheck(s) {
         console.log(`${head} ${col(c.red, r.actual.padEnd(14))} ${col(c.red, '✗ DRIFTED')}`);
       } else if (r.status === 'missing') {
         console.log(`${head} ${col(c.red, '(no issue)'.padEnd(14))} ${col(c.red, '✗ MISSING')}`);
+      } else if (r.status === 'canceled') {
+        console.log(`${head} ${col(c.yellow, r.actual.padEnd(14))} ${col(c.yellow, '⚠ CANCELED')}`);
       }
     }
   }
 
+  for (const r of s.results.filter(x => x.status === 'canceled')) {
+    console.log(col(c.yellow, `  ⚠  ${r.id} is ${r.actual} in Linear (${r.issue.identifier}); markdown says ${r.markdown}; not touching it`));
+  }
   for (const a of s.ambiguous) {
     console.log(col(c.yellow, `  ⚠  ${a.id}: several Linear issues match; using ${a.chosen} (also ${a.others.join(', ')})`));
   }
@@ -1080,14 +1125,37 @@ function printSyncCheck(s) {
     const tally = s.checkable > 0
       ? `All ${s.checkable} tasks in sync with Linear and git.`
       : 'No drift detected.';
-    console.log(col(c.green, `✓  ${tally}\n`));
+    console.log(col(c.green, `✓  ${tally}`));
   } else {
     if (s.driftCount > 0)    console.log(col(c.yellow, `⚠  ${s.driftCount} task(s) drifted from Linear.`));
     if (s.missingCount > 0)  console.log(col(c.yellow, `⚠  ${s.missingCount} task(s) have no Linear issue (MISSING).`));
     if (s.gitDriftCount > 0) console.log(col(c.yellow, `⚠  ${s.gitDriftCount} task(s) merged into a release ref but not marked done.`));
     if (s.errorCount > 0)    console.log(col(c.red,    `⚠  ${s.errorCount} task(s) could not be checked (ERROR).`));
-    console.log(col(c.yellow, `   Run: node orchestrate.js sync-fix to repair drift\n`));
+    console.log(col(c.yellow, `   Run: node orchestrate.js sync-fix to repair drift`));
   }
+  if (s.canceledCount > 0)  console.log(col(c.yellow, `⚠  ${s.canceledCount} task(s) are Canceled/Duplicate in Linear (left alone; does not fail --ci).`));
+  if (s.ambiguousCount > 0) console.log(col(c.yellow, `⚠  ${s.ambiguousCount} task(s) match several live Linear issues (warning only).`));
+  console.log();
+}
+
+/** Append a markdown report to $GITHUB_STEP_SUMMARY when running in GitHub Actions. */
+function writeStepSummary(title, s, extra = {}) {
+  const file = process.env.GITHUB_STEP_SUMMARY;
+  if (!file) return;
+  const out = [`### ${title}`, '', '| Result | Count |', '|---|---|',
+    `| Drifted | ${s.driftCount} |`, `| Missing | ${s.missingCount} |`, `| Error | ${s.errorCount} |`,
+    `| Merged but not done in markdown | ${s.gitDriftCount} |`,
+    `| Canceled/Duplicate in Linear (left alone) | ${s.canceledCount} |`,
+    `| Ambiguous (several live issues) | ${s.ambiguousCount} |`, ''];
+  if (s.fetchError) out.push(`Linear fetch failed: ${s.fetchError}`, '');
+  if (extra.created && extra.created.length) out.push(`Created: ${extra.created.join(', ')}`, '');
+  if (extra.capped) out.push(`Refused to create ${extra.capped.length} issues (cap ${MAX_CREATE_PER_RUN}; pass --create-all): ${extra.capped.join(', ')}`, '');
+  if (extra.gitDriftIds && extra.gitDriftIds.length) {
+    out.push('Merged but not marked done on main. Mark done in `tasks/sprint-N.md` on main (`node orchestrate.js done <ID>`):',
+      ...extra.gitDriftIds.map(id => `- ${id}`), '');
+  }
+  for (const a of s.ambiguous) out.push(`- Ambiguous ${a.id}: using ${a.chosen} (also ${a.others.join(', ')})`);
+  try { fs.appendFileSync(file, out.join('\n') + '\n'); } catch { /* summary is best-effort */ }
 }
 
 /**
@@ -1096,32 +1164,37 @@ function printSyncCheck(s) {
  * @returns {Promise<any>}
  */
 async function cmdSyncCheck({ ci = false, tasks, client, gitDrift } = {}) {
-  const summary = await runSyncCheck({
-    tasks: tasks || loadAllTasks().tasks,
-    client: client || createLinearClient(),
-    gitDrift,
-  });
+  const cl = client || createLinearClient();
+  const summary = await runSyncCheck({ tasks: tasks || loadAllTasks().tasks, client: cl, gitDrift });
   printSyncCheck(summary);
-  console.log(col(c.grey, `  Linear API requests: ${linearStats.requests} (${linearStats.retries} retried)\n`));
+  console.log(col(c.grey, statsLine(cl)));
+  writeStepSummary('Linear sync-check', summary, { gitDriftIds: summary.gitDrift.map(g => g.id) });
   summary.exitCode = syncExitCode(summary);
   if (ci) process.exitCode = summary.exitCode;
   return summary;
 }
 
 /**
- * @param {{ ci?: boolean, tasks?: any[], client?: any, gitDrift?: Function }} [opts]
+ * @param {{ ci?: boolean, createAll?: boolean, tasks?: any[], client?: any, gitDrift?: Function, flipDone?: Function }} [opts]
  * @returns {Promise<any>}
  */
-async function cmdSyncFix({ ci = false, tasks: injectedTasks, client: injectedClient, gitDrift } = {}) {
+async function cmdSyncFix({ ci = false, createAll = false, tasks: injectedTasks, client: injectedClient, gitDrift, flipDone } = {}) {
   const client = injectedClient || createLinearClient();
-  const loadTasks = () => injectedTasks || loadAllTasks().tasks;
+  const tasks = injectedTasks || loadAllTasks().tasks; // loaded once
+  const markDone = flipDone || ((id) => {
+    const t = tasks.find(x => x.id === id);
+    if (!t) return false;
+    setTaskStatus(t, 'done');
+    return true;
+  });
 
-  const first = await runSyncCheck({ tasks: loadTasks(), client, gitDrift });
+  const first = await runSyncCheck({ tasks, client, gitDrift });
   printSyncCheck(first);
 
-  const finish = (summary, failed) => {
+  const finish = (summary, failed, extra = {}) => {
     summary.failed = failed;
     summary.exitCode = syncExitCode(summary);
+    writeStepSummary('Linear sync-fix', summary, { gitDriftIds: first.gitDrift.map(g => g.id), ...extra });
     if (ci) process.exitCode = summary.exitCode;
     return summary;
   };
@@ -1137,40 +1210,56 @@ async function cmdSyncFix({ ci = false, tasks: injectedTasks, client: injectedCl
 
   let fixed = 0;
   let failed = 0;
+  const created = [];
 
-  // Git drift: tasks merged into a release ref are promoted to done in markdown first,
-  // so the Linear pass below pushes `Done` for them. Markdown stays the source of truth
-  // even if Linear is unreachable; sync-fix can simply be re-run.
+  // Git drift: tasks merged into a release ref are promoted to done in markdown, so the
+  // Linear pass below sees them as Done. They are never pushed back to an older state.
+  // (In CI the markdown flip is not committed: a human must mark them done on main.)
+  const flipFailed = new Set();
+  const doneIds = new Set();
   for (const g of first.gitDrift) {
-    const task = loadAllTasks().byId.get(g.id);
-    if (!task) {
-      console.log(col(c.red, `  ✗  ${g.id}: task vanished from sprint files`));
+    if (!markDone(g.id)) {
+      console.log(col(c.red, `  ✗  ${g.id}: could not mark done in markdown; leaving it alone`));
+      flipFailed.add(g.id);
       failed++;
       continue;
     }
-    setTaskStatus(task, 'done');
+    doneIds.add(g.id);
     auditLog(`SYNC-FIX-GIT: ${g.id} merged into ${g.mergedIn} — auto-promoted to done`);
     console.log(col(c.green, `  ✓  ${g.id}: ${g.markdownStatus} → done in markdown (merged in ${g.mergedIn})`));
   }
+  if (process.env.GITHUB_OUTPUT) {
+    try { fs.appendFileSync(process.env.GITHUB_OUTPUT, `git_drift=${first.gitDrift.map(g => g.id).join(',')}\n`); } catch { /* best-effort */ }
+  }
 
-  // Re-read markdown: git drift just changed it (injected tasks are used as given)
-  const current = loadTasks();
+  const current = tasks.map(t => (doneIds.has(t.id) ? { ...t, status: 'done' } : t));
   const byId = new Map(current.map(t => [t.id, t]));
-  const plan = classifyTasks(current, buildTaskIssueMap(first.issues, current.map(t => t.id)).map);
-  const actionable = plan.filter(r => r.status === 'drifted' || r.status === 'missing');
+  const planTasks = current.filter(t => !flipFailed.has(t.id));
+  const built = buildTaskIssueMap(first.issues, planTasks.map(t => t.id));
+  const plan = classifyTasks(planTasks, built.map, built.canceled);
+  const drifted = plan.filter(r => r.status === 'drifted');
+  const missing = plan.filter(r => r.status === 'missing');
+
+  let capped = null;
+  let toCreate = missing;
+  if (missing.length > MAX_CREATE_PER_RUN && !createAll) {
+    capped = missing.map(r => r.id);
+    toCreate = [];
+    console.log(col(c.red, `  ✗  ${missing.length} issues are missing; refusing to create more than ${MAX_CREATE_PER_RUN} in one run. Re-run with --create-all to create: ${capped.join(', ')}`));
+  }
 
   let team = null;
-  if (actionable.length > 0) {
+  if (drifted.length + toCreate.length > 0) {
     try {
       team = await fetchLinearTeam(client);
     } catch (err) {
       console.log(col(c.red, `  ✗  Could not load Linear workflow states: ${err.message}`));
-      failed += actionable.length;
+      failed += drifted.length + toCreate.length;
     }
   }
 
   if (team) {
-    for (const r of plan.filter(x => x.status === 'drifted')) {
+    for (const r of drifted) {
       const state = findState(team.states, r.expected);
       if (!state) {
         console.log(col(c.red, `  ✗  ${r.id}: Linear state '${r.expected}' not found`));
@@ -1190,7 +1279,7 @@ async function cmdSyncFix({ ci = false, tasks: injectedTasks, client: injectedCl
       }
     }
 
-    for (const r of plan.filter(x => x.status === 'missing')) {
+    for (const r of toCreate) {
       const input = buildCreateInput(byId.get(r.id), first.issues);
       const state = findState(team.states, input.stateName);
       if (!state) {
@@ -1199,6 +1288,8 @@ async function cmdSyncFix({ ci = false, tasks: injectedTasks, client: injectedCl
         continue;
       }
       try {
+        // Not idempotent: only retried on 429 / RATELIMITED. A 5xx or timeout leaves the
+        // outcome unknown, so the re-check below (or the next run) reconciles by title.
         const data = await client.request(
           'mutation($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier } } }',
           {
@@ -1209,11 +1300,14 @@ async function cmdSyncFix({ ci = false, tasks: injectedTasks, client: injectedCl
               stateId: state.id,
               ...(input.project ? { projectId: input.project.id } : {}),
             },
-          }
+          },
+          { idempotent: false }
         );
+        const ident = data.issueCreate.issue.identifier;
         const where = input.project ? `project ${input.project.name}` : 'no project (none inferred)';
-        console.log(col(c.green, `  ✓  ${r.id}: created ${data.issueCreate.issue.identifier} [${input.stateName}, ${where}]`));
-        auditLog(`SYNC-FIX-CREATE: ${r.id} → ${data.issueCreate.issue.identifier}`);
+        console.log(col(c.green, `  ✓  ${r.id}: created ${ident} [${input.stateName}, ${where}]`));
+        auditLog(`SYNC-FIX-CREATE: ${r.id} → ${ident}`);
+        created.push(`${r.id} → ${ident}`);
         fixed++;
       } catch (err) {
         console.log(col(c.red, `  ✗  ${r.id}: create failed: ${err.message}`));
@@ -1228,10 +1322,15 @@ async function cmdSyncFix({ ci = false, tasks: injectedTasks, client: injectedCl
 
   // Re-check against Linear so the result (and the --ci exit code) reflects reality
   console.log(col(c.grey, '\nRe-checking after fixes…'));
-  const after = await runSyncCheck({ tasks: loadTasks(), client, gitDrift });
+  const recheckTasks = tasks.map(t => (doneIds.has(t.id) ? { ...t, status: 'done' } : t));
+  const after = await runSyncCheck({
+    tasks: recheckTasks,
+    client,
+    gitDrift: () => first.gitDrift.filter(g => flipFailed.has(g.id)),
+  });
   printSyncCheck(after);
-  console.log(col(c.grey, `  Linear API requests: ${linearStats.requests} (${linearStats.retries} retried)\n`));
-  return finish(after, failed);
+  console.log(col(c.grey, statsLine(client)));
+  return finish(after, failed, { created, capped });
 }
 
 // ─── CLI entry point ──────────────────────────────────────────────────────────
@@ -1250,7 +1349,7 @@ if (require.main === module) {
     case 'gate':                 cmdGate(args[0]);               break;
     case 'blocked':              cmdBlocked(args[0], args[1]);   break;
     case 'sync-check':           cmdSyncCheck({ ci: args.includes('--ci') }).catch(fatal); break;
-    case 'sync-fix':             cmdSyncFix({ ci: args.includes('--ci') }).catch(fatal); break;
+    case 'sync-fix':             cmdSyncFix({ ci: args.includes('--ci'), createAll: args.includes('--create-all') }).catch(fatal); break;
     default:
       console.log(`
 Usage: node orchestrate.js <command> [args]
@@ -1265,7 +1364,7 @@ Commands:
   gate   <sprint-name>       — Sprint gate checklist (e.g. gate sprint-0)
   blocked <TASK_ID> "reason" — Mark task blocked with reason (logged to orchestrate-audit.log)
   sync-check [--ci]          — Compare markdown task statuses with Linear (read-only); --ci exits 1 on drift/missing/error
-  sync-fix [--ci]            — Push markdown statuses to Linear, create missing issues; --ci exits 1 if anything remains
+  sync-fix [--ci] [--create-all] — Push markdown statuses to Linear, create missing issues (max 10 unless --create-all); --ci exits 1 if anything remains
 `);
   }
 }

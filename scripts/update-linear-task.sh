@@ -85,7 +85,7 @@ def gql(query, variables=None):
     # Retry HTTP 429 / 5xx with exponential backoff (honouring Retry-After), max 4 attempts
     for attempt in range(1, 5):
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read())
             break
         except urllib.error.HTTPError as e:
@@ -96,7 +96,7 @@ def gql(query, variables=None):
                 delay = float(retry_after) if retry_after else 2 ** attempt
             except ValueError:
                 delay = 2 ** attempt
-            time.sleep(min(delay, 60))
+            time.sleep(min(delay, 5))  # keep the whole script inside orchestrate.js's 150s timeout
     if data.get("errors"):
         raise RuntimeError(f"GraphQL error: {data['errors']}")
     return data["data"]
