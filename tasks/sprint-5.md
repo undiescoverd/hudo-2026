@@ -38,13 +38,13 @@ NOTES: GH #159. Paper: Flow 01 steps 05 and 10. Linear RES-204.
 
 ---
 
-- [ ] **S5-FLOW-002** — Auto-set "In review" on first agent open
+- [x] **S5-FLOW-002** — Auto-set "In review" on first agent open
 
 TASK_ID: S5-FLOW-002
 TITLE: Auto-set "In review" when an agent first opens a Pending review video
 BRANCH: feat/s5-S5-FLOW-002-auto-in-review
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S5-FLOW-001
 ACCEPTANCE_CRITERIA:
   - Owner, admin_agent or agent opening a pending_review video sets it to in_review
@@ -60,13 +60,13 @@ NOTES: GH #160. Paper: Flow 01 step 03. Linear RES-205.
 
 ---
 
-- [ ] **S5-FLOW-003** — Re-open review when talent uploads to an Approved video
+- [x] **S5-FLOW-003** — Re-open review when talent uploads to an Approved video
 
 TASK_ID: S5-FLOW-003
 TITLE: New version on an Approved video re-opens review
 BRANCH: feat/s5-S5-FLOW-003-reopen-on-approved
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: S5-FLOW-001
 ACCEPTANCE_CRITERIA:
   - Talent upload completing on an approved video flips it to pending_review, with the same conditional-update guard as the existing flip
