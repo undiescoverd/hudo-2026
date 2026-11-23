@@ -8,6 +8,7 @@ import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit, requireUploadRole } from '@/lib/api-helpers'
 import { logEvent } from '@/lib/audit'
 import { enqueueUploadNotification } from '@/lib/notifications'
+import { shouldFlipOnTalentUpload } from '@/lib/video-status'
 
 /**
  * POST /api/videos/upload/complete
@@ -243,12 +244,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create video version' }, { status: 500 })
   }
 
-  // Audit: fire-and-forget — a logging failure must not break the upload
+  // Audit: awaited (Vercel freezes the fn at response time) but never fatal — a logging failure must not break the upload
   const actorName =
     typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
       ? user.user_metadata.full_name.trim()
       : (user.email ?? user.id)
-  logEvent({
+  await logEvent({
     action: 'version_uploaded',
     resourceType: 'video',
     resourceId: videoId,
@@ -258,18 +259,22 @@ export async function POST(request: NextRequest) {
     metadata: { version_id: newVersion, file_size_bytes: actualFileSize },
   }).catch((err) => console.error('[upload/complete] logEvent unhandled rejection:', err))
 
-  // --- Talent self-upload: auto-flip draft/changes_requested -> pending_review ---
-  // Mirrors canTransition() for the 'talent' role in lib/video-status.ts. Agent+
-  // uploads never auto-flip (they use PATCH /status explicitly); a re-upload on
-  // a video already in pending_review/in_review/approved must not regress it.
+  // --- Talent self-upload: auto-flip draft/changes_requested/approved -> pending_review ---
+  // See shouldFlipOnTalentUpload() in lib/video-status.ts. Approved is included so a new
+  // version re-opens review (S5-FLOW-003). Agent+ uploads never auto-flip (they use PATCH
+  // /status explicitly); pending_review/in_review are left as they are.
   //
   // TOCTOU guard: `video.status` was read at the top of the route, but multipart
   // completion + headObject + the quota/version RPCs take seconds — an agent may
-  // have moved the video (e.g. to in_review/approved) in that window. So the
-  // flip (a) re-reads the CURRENT status for both the eligibility check and the
-  // audit metadata, and (b) makes the UPDATE itself conditional on the status
-  // still being flippable, treating 0 matched rows as "someone raced us — don't
-  // flip, don't notify".
+  // have moved the video in that window. So the flip (a) re-reads the CURRENT status
+  // for both the eligibility check and the audit metadata, and (b) makes the UPDATE
+  // itself conditional on the status still being that value; 0 matched rows means
+  // "someone raced us — don't audit, don't notify".
+  //
+  // Update first, audit only for the winner (same order as the auto-open path in the
+  // status route), so a lost race never leaves an orphan/duplicate audit row. If the
+  // audit insert then fails the flip is reverted: no silent unaudited status change.
+  // After a lost race the response reports the pre-race status; the client refetches.
   let flipped = false
   let currentStatus: string = video.status
   if (role === 'talent') {
@@ -287,45 +292,68 @@ export async function POST(request: NextRequest) {
       )
     } else {
       currentStatus = freshVideo.status
-      if (currentStatus === 'draft' || currentStatus === 'changes_requested') {
-        // Insert audit_log FIRST — if this fails, skip the flip entirely (safe
-        // degradation). The upload itself must still succeed (200) either way.
-        const { error: flipAuditError } = await admin.from('audit_log').insert({
-          agency_id: agencyId,
-          actor_id: user.id,
-          actor_name: actorName,
-          action: 'status_changed',
-          resource_type: 'video',
-          resource_id: videoId,
-          metadata: { old_status: currentStatus, new_status: 'pending_review' },
-        })
+      if (shouldFlipOnTalentUpload(currentStatus)) {
+        const previousStatus = currentStatus
+        const { data: updatedRows, error: flipUpdateError } = await admin
+          .from('videos')
+          .update({ status: 'pending_review', updated_at: new Date().toISOString() })
+          .eq('id', videoId)
+          .eq('status', previousStatus)
+          .select('id')
 
-        if (flipAuditError) {
-          console.error(
-            '[upload/complete] Status auto-flip audit insert failed — skipping flip:',
-            flipAuditError.message
-          )
+        if (flipUpdateError) {
+          console.error('[upload/complete] Status auto-flip failed:', flipUpdateError.message)
+        } else if (!updatedRows?.length) {
+          // Lost the race: someone else moved the video — no flip, no audit, no notification.
+          console.error('[upload/complete] Status changed concurrently — auto-flip skipped', {
+            videoId,
+          })
         } else {
-          // Conditional update: only flip if the status is STILL flippable —
-          // a concurrent transition after the audit insert leaves 0 rows matched.
-          const { data: updatedRows, error: flipUpdateError } = await admin
-            .from('videos')
-            .update({ status: 'pending_review', updated_at: new Date().toISOString() })
-            .eq('id', videoId)
-            .in('status', ['draft', 'changes_requested'])
-            .select('id')
+          const { error: flipAuditError } = await admin.from('audit_log').insert({
+            agency_id: agencyId,
+            actor_id: user.id,
+            actor_name: actorName,
+            action: 'status_changed',
+            resource_type: 'video',
+            resource_id: videoId,
+            metadata: {
+              old_status: previousStatus,
+              new_status: 'pending_review',
+              trigger: 'talent_new_version',
+            },
+          })
 
-          if (flipUpdateError || !updatedRows?.length) {
-            // Audit row already written — log loudly so operators can reconcile.
+          if (flipAuditError) {
             console.error(
-              '[upload/complete] CRITICAL: audit_log written but video status update failed',
-              {
+              '[upload/complete] Status auto-flip audit insert failed — reverting flip:',
+              flipAuditError.message
+            )
+            const { data: revertedRows, error: revertError } = await admin
+              .from('videos')
+              .update({ status: previousStatus, updated_at: new Date().toISOString() })
+              .eq('id', videoId)
+              .eq('status', 'pending_review')
+              .select('id')
+            if (!revertError && !revertedRows?.length) {
+              // Status moved again between the flip and the revert: the flip went unaudited
+              // but someone else now owns the status. Report what it actually is.
+              console.warn('[upload/complete] Auto-flip unaudited; revert matched 0 rows', {
+                videoId,
+              })
+              const { data: nowVideo } = await admin
+                .from('videos')
+                .select('status')
+                .eq('id', videoId)
+                .single()
+              currentStatus = nowVideo?.status ?? 'pending_review'
+            } else if (revertError) {
+              console.error('[upload/complete] CRITICAL: unaudited auto-flip not reverted', {
                 videoId,
                 auditOrphan: true,
-                updateError:
-                  flipUpdateError?.message ?? 'status changed concurrently (0 rows matched)',
-              }
-            )
+                revertError: revertError.message,
+              })
+              currentStatus = 'pending_review'
+            }
           } else {
             flipped = true
             // Awaited, not fire-and-forget: this is the last async op before the

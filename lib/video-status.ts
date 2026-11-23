@@ -169,6 +169,18 @@ export function shouldAutoOpen(role: string | null, status: string | null): bool
   return role !== null && AUTO_OPEN_ROLES.has(role) && status === 'pending_review'
 }
 
+/**
+ * S4-REVIEW-003 / S5-FLOW-003: statuses a talent's completed upload moves to pending_review.
+ * `approved` re-opens review. in_review / pending_review are left as they are. Deliberately
+ * separate from canTransition(): talent still cannot re-open an Approved video via PATCH.
+ */
+export const TALENT_UPLOAD_FLIP_FROM = ['draft', 'changes_requested', 'approved'] as const
+
+/** Caller has already established the uploader is talent. */
+export function shouldFlipOnTalentUpload(status: string | null): boolean {
+  return status !== null && (TALENT_UPLOAD_FLIP_FROM as readonly string[]).includes(status)
+}
+
 // ---------------------------------------------------------------------------
 // StatusBadge component (server-component-safe)
 // ---------------------------------------------------------------------------
