@@ -25,7 +25,7 @@ jobs:
           branch  = os.environ["BRANCH"]
           api_key = os.environ["LINEAR_API_KEY"]
 
-          m = re.search(r's(\d+)-([a-z0-9]+)-(\d+)', branch)
+          m = re.search(r'(?<![a-z0-9])s(\d+)-([a-z0-9]+)-(\d+)', branch, re.I)
           if not m:
               print(f"No task ID found in branch '{branch}' — skipping")
               sys.exit(0)
@@ -106,7 +106,7 @@ jobs:
           branch  = os.environ["BRANCH"]
           api_key = os.environ["LINEAR_API_KEY"]
 
-          m = re.search(r's(\d+)-([a-z0-9]+)-(\d+)', branch)
+          m = re.search(r'(?<![a-z0-9])s(\d+)-([a-z0-9]+)-(\d+)', branch, re.I)
           if not m:
               print(f"No task ID found in branch '{branch}' — skipping")
               sys.exit(0)
@@ -202,7 +202,7 @@ jobs:
           branch  = os.environ["BRANCH"]
           api_key = os.environ["LINEAR_API_KEY"]
 
-          m = re.search(r's(\d+)-([a-z0-9]+)-(\d+)', branch)
+          m = re.search(r'(?<![a-z0-9])s(\d+)-([a-z0-9]+)-(\d+)', branch, re.I)
           if not m:
               print(f"No task ID found in branch '{branch}' — skipping")
               sys.exit(0)

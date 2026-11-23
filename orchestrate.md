@@ -167,10 +167,10 @@ Always quote the reason. The audit log entry includes a timestamp. Also syncs th
 ---
 
 ### `sync-check`
-Compares markdown task statuses with their Linear counterparts (read-only). Prints a table showing each task's markdown status, Linear status, and whether they match.
+Compares markdown task statuses with their Linear counterparts (read-only). Linear is read in one paginated GraphQL query for the whole `Resolvelabs` team (archived issues included), so a run costs a few API requests however many tasks exist. Issues are matched to tasks by title prefix (`<TASK_ID>` at the start of the title); `Canceled` / `Duplicate` issues and `[dup of …]` titles are ignored, and if several live issues match the lowest identifier is used and the ambiguity is printed. Requests that hit HTTP 429 or 5xx are retried with exponential backoff (honouring `Retry-After`, max 4 attempts).
 
 ```
-node orchestrate.js sync-check
+node orchestrate.js sync-check [--ci]
 ```
 
 Example output:
@@ -181,25 +181,46 @@ Example output:
   ────────────────────────────────────────────────────────────
   S0-INFRA-001         done           Done           ✓ in sync
   S0-DB-003            in_review      Todo           ✗ DRIFTED
+  S4-NEW-001           not_started    (no issue)     ✗ MISSING
 
-⚠  1 task(s) drifted.
+⚠  1 task(s) drifted from Linear.
+⚠  1 task(s) have no Linear issue (MISSING).
    Run: node orchestrate.js sync-fix to repair drift
 ```
 
-Checks every task. A `not_started` task counts as drifted only if Linear shows it Done. In Progress and In Review are normal while its feature branch is open: the status bump lives on the branch, and `linear-update.yml` moves Linear on push and PR open. Every other status must match its Linear state exactly.
+Per-task results:
+
+| Result | Meaning |
+|---|---|
+| `in sync` | Linear state matches the markdown status |
+| `DRIFTED` | Linear state contradicts the markdown status |
+| `MISSING` | No live Linear issue has this task ID as its title prefix |
+| `ERROR` | Linear could not be read (API down, bad key, rate limit after retries): every task is reported as `ERROR` |
+
+A `not_started` task counts as drifted only if Linear shows it Done. In Progress and In Review are normal while its feature branch is open: the status bump lives on the branch, and `linear-update.yml` moves Linear on push and PR open. Every other status must match its Linear state exactly.
 
 It also lists tasks that look merged into a release ref (`main`, `production`, `preview/wave-*`) but are not marked done. The branch-ancestor check is the strongest evidence. The fallback only counts a task ID that appears in a commit *subject*, and ignores `chore` commits: bodies of plan/spec commits list future task IDs, and chore commits add sprint rows or bump status without building anything.
+
+`--ci` turns off colour and exits 1 if any task is `DRIFTED`, `MISSING`, `ERROR` or merged-but-not-done; otherwise 0. Without `--ci` the exit code is always 0.
 
 ---
 
 ### `sync-fix`
-Pushes markdown statuses to Linear for any drifted tasks (a drifted `not_started` task is moved back to Backlog), and marks tasks flagged as merged into a release ref done. A merged task skips the push and goes straight to done. Runs `sync-check` internally first to identify drift, then fixes each drifted task. Idempotent — safe to run repeatedly.
+Repairs everything `sync-check` reports, then re-checks Linear:
+
+- **DRIFTED**: pushes the markdown status to Linear (a drifted `not_started` task is moved back to Backlog). Markdown stays the source of truth.
+- **MISSING**: creates the Linear issue in team `Resolvelabs`, titled `<TASK_ID> — <TITLE>`, with a short description (source `tasks/sprint-N.md`, created by sync-fix) and the state mapped from the markdown status (`not_started` becomes Backlog). The project is the one most used by existing issues with the same `S<N>-` prefix; if none has a project the issue is created without one and the output says so. Each created identifier is printed.
+- **Merged into a release ref but not done**: the task is flipped to `done` in markdown, then Linear is set to Done.
+
+Updates go straight to the issue by id (`issueUpdate`), so no per-task search is needed. Idempotent: safe to run repeatedly.
 
 ```
-node orchestrate.js sync-fix
+node orchestrate.js sync-fix [--ci]
 ```
 
-Logs results to `orchestrate-audit.log`: `SYNC-FIX: N fixed, N failed`.
+`--ci` turns off colour and exits 1 if, after the fixes and the re-check, any task is still `DRIFTED`, `MISSING` or `ERROR` (for example the API is unreachable), or any fix failed.
+
+Logs results to `orchestrate-audit.log`: `SYNC-FIX: N fixed, N failed` (and `SYNC-FIX-CREATE` per created issue).
 
 ---
 
@@ -209,11 +230,11 @@ Linear sync is automated at multiple levels to prevent drift:
 
 | Trigger | What happens |
 |---|---|
-| `orchestrate.js start/review/done/blocked` | Syncs to Linear immediately (with 1 retry) |
-| Push to `feat/s*-*` branch | GitHub Actions marks Linear → In Progress (only from Backlog/Todo) |
+| `orchestrate.js start/review/done/blocked` | Syncs to Linear immediately (with 1 retry; the helper script also backs off on HTTP 429/5xx) |
+| Push to `feat/s*-*` branch | GitHub Actions marks Linear → In Progress (only from Backlog/Todo). The task ID is found case-insensitively anywhere in the branch name (`feat/s5-S5-FLOW-003-x` → `S5-FLOW-003`) |
 | PR opened | GitHub Actions marks Linear → In Review + patches PR description |
 | PR merged | GitHub Actions marks Linear → Done |
-| Daily cron (08:00 UTC) | `linear-sync-check.yml` detects drift, auto-fixes, notifies Slack |
+| Daily cron (08:00 UTC) | `linear-sync-check.yml` runs `sync-check --ci`, then `sync-fix --ci` if it failed. The job fails (and Slack says so) if anything is still drifted, missing or unreachable afterwards |
 | Manual check | `node orchestrate.js sync-check` / `sync-fix` |
 
 If `syncLinear()` fails, the warning message directs you to run `sync-fix` to repair.
@@ -319,7 +340,7 @@ node orchestrate.js gate sprint-0
 | `tasks/sprint-N.md` | Future sprint task lists (added as sprints are planned) |
 | `scripts/update-linear-task.sh` | Local helper — update or query (`--status`) Linear task status from the CLI |
 | `.github/workflows/linear-update.yml` | GitHub Actions — marks In Progress on push, In Review on PR open (patches PR description), Done on merge |
-| `.github/workflows/linear-sync-check.yml` | Daily cron — detects markdown↔Linear drift, auto-fixes, notifies Slack |
+| `.github/workflows/linear-sync-check.yml` | Daily cron — `sync-check --ci` / `sync-fix --ci`, fails loudly if drift remains, notifies Slack |
 
 The audit log is created automatically on first use. Do not delete it — it provides a record of who started and completed what.
 
