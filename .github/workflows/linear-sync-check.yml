@@ -5,6 +5,14 @@ on:
     - cron: '0 8 * * *' # Daily at 08:00 UTC
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# One sync at a time: two overlapping sync-fix runs could create duplicate issues
+concurrency:
+  group: linear-sync
+  cancel-in-progress: false
+
 jobs:
   sync-check:
     name: Check and fix Linear drift
@@ -16,44 +24,54 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Fetch all refs
         run: git fetch --all --quiet --tags --prune
 
+      - name: Write .env.linear
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: echo "LINEAR_API_KEY=$LINEAR_API_KEY" > .env.linear
+
+      # --ci: no colour, exit 1 on any DRIFTED / MISSING / ERROR / merged-but-not-done task.
+      # continue-on-error so the fix step can run; its outcome decides the next steps.
       - name: Run sync-check
         id: check
-        env:
-          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
-        run: |
-          # Create .env.linear for the script
-          echo "LINEAR_API_KEY=$LINEAR_API_KEY" > .env.linear
+        continue-on-error: true
+        run: node orchestrate.js sync-check --ci
 
-          output=$(node orchestrate.js sync-check 2>&1) || true
-          echo "$output"
+      # Pushes markdown status to Linear, creates missing issues (max 10), then re-checks.
+      # Exits 1 if anything is still out of sync (or Linear is unreachable), failing the job.
+      # Outputs git_drift: tasks merged to main but not marked done in markdown. The fix
+      # cannot commit that, so Linear is corrected and the IDs are surfaced to Slack.
+      - name: Run sync-fix
+        id: fix
+        if: steps.check.outcome == 'failure'
+        run: node orchestrate.js sync-fix --ci
 
-          if echo "$output" | grep -qE "DRIFTED|MERGED INTO RELEASE BUT NOT DONE"; then
-            echo "drifted=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "drifted=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Run sync-fix (if drifted)
-        if: steps.check.outputs.drifted == 'true'
-        env:
-          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
-        run: |
-          echo "LINEAR_API_KEY=$LINEAR_API_KEY" > .env.linear
-          node orchestrate.js sync-fix
-
-      - name: Notify Slack (if drifted)
-        if: steps.check.outputs.drifted == 'true' && vars.SLACK_WEBHOOK_URL != ''
+      - name: Notify Slack (drift auto-fixed)
+        if: steps.check.outcome == 'failure' && steps.fix.outcome == 'success' && vars.SLACK_WEBHOOK_URL != ''
         env:
           SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
+          GIT_DRIFT: ${{ steps.fix.outputs.git_drift }}
         run: |
-          curl -sS -X POST "$SLACK_WEBHOOK_URL" \
-            -H 'Content-type: application/json' \
-            -d '{"text":"Linear/git sync drift detected and auto-fixed. Run `node orchestrate.js sync-check` to verify."}'
+          if [ -n "$GIT_DRIFT" ]; then
+            TEXT="Linear was corrected, but these tasks are merged to main and not marked done in markdown: $GIT_DRIFT. Mark done in tasks/sprint-N.md on main (node orchestrate.js done <ID>)."
+          else
+            TEXT="Linear sync drift detected and auto-fixed."
+          fi
+          jq -n --arg text "$TEXT" '{text: $text}' | curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-type: application/json' --data @-
+
+      - name: Notify Slack (sync FAILED)
+        if: failure() && vars.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          jq -n --arg text "Linear sync FAILED: tasks are still drifted, missing or unreachable after sync-fix. $RUN_URL" '{text: $text}' \
+            | curl -sS -X POST "$SLACK_WEBHOOK_URL" -H 'Content-type: application/json' --data @-
 
       - name: Cleanup
         if: always()

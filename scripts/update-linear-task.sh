@@ -48,7 +48,7 @@ TASK_ID="$TASK_ID" \
 NEW_STATUS="$NEW_STATUS" \
 MODE="$MODE" \
 python3 - << 'PYEOF'
-import os, json, urllib.request, sys
+import os, json, urllib.request, urllib.error, sys, time
 
 api_key    = os.environ["LINEAR_API_KEY"]
 task_id    = os.environ["TASK_ID"]
@@ -82,8 +82,21 @@ def gql(query, variables=None):
         data=payload,
         headers=headers,
     )
-    with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read())
+    # Retry HTTP 429 / 5xx with exponential backoff (honouring Retry-After), max 4 attempts
+    for attempt in range(1, 5):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read())
+            break
+        except urllib.error.HTTPError as e:
+            if e.code not in (429, 500, 502, 503, 504) or attempt == 4:
+                raise
+            retry_after = e.headers.get("Retry-After") if e.headers else None
+            try:
+                delay = float(retry_after) if retry_after else 2 ** attempt
+            except ValueError:
+                delay = 2 ** attempt
+            time.sleep(min(delay, 5))  # keep the whole script inside orchestrate.js's 150s timeout
     if data.get("errors"):
         raise RuntimeError(f"GraphQL error: {data['errors']}")
     return data["data"]

@@ -13,6 +13,8 @@ jobs:
     if: github.event_name == 'push'
     name: Mark task In Progress in Linear
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Update Linear to In Progress (if pre-work state)
         env:
@@ -25,7 +27,7 @@ jobs:
           branch  = os.environ["BRANCH"]
           api_key = os.environ["LINEAR_API_KEY"]
 
-          m = re.search(r's(\d+)-([a-z0-9]+)-(\d+)', branch)
+          m = re.search(r'(?<![a-z0-9])s(\d+)-([a-z0-9]+)-(\d+)', branch, re.I)
           if not m:
               print(f"No task ID found in branch '{branch}' — skipping")
               sys.exit(0)
@@ -89,6 +91,7 @@ jobs:
     name: Mark task In Review in Linear
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
     steps:
       - name: Update Linear to In Review
@@ -106,7 +109,7 @@ jobs:
           branch  = os.environ["BRANCH"]
           api_key = os.environ["LINEAR_API_KEY"]
 
-          m = re.search(r's(\d+)-([a-z0-9]+)-(\d+)', branch)
+          m = re.search(r'(?<![a-z0-9])s(\d+)-([a-z0-9]+)-(\d+)', branch, re.I)
           if not m:
               print(f"No task ID found in branch '{branch}' — skipping")
               sys.exit(0)
@@ -190,6 +193,8 @@ jobs:
       github.event.pull_request.merged == true
     name: Mark task Done in Linear
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Update Linear to Done
         env:
@@ -202,7 +207,7 @@ jobs:
           branch  = os.environ["BRANCH"]
           api_key = os.environ["LINEAR_API_KEY"]
 
-          m = re.search(r's(\d+)-([a-z0-9]+)-(\d+)', branch)
+          m = re.search(r'(?<![a-z0-9])s(\d+)-([a-z0-9]+)-(\d+)', branch, re.I)
           if not m:
               print(f"No task ID found in branch '{branch}' — skipping")
               sys.exit(0)
