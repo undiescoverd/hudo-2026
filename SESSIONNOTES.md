@@ -1015,3 +1015,11 @@ See CLAUDE.md → "SESSIONNOTES.md log".
     - `docs/flows/inventory.md`: several PRs.
   - Cleanup: removed 17 stale agent worktrees for merged or closed PRs and deleted their merged local branches.
 - **Gotcha (if any):** The DeepSeek "AI Code Review" truncates diffs at 8000 chars. It keeps posting "Changes Required" about files it never saw, while its CI check stays green. Fix genuine findings only, then stop. Don't loop to the cap.
+
+## 2026-11-24 — Talent journey (#249): decisions, Paper, sub-issues, Wave 6 rows
+
+- **Task:** GH #249 umbrella. Grilled 12 decisions, drew "Flow · Talent journey" in Paper (map + T3–T8, phone and laptop), Ian approved. Updated the AppHeader, Screen map and Every-role boards. Filed sub-issues #250–#257 and added S5-NAV-001..007 + S5-NOTIF-001 as Wave 6 of `tasks/sprint-5.md`. Flow inventory rows F6–F9, F13, F14, F20 updated.
+- **Models:** planner=opus, executor=opus (docs and Paper only; no code)
+- **Outcome:** done (planning). Build starts with S5-NAV-001.
+- **Notes:** Key decision: agents never upload (Hudo is review-only for agents), so S5-NAV-006 removes agent upload and enforces it server-side. Q5 reverses the 2026-10-14 "no agency picker" rule. Local dev logins 401'd because the tmux shell had staging vars exported (Failure Log entry added).
+- **Gotcha (if any):** `lib/onboarding-checklist.ts` already has an "invite talent" step, so dropping "upload a video" leaves two steps, not a renamed one.
