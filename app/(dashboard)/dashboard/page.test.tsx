@@ -40,6 +40,16 @@ describe('/dashboard page — source invariants', () => {
     assert.match(source, /console\.error\('\[dashboard-page\]/)
   })
 
+  it('branches on dashboardViewFor and no longer redirects to /talent', () => {
+    assert.match(source, /dashboardViewFor\(role\) === 'talent'/)
+    assert.doesNotMatch(source, /redirect\('\/talent'\)/)
+  })
+
+  it('renders the talent view with shared error handling', () => {
+    assert.match(source, /error \? <DashboardError \/> : <TalentDashboard/)
+    assert.match(source, /console\.error\('\[dashboard-page\] getTalentVideos/)
+  })
+
   it('gates the onboarding checklist on an explicit owner equality', () => {
     assert.match(source, /role === 'owner'/)
     assert.match(source, /getOnboardingChecklist\(\{ supabase, userId: user\.id \}\)/)

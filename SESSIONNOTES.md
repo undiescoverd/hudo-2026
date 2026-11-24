@@ -1023,3 +1023,11 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Outcome:** done (planning). Build starts with S5-NAV-001.
 - **Notes:** Key decision: agents never upload (Hudo is review-only for agents), so S5-NAV-006 removes agent upload and enforces it server-side. Q5 reverses the 2026-10-14 "no agency picker" rule. Local dev logins 401'd because the tmux shell had staging vars exported (Failure Log entry added).
 - **Gotcha (if any):** `lib/onboarding-checklist.ts` already has an "invite talent" step, so dropping "upload a video" leaves two steps, not a renamed one.
+
+## 2026-11-25 — S5-NAV-001: every role lands on /dashboard
+
+- **Task:** S5-NAV-001 (GH #250, umbrella #249)
+- **Models:** planner=opus, executor=sonnet; code review=sonnet, security review=hudo-security-reviewer
+- **Outcome:** done (PR open)
+- **Notes:** New `lib/landing.ts` (HOME_PATH, dashboardViewFor, videosListRedirectFor; unknown role → talent view). `/`, the sign-in fallback (`safeRedirect` default) and `/talent` now go to `/dashboard`, which renders the agent or talent view by role. Talent opening exactly `/videos` go to `/dashboard`; `/videos/[id]` unchanged. The redirect lives in the `/videos` page, not middleware. Code review found a zero-membership user would get a 403 on an old `/talent` bookmark, so the middleware `/talent` gate is removed (the page holds no data now). Walked live on hudo-dev as talent and owner.
+- **Gotcha (if any):** running `pnpm build` while `pnpm dev` is up overwrites `.next` and the dev server then 500s with "Cannot read properties of undefined (reading 'call')" in webpack-runtime; restart dev with a clean `.next`. Also, `redirect()` in a `(dashboard)` page returns 200 with a streamed redirect (the group has `loading.tsx`), not a 307, so check the body, not the status.
