@@ -1031,3 +1031,11 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Outcome:** done (PR open)
 - **Notes:** New `lib/landing.ts` (HOME_PATH, dashboardViewFor, videosListRedirectFor; unknown role → talent view). `/`, the sign-in fallback (`safeRedirect` default) and `/talent` now go to `/dashboard`, which renders the agent or talent view by role. Talent opening exactly `/videos` go to `/dashboard`; `/videos/[id]` unchanged. The redirect lives in the `/videos` page, not middleware. Code review found a zero-membership user would get a 403 on an old `/talent` bookmark, so the middleware `/talent` gate is removed (the page holds no data now). Walked live on hudo-dev as talent and owner.
 - **Gotcha (if any):** running `pnpm build` while `pnpm dev` is up overwrites `.next` and the dev server then 500s with "Cannot read properties of undefined (reading 'call')" in webpack-runtime; restart dev with a clean `.next`. Also, `redirect()` in a `(dashboard)` page returns 200 with a streamed redirect (the group has `loading.tsx`), not a 307, so check the body, not the status.
+
+## 2026-11-25 — S5-NAV-006: agents never upload
+
+- **Task:** S5-NAV-006 (GH #255, umbrella #249). Built in parallel with S5-NAV-002 (disjoint FILES, separate worktrees).
+- **Models:** planner=opus, executor=sonnet; code review=sonnet, security review=hudo-security-reviewer
+- **Outcome:** done (PR open)
+- **Notes:** presign, multipart-url and complete now require the caller's role _in the request's agency_ to be talent (the role comes from `requireUploadRole` → `requireMembership(agencyId)`); the agent-supplied `talentId` path is gone and `talent_id` is always the caller. Middleware `uploadRedirectFor` sends anyone without a talent membership from `/upload` to `/dashboard` (307, fails closed on a query error), separate from the 403 role gates. Talent picker and `lib/talent-roster.ts` removed; "Upload new version" only for the owning talent; owner checklist is two steps. Security review: nothing blocking. Follow-ups: `abort` and `thumbnail` still accept agents via `requireUploadRole`; middleware gates read the raw (undecoded) pathname.
+- **Gotcha (if any):** the upload page took the _first_ membership row, which for a user who is an agent at one agency and talent at another picked the agent agency; filter by `role = 'talent'` whenever a page needs "the agency I upload to".

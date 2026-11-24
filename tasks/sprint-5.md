@@ -377,13 +377,13 @@ Paper: "Hudo App" → **Flow · Talent journey** (read-me map + T3–T8, phone a
 
 ---
 
-- [ ] **S5-NAV-001** — Every role lands on /dashboard
+- [x] **S5-NAV-001** — Every role lands on /dashboard
 
 TASK_ID: S5-NAV-001
 TITLE: Every role lands on /dashboard (landing helper, /talent and /videos redirects)
 BRANCH: feat/s5-S5-NAV-001-role-landing
 MODEL: sonnet
-STATUS: in_review
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - One helper decides the landing page; / and the sign-in fallback use it; every role lands on /dashboard (the header logo moves in S5-NAV-002, which owns AppHeader.tsx)
@@ -502,7 +502,7 @@ TASK_ID: S5-NAV-006
 TITLE: Agents never upload: server-side talent-only upload; remove the talent picker and agent upload buttons
 BRANCH: feat/s5-S5-NAV-006-talent-only-upload
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_review
 BLOCKED_BY: S5-NAV-001
 ACCEPTANCE_CRITERIA:
   - presign, multipart-url and complete reject any caller who is not a talent member of the agency; an agent-supplied talentId is no longer accepted
@@ -522,6 +522,8 @@ FILES:
   - lib/onboarding-checklist.ts (+ test)
   - components/dashboard/OnboardingChecklist.test.tsx
   - middleware.ts (+ test)
+  - components/upload/UploadProgress.test.tsx (asserted the removed picker)
+  - tests/e2e/smoke/smoke.spec.ts, tests/e2e/pages/UploadPage.ts (smoke uploads as talent)
 NOTES: GH #255 (umbrella #249). Decision Q12 (2026-11-24): Hudo is review-only for agents. Paper: Flow · Every role (upload column "Review only"); Screen map (/upload · talent only).
 
 ---
