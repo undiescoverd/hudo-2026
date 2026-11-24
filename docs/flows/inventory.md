@@ -26,6 +26,7 @@ Single checklist of every user flow in Hudo. Each flow is ticked off in four sta
 | Flow · Sign in and recover (Flow 04) | 3W8-0 / 41T-0 | Sign in, session, sign out, password reset |
 | Flow · Owner sign-up and verify (Flow 05) | 49E-0 / 4EZ-0 | Agency owner sign-up wizard, email verification |
 | Flow · Review loop as built (Flow 06) | 4LS-0 / 4PX-0 | What the code does today, from upload to new version |
+| Flow · Talent journey (Flow 08) | 971-1 (map); T3–T8 at phone and laptop width | Talent landing, Dashboard, upload (one and 2+ agencies), sent, video page, notifications. Approved 2026-11-24 (#249) |
 
 Component pages (Foundations, Primitives, Shell & Notifications, Dashboard, Player & Versions, Comments, Upload, Guest, Billing & Settings) are not flows. Flows reuse them, so the flow boards are the reference for what the user does.
 
@@ -43,21 +44,21 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 | F3 | Email verification | Flow 05, steps 09–13, 18 | Partial | — | No | Not checked |
 | F4 | Agency owner sign-up | Flow 05, steps 01–08, 14–16 | Partial | — | Partial (wrong flow wired) | Not checked |
 | F5 | Invite and onboard an agent | Flow 03, sender and accept steps | Mapped | — | Partial | Not checked |
-| F6 | Invite and onboard a talent | Flow 03, invitee and accept steps | Mapped | — | Partial (accept returns 400 for existing talent) | Not checked |
-| F7 | First-run onboarding | Flow 03, steps 12–13; Flow 05, steps 15–16 | Partial | — | Partial | Not checked |
-| F8 | Role dashboards | Flow 01 (dashboards, Needs you strip); Flow 06, step 06 | Partial | — | Partial | Not checked |
-| F9 | Talent uploads media | Flow 01, steps 01–04; Flow 06, steps 01–04, 11–12 | Partial | #149, #150, #151, #164 | Partial (S5-FLOW-007: part retries, abort on give-up, tab-close warning) | Not checked |
+| F6 | Invite and onboard a talent | Flow 03, invitee and accept steps; Flow 08, T2 → T3 | Drawn | #254 | Partial (accept works for an existing talent; the talent must sign in again after accepting, #254) | Not checked |
+| F7 | First-run onboarding | Flow 03, steps 12–13; Flow 05, steps 15–16; Flow 08, T3 (talent) | Partial | #252, #254, #255 (owner checklist drops its upload step) | Partial | Not checked |
+| F8 | Role dashboards | Flow 01 (dashboards, Needs you strip); Flow 06, step 06; Flow 08, T3 and T6 (talent Dashboard) | Partial | #250, #251, #252 | Partial | Not checked |
+| F9 | Talent uploads media | Flow 01, steps 01–04; Flow 06, steps 01–04, 11–12; Flow 08, T4, T4b, T5 | Drawn | #149, #150, #151, #164, #253, #255, #256 | Partial (S5-FLOW-007: part retries, abort on give-up, tab-close warning) | Not checked |
 | F10 | Needs attention list: seen-by now, owner later | Flow 01 "Needs attention" strip (renamed in Paper 2026-10-22) | Decided | #176 (spec, not yet confirmed ready) | No | Not checked |
 | F11 | Agent reviews with voice feedback | Flow 01, steps 05–07 (typed comments only) | Conflict | #169 | Partial (typed comments work; no voice recording code found) | Not checked |
 | F12 | Complete review and export edit list | Flow 01, steps 09–11; Flow 06, steps 09–10 | Conflict | #159, #160, #161 | Partial (PDF is HTML, no export) | Not checked |
-| F13 | Talent receives and views feedback | Flow 01, steps 06–07 | Partial | #168, #163 | Partial | Not checked |
-| F14 | Notifications | Flow 01, step 08; Flow 02, step 08 | Partial | #170 | Partial | Not checked |
+| F13 | Talent receives and views feedback | Flow 01, steps 06–07; Flow 08, T6–T8 | Drawn | #168, #163, #252, #253, #257 | Partial | Not checked |
+| F14 | Notifications | Flow 01, step 08; Flow 02, step 08; Flow 08, T8 (talent status alerts) | Partial | #170, #257 | Partial | Not checked |
 | F15 | Media library and talent portfolio | Video table and card on Dashboard page only | Partial | — | No | Not checked |
 | F16 | Profile and account settings | not drawn | Not drawn | — | Partial (API only) | Not checked |
 | F17 | Agency settings | Legal entity form only (Billing & Settings page) | Partial | — | Partial (API only) | Not checked |
 | F18 | Team management | not drawn | Not drawn | — | Partial (invites only) | Not checked |
 | F19 | Talent roster | not drawn | Not drawn | — | No | Not checked |
-| F20 | Talent responds to feedback | Flow 01 comment thread and upload v2 | Partial | — | No | Not checked |
+| F20 | Talent responds to feedback | Flow 01 comment thread and upload v2; Flow 08, T7 → T4 | Drawn | #253 | Partial (resubmitting works since S5-FLOW-003; the video page has no way back to the talent's Dashboard, #253) | Not checked |
 | F21 | Talent transfer between agencies | not drawn | Not drawn | — | No | Not checked |
 | F22 | Search, filters and activity history | Status filter only | Partial | — | No | Not checked |
 | F23 | Platform admin | not drawn | Not drawn | — | Partial (pages broken) | Not checked |
@@ -71,6 +72,7 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 
 ## Decisions
 
+- **2026-11-24, talent journey (#249):** every role lands on its Dashboard at `/dashboard` (`/talent` redirects). Talent navigation is Dashboard + Upload only (a bottom tab bar on phones); `/videos` is agents only. **Agents never upload**: Hudo is review-only for agents. Talent in 2+ agencies choose the agency on upload (reverses the 2026-10-14 "no agency picker" rule). Talent get a bell + immediate email on Changes requested and Approved, and a bell only on In review. Full list on #249.
 - **2026-10-22, review model (F10):** agents see a shared "Needs attention" list, with no claim or assignment for now. Each video shows who has seen it ("seen by"). Anyone in the agency can comment, so outside input is always open. Ownership (`owner_id`, claim and assign) is deferred until an agency asks for it. Reasons: it needs atomic claims and realtime ownership changes, and "seen by" reuses the `comment_reads` work already tracked in #168.
 - **2026-10-22, list name:** "Needs attention" (replaces "Needs you" on the Flow 01 and Flow 06 boards).
 - **2026-10-22, talent visibility:** talent do not see "seen by" for now.
@@ -80,7 +82,7 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 
 These came from reading the boards. The list is not exhaustive.
 
-- **Flow 06, step 11:** a talent cannot resubmit after changes are requested, so the video stays stuck. No issue.
+- ~~**Flow 06, step 11:** a talent cannot resubmit after changes are requested.~~ Out of date: resubmitting works (S5-FLOW-003). Found by the #249 audit.
 - **Flow 06, step 09:** comments cannot be resolved, edited, deleted or replied to from the UI. Partly covered by F20.
 - **Flow 04:** no account lockout after failed sign-ins (auth routes are rate-limited, so the board's "no lockout or rate limit" is only half right); owners hit a redirect loop; session refresh doesn't retry; the password-changed email is never sent. No issue.
 - **Flow 03:** the "invite agent" link goes to a page that doesn't exist; a pending invite can't be listed, resent or revoked; duplicate pending invites are allowed. No issue.

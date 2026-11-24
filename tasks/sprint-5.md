@@ -368,3 +368,205 @@ FILES:
   - components/settings/BillingAccessToggle.tsx (+ test)
   - components/layout/AppHeader.tsx (+ test)
 NOTES: GH #207 (all three open questions decided 2026-11-21). Paper: "Flow · Every role, end to end", admin agent lane, step 08. Needs an API route (or extension of the team route) for the toggle; add it to FILES when planned. Migration 0031: 0024–0026 and 0028 are reserved, 0029 is on main, 0030 is PR #199. Apply with scripts/db-push.sh. Linear RES-228.
+
+---
+
+### WAVE 6 — Talent journey (GH #249, decided and designed 2026-11-24)
+
+Paper: "Hudo App" → **Flow · Talent journey** (read-me map + T3–T8, phone and laptop), plus the updated **Shell & Notifications → AppHeader**, **Screen map** and **Flow · Every role** boards. Agents never upload; only talent do. Build order: NAV-001 first, then NAV-002 / NAV-003 / NAV-006, then NAV-004 → NAV-007 and NAV-005. NOTIF-001 any time.
+
+---
+
+- [ ] **S5-NAV-001** — Every role lands on /dashboard
+
+TASK_ID: S5-NAV-001
+TITLE: Every role lands on /dashboard (landing helper, /talent and /videos redirects)
+BRANCH: feat/s5-S5-NAV-001-role-landing
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - One helper decides the landing page; /, the sign-in fallback and the logo use it; every role lands on /dashboard
+  - An explicit ?redirect= still wins, including after signing in again
+  - /dashboard renders the talent Dashboard for talent and the agent dashboard for owner, admin_agent and agent
+  - /talent redirects to /dashboard; the old /dashboard → /talent redirect is removed
+  - Talent opening exactly /videos go to /dashboard; /videos/[id] still opens for the owning talent (no prefix gate)
+  - Unit tests per role, the redirect override, and the /videos vs /videos/[id] split
+FILES:
+  - lib/landing.ts (+ test)
+  - app/page.tsx
+  - lib/auth-validation.ts
+  - middleware.ts (+ test)
+  - app/(dashboard)/dashboard/page.tsx (+ test)
+  - app/(dashboard)/talent/page.tsx
+  - app/(dashboard)/videos/page.tsx
+NOTES: GH #250 (umbrella #249). Closes A1, A5; decisions Q1, Q9, Q11. Paper: Flow · Talent journey T3, T6; Screen map.
+
+---
+
+- [ ] **S5-NAV-002** — Header by role and the talent tab bar
+
+TASK_ID: S5-NAV-002
+TITLE: Header by role: no agent Upload, talent Dashboard · Upload + phone tab bar, owner-only Billing
+BRANCH: feat/s5-S5-NAV-002-header-by-role
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S5-NAV-001
+ACCEPTANCE_CRITERIA:
+  - Agent, admin_agent and owner header: Dashboard · Videos, bell, Billing, Settings, name, Sign out; no Upload
+  - Agents below md: logo · bell · menu button; the menu sheet holds Dashboard, Videos, Settings, Billing, Sign out
+  - Talent header: Dashboard · Upload, bell, name menu (Settings, Sign out); phones get a Dashboard / Upload bottom tab bar with the active tab highlighted
+  - Logo goes to /dashboard; Settings is highlighted on every /settings/* page
+  - Billing shows to the owner only (plus a billing-granted admin agent once S5-ADMIN-001 lands)
+  - Unit tests for each role's links, the Billing rule and the tab bar's active state
+FILES:
+  - components/layout/AppHeader.tsx (+ test)
+  - components/layout/TalentTabBar.tsx (+ test)
+  - components/layout/MobileMenu.tsx (+ test)
+  - app/(dashboard)/layout.tsx
+NOTES: GH #251 (umbrella #249). Closes A6, E1; decisions Q11, Q12. Paper: Shell & Notifications → AppHeader (updated 2026-11-24); tab bar on Flow · Talent journey T3–T8. S5-ADMIN-001 also edits AppHeader.tsx: whichever lands second rebases and keeps both rules.
+
+---
+
+- [ ] **S5-NAV-003** — Talent Dashboard overview
+
+TASK_ID: S5-NAV-003
+TITLE: Talent Dashboard overview: Needs you / With your agent / Approved
+BRANCH: feat/s5-S5-NAV-003-talent-dashboard-overview
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S5-NAV-001
+ACCEPTANCE_CRITERIA:
+  - Three tiles with counts: Needs you (changes_requested), With your agent (pending_review + in_review), Approved
+  - The list below is grouped the same way; each row opens the video page
+  - An Upload button on the page whenever the talent has at least one video, as well as in the empty state
+  - First visit (no videos): welcome, how it works, one Upload button (T3)
+  - Drafts with zero versions are hidden; no "Open to submit" row remains
+  - Talent in 2+ agencies keep the agency label on rows (S5-FLOW-008)
+  - Unit tests for grouping, counts, hidden drafts and the empty state
+FILES:
+  - lib/talent-dashboard.ts (+ test)
+  - components/dashboard/TalentDashboard.tsx (+ test)
+  - components/dashboard/talent/ (tracker, rows, OverviewTiles.tsx) (+ tests)
+NOTES: GH #252 (umbrella #249). Closes A2, C1; decisions Q3, Q10. Paper: Flow · Talent journey T3, T6 (phone + laptop).
+
+---
+
+- [ ] **S5-NAV-004** — Talent loop pages
+
+TASK_ID: S5-NAV-004
+TITLE: Talent loop: video page status and back link, Sent screen, upload Retry, new-version text
+BRANCH: feat/s5-S5-NAV-004-talent-loop
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S5-NAV-006
+ACCEPTANCE_CRITERIA:
+  - Video page, talent: status pill; back link goes to the Dashboard (agents' still goes to Videos); Changes requested shows the "Upload a new version" call to action
+  - Upload page, talent: a Sent screen after finishing (who it went to, what happens next, back to Dashboard)
+  - A failed upload shows a clear error and Retry on the same page
+  - New-version text says the video goes back to your agent for review (not "Status stays as it is.")
+  - Unit tests for the back link per role, the pill, the Sent and failure states, and the text
+FILES:
+  - app/(dashboard)/videos/[id]/page.tsx (+ test)
+  - app/(dashboard)/upload/page.tsx (+ test)
+  - components/upload/UploadProgress.tsx (+ test)
+NOTES: GH #253 (umbrella #249). Closes A3, C3, C4; decision Q3 (Retry). Paper: Flow · Talent journey T4, T5, T7.
+
+---
+
+- [ ] **S5-NAV-005** — Talent first run
+
+TASK_ID: S5-NAV-005
+TITLE: Talent first run: signed in straight after accepting an invite; sign-in footer copy
+BRANCH: feat/s5-S5-NAV-005-talent-first-run
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S5-NAV-001
+ACCEPTANCE_CRITERIA:
+  - After accepting an invite the talent is signed in and lands on the Dashboard first visit, with no second sign-in
+  - Fallback if auto sign-in isn't possible: sign-in with the email prefilled and ?redirect=/dashboard
+  - A talent already signed in who opens an invite is told so and can accept into their account
+  - Sign-in footer: "New agency? Create an account" + "Talent: ask your agent for an invite"
+  - Unit tests for each path; security review (auth flow)
+FILES:
+  - app/auth/invite/[token]/page.tsx (+ test)
+  - app/api/invitations/accept/route.ts (+ test) (only if sign-in has to happen server-side)
+  - app/auth/signin/signin-form.tsx (+ test)
+NOTES: GH #254 (umbrella #249). Closes B1, B2, B3; decision Q8. Paper: Flow · Talent journey map T2 → T3; Screens · Sign in and join.
+
+---
+
+- [ ] **S5-NAV-006** — Agents never upload
+
+TASK_ID: S5-NAV-006
+TITLE: Agents never upload: server-side talent-only upload; remove the talent picker and agent upload buttons
+BRANCH: feat/s5-S5-NAV-006-talent-only-upload
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S5-NAV-001
+ACCEPTANCE_CRITERIA:
+  - presign, multipart-url and complete reject any caller who is not a talent member of the agency; an agent-supplied talentId is no longer accepted
+  - Upload page: talent picker and "Invite a talent before uploading" state removed; lib/talent-roster.ts deleted, and comment-permissions.ts moves from its isAgentClassRole to lib/roles.ts isAgentPlusRole
+  - /upload is talent only in middleware; an agent who opens it goes to /dashboard
+  - Video page: "Upload new version" shows only to the owning talent
+  - Owner checklist drops the "Upload a video" step (invite agent + invite talent remain)
+  - Unit and route tests for each rejection and the checklist; security review (app/api upload routes)
+FILES:
+  - app/api/videos/upload/presign/route.ts (+ test)
+  - app/api/videos/upload/multipart-url/route.ts (+ test)
+  - app/api/videos/upload/complete/route.ts (+ tests)
+  - app/(dashboard)/upload/page.tsx (+ test)
+  - lib/talent-roster.ts (+ test) (delete)
+  - components/comments/comment-permissions.ts (+ test) (import isAgentPlusRole from lib/roles.ts instead)
+  - app/(dashboard)/videos/[id]/page.tsx (+ test)
+  - lib/onboarding-checklist.ts (+ test)
+  - components/dashboard/OnboardingChecklist.test.tsx
+  - middleware.ts (+ test)
+NOTES: GH #255 (umbrella #249). Decision Q12 (2026-11-24): Hudo is review-only for agents. Paper: Flow · Every role (upload column "Review only"); Screen map (/upload · talent only).
+
+---
+
+- [ ] **S5-NAV-007** — Upload agency chooser for talent in 2+ agencies
+
+TASK_ID: S5-NAV-007
+TITLE: Upload agency chooser for talent in 2+ agencies
+BRANCH: feat/s5-S5-NAV-007-upload-agency-chooser
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: S5-NAV-004
+ACCEPTANCE_CRITERIA:
+  - Talent in 2+ agencies choose the agency on the upload page; the agency of their most recent video is preselected
+  - Talent in one agency see no chooser
+  - The unordered .limit(1).single() membership lookup is removed
+  - The server checks the caller is a talent member of the chosen agency
+  - The video page shows the agency name to talent in 2+ agencies
+  - Unit and route tests for one and two agencies, the preselection and a foreign-agency rejection; security review (upload route)
+FILES:
+  - app/(dashboard)/upload/page.tsx (+ test)
+  - app/api/videos/upload/presign/route.ts (+ test)
+  - app/(dashboard)/videos/[id]/page.tsx
+NOTES: GH #256 (umbrella #249). Closes D1, D3; decision Q5, which reverses the 2026-10-14 "no agency picker" rule (the top-bar agency it relied on was never built). Paper: Flow · Talent journey T4b.
+
+---
+
+- [ ] **S5-NOTIF-001** — Tell talent when their video's status changes
+
+TASK_ID: S5-NOTIF-001
+TITLE: Tell talent when their video is Changes requested or Approved (bell + email) or In review (bell)
+BRANCH: feat/s5-S5-NOTIF-001-talent-status-alerts
+MODEL: sonnet
+STATUS: not_started
+BLOCKED_BY: none
+ACCEPTANCE_CRITERIA:
+  - Changes requested and Approved: a bell notification plus an email straight away, sent from the status route and awaited; respects notification_preferences.email_enabled
+  - The daily digest (batchAndSendNotifications) does not email those rows again
+  - In review (S5-FLOW-002's automatic change): bell only
+  - Uses the existing status_changed type; no migration
+  - The bell panel renders the three messages as drawn on T8; each opens the video
+  - Unit and route tests for each status, the preference off and the digest skip; security review (app/api + email)
+FILES:
+  - app/api/videos/[videoId]/status/route.ts (+ test)
+  - lib/notifications.ts (+ test)
+  - lib/email-templates/ (status-change template) (+ test)
+  - components/notifications/NotificationPanel.tsx (+ test)
+NOTES: GH #257 (umbrella #249). Closes C2; decision Q6. Paper: Flow · Talent journey T8.
