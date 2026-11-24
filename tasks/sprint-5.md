@@ -506,7 +506,7 @@ STATUS: not_started
 BLOCKED_BY: S5-NAV-001
 ACCEPTANCE_CRITERIA:
   - presign, multipart-url and complete reject any caller who is not a talent member of the agency; an agent-supplied talentId is no longer accepted
-  - Upload page: talent picker and "Invite a talent before uploading" state removed; lib/talent-roster.ts deleted
+  - Upload page: talent picker and "Invite a talent before uploading" state removed; lib/talent-roster.ts deleted, and comment-permissions.ts moves from its isAgentClassRole to lib/roles.ts isAgentPlusRole
   - /upload is talent only in middleware; an agent who opens it goes to /dashboard
   - Video page: "Upload new version" shows only to the owning talent
   - Owner checklist drops the "Upload a video" step (invite agent + invite talent remain)
@@ -517,6 +517,7 @@ FILES:
   - app/api/videos/upload/complete/route.ts (+ tests)
   - app/(dashboard)/upload/page.tsx (+ test)
   - lib/talent-roster.ts (+ test) (delete)
+  - components/comments/comment-permissions.ts (+ test) (import isAgentPlusRole from lib/roles.ts instead)
   - app/(dashboard)/videos/[id]/page.tsx (+ test)
   - lib/onboarding-checklist.ts (+ test)
   - components/dashboard/OnboardingChecklist.test.tsx
