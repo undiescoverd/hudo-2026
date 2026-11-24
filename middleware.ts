@@ -73,6 +73,19 @@ export function isForbidden(pathname: string, roles: string[]): boolean {
 }
 
 /**
+ * /upload is talent-only (S5-NAV-006: Hudo is review-only for agents). Unlike the
+ * /admin and /agent gates, a non-talent is REDIRECTED to /dashboard rather than
+ * shown a 403, and that includes a signed-in user with no memberships at all.
+ * Returns the redirect target, or null when the user may open the page. Any
+ * talent membership is enough (mixed-role users are deferred); the upload API
+ * re-checks the role per agency.
+ */
+export function uploadRedirectFor(pathname: string, roles: string[]): string | null {
+  if (!hasPrefix(pathname, '/upload')) return null
+  return roles.includes('talent') ? null : '/dashboard'
+}
+
+/**
  * Next.js middleware for route protection (static files and /api are excluded
  * by the matcher below; API routes do their own auth).
  *
@@ -83,6 +96,8 @@ export function isForbidden(pathname: string, roles: string[]): boolean {
  * - Redirects unauthenticated users to /auth/signin?redirect=<path>.
  * - Enforces role-based access on /admin and /agent by querying the
  *   memberships table. Returns 403 for insufficient role.
+ * - /upload is talent-only: anyone without a talent membership is redirected
+ *   to /dashboard (307), fail-closed on a memberships error.
  * - Fails closed: a getUser failure redirects to sign-in, a memberships failure
  *   returns 403.
  */
@@ -146,7 +161,14 @@ export async function middleware(request: NextRequest) {
     return toSignIn(pathname + search)
   }
 
-  if (requiredRolesFor(pathname) !== null) {
+  const isUploadPath = hasPrefix(pathname, '/upload')
+  if (requiredRolesFor(pathname) !== null || isUploadPath) {
+    const toDashboard = () => {
+      const dashboardUrl = request.nextUrl.clone()
+      dashboardUrl.pathname = '/dashboard'
+      dashboardUrl.search = ''
+      return withSessionCookies(NextResponse.redirect(dashboardUrl))
+    }
     try {
       const { data, error } = await supabase
         .from('memberships')
@@ -155,12 +177,15 @@ export async function middleware(request: NextRequest) {
       if (error) throw error
 
       const roles = (data ?? []).map((m: { role: string }) => m.role)
+      if (uploadRedirectFor(pathname, roles) !== null) {
+        return toDashboard()
+      }
       if (isForbidden(pathname, roles)) {
         return forbidden()
       }
     } catch (err) {
       console.error('[middleware] memberships query failed:', errMessage(err))
-      return forbidden()
+      return isUploadPath ? toDashboard() : forbidden()
     }
   }
 

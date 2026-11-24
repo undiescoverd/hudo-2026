@@ -41,9 +41,13 @@ describe('UploadPage — new version mode', () => {
     assert.match(source, /if \(videoError\) throw new Error\('Failed to load video'\)/)
   })
 
-  it('hides the talent picker and never sends talentId in version mode', () => {
-    assert.match(source, /const needsTalent = !targetVideoId && isAgentClassRole\(role\)/)
-    assert.match(source, /talentId: needsTalent \? talentId : undefined/)
+  it('has no talent picker, roster or talentId (agents never upload, S5-NAV-006)', () => {
+    assert.doesNotMatch(source, /talent-roster|fetchTalentRoster|isAgentClassRole/)
+    assert.doesNotMatch(source, /upload-talent|Invite a talent|talentId|needsTalent/)
+  })
+
+  it("resolves the agency from the caller's talent membership, not whichever row is first", () => {
+    assert.match(source, /\.eq\('role', 'talent'\)/)
   })
 
   it('seeds and resets the draft video id to the target so no new video is created', () => {

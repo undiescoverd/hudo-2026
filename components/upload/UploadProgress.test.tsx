@@ -46,9 +46,7 @@ describe('upload page — wiring (B1/B2)', () => {
     )
   })
 
-  it('sends talentId only for agent-class roles and requires a talent pick', () => {
-    assert.match(source, /talentId: needsTalent \? talentId : undefined/)
-    assert.match(source, /needsTalent && !talentId/)
-    assert.match(source, /Invite a talent to this agency before uploading/)
+  it('never sends a talentId or shows a talent picker (agents never upload, S5-NAV-006)', () => {
+    assert.doesNotMatch(source, /talentId|needsTalent|Invite a talent/)
   })
 })

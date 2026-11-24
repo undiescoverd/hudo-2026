@@ -194,6 +194,10 @@ export default function VideoPage({ params }: Props) {
     userId !== null &&
     videoRow.talentId === userId
 
+  // Only the owning talent uploads a new version (S5-NAV-006: review-only for agents).
+  // Needs the role AND the video's talent_id, so it stays hidden until both load.
+  const canUploadNewVersion = role === 'talent' && userId !== null && videoRow?.talentId === userId
+
   // Status control: explicit role set (owner | admin_agent | agent); talent never see it.
   // The PATCH route re-checks the role server-side.
   const canChangeStatus = role !== null && STATUS_CONTROL_ROLES.has(role)
@@ -218,9 +222,7 @@ export default function VideoPage({ params }: Props) {
           ← Back to videos
         </Link>
         <div className="flex items-center gap-2">
-          {/* agencyId is only set once the versions endpoint returned 200, which
-              proves the viewer is the owning talent or a non-talent member. */}
-          {agencyId && (
+          {canUploadNewVersion && (
             <Link
               href={`/upload?videoId=${params.id}`}
               className={cn(

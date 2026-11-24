@@ -1,14 +1,13 @@
 /**
  * lib/onboarding-checklist.ts
  * Owner onboarding checklist for /dashboard, derived purely from existing data
- * (memberships, invitations, video_versions) — no table, no migration.
+ * (memberships, invitations) — no table, no migration.
  *
  * Derivation rules:
  *  - Invite an agent: the agency has another member, or an invitation, with role
  *    agent | admin_agent. A *pending* (unexpired) invite counts: the owner has done
  *    their part, and acceptance is outside their control. Expired-unaccepted ones don't.
  *  - Invite a talent: same, for role talent.
- *  - Upload a video: the agency has at least one video_versions row.
  *
  * Fail-closed: any query error hides the checklist (returns null) and logs, so an
  * error never reads as "all done" nor shows misleading unchecked items.
@@ -17,7 +16,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type ChecklistItem = {
-  key: 'invite-agent' | 'invite-talent' | 'upload-video'
+  key: 'invite-agent' | 'invite-talent'
   label: string
   description: string
   href: string
@@ -36,7 +35,6 @@ export type DeriveInput = {
   /** Other members of the agency (the owner's own membership excluded). */
   members: Array<{ role: string }>
   invitations: Array<{ role: string; accepted_at: string | null; expires_at: string }>
-  hasVideoVersion: boolean
   now?: Date
 }
 
@@ -46,7 +44,6 @@ const TALENT_ROLES = new Set(['talent'])
 export function deriveChecklist({
   members,
   invitations,
-  hasVideoVersion,
   now = new Date(),
 }: DeriveInput): OnboardingChecklist {
   // An unaccepted invite that has expired no longer counts: the owner must re-invite (intended).
@@ -71,13 +68,6 @@ export function deriveChecklist({
       href: '/settings/team',
       done: has(TALENT_ROLES),
     },
-    {
-      key: 'upload-video',
-      label: 'Upload a video',
-      description: 'Upload your first video for review.',
-      href: '/upload',
-      done: hasVideoVersion,
-    },
   ]
   return { items, allDone: items.every((i) => i.done) }
 }
@@ -87,7 +77,7 @@ export function deriveChecklist({
  * (not an owner, every owned agency complete, or any query failed). Uses the
  * RLS-scoped client. Owned agencies are checked oldest-membership first and the
  * first incomplete one is shown. Queries: 1 owner lookup, then 1 each for
- * agencies/memberships/invitations (batched with .in) plus 1 video check per agency.
+ * agencies/memberships/invitations (batched with .in).
  */
 export async function getOnboardingChecklist({
   supabase,
@@ -111,22 +101,16 @@ export async function getOnboardingChecklist({
   const ids = ((owned ?? []) as Array<{ agency_id: string }>).map((r) => r.agency_id)
   if (ids.length === 0) return null
 
-  const [agencies, members, invitations, ...versions] = await Promise.all([
+  const [agencies, members, invitations] = await Promise.all([
     supabase.from('agencies').select('id, name').in('id', ids),
     supabase.from('memberships').select('agency_id, user_id, role').in('agency_id', ids),
     supabase
       .from('invitations')
       .select('agency_id, role, accepted_at, expires_at')
       .in('agency_id', ids),
-    ...ids.map((id) => supabase.from('video_versions').select('id').eq('agency_id', id).limit(1)),
   ])
 
-  const failed = [
-    agencies.error,
-    members.error,
-    invitations.error,
-    ...versions.map((v) => v.error),
-  ].find(Boolean)
+  const failed = [agencies.error, members.error, invitations.error].find(Boolean)
   if (failed) {
     console.error('[onboarding-checklist] query failed:', failed.message)
     return null
@@ -144,11 +128,10 @@ export async function getOnboardingChecklist({
     DeriveInput['invitations'][number] & { agency_id: string }
   >
 
-  for (const [idx, agencyId] of ids.entries()) {
+  for (const agencyId of ids) {
     const result = deriveChecklist({
       members: memberRows.filter((m) => m.agency_id === agencyId && m.user_id !== userId),
       invitations: inviteRows.filter((i) => i.agency_id === agencyId),
-      hasVideoVersion: (versions[idx].data ?? []).length > 0,
     })
     if (!result.allDone) {
       return {

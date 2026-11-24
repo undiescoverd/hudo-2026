@@ -10,26 +10,8 @@
 import assert from 'node:assert/strict'
 import { before, describe, it } from 'node:test'
 
-// ── Extracted constants (must match route.ts) ─────────────────────────────
-const AGENT_PLUS_ROLES = ['owner', 'admin_agent', 'agent']
-
-describe('complete route — role authorization', () => {
-  it('owner can complete uploads', () => {
-    assert.ok(AGENT_PLUS_ROLES.includes('owner'))
-  })
-
-  it('admin_agent can complete uploads', () => {
-    assert.ok(AGENT_PLUS_ROLES.includes('admin_agent'))
-  })
-
-  it('agent can complete uploads', () => {
-    assert.ok(AGENT_PLUS_ROLES.includes('agent'))
-  })
-
-  it('guest cannot complete uploads', () => {
-    assert.ok(!AGENT_PLUS_ROLES.includes('guest'))
-  })
-})
+// Role authorization (agents rejected, mixed roles) is covered behaviourally in
+// route.behavior.test.ts (S5-NAV-006).
 
 describe('complete route — talent self-upload (S4-UPLOAD-001)', () => {
   it('UPLOAD_ROLES (real import) includes talent', async () => {
@@ -48,10 +30,6 @@ describe('complete route — talent self-upload (S4-UPLOAD-001)', () => {
 
   it('allows talent to complete an upload on their own video', () => {
     assert.equal(talentOwnershipBlocked('talent', 'user-1', 'user-1'), false)
-  })
-
-  it('never blocks agent+', () => {
-    assert.equal(talentOwnershipBlocked('agent', 'someone-else', 'user-1'), false)
   })
 
   // Real helper (lib/video-status.ts); the route's behaviour is covered end to end in

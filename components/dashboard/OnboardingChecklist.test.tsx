@@ -5,10 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { OnboardingChecklist } from '@/components/dashboard/OnboardingChecklist'
 import { deriveChecklist } from '@/lib/onboarding-checklist'
 
-const render = (members: Array<{ role: string }>, hasVideoVersion = false) =>
+const render = (members: Array<{ role: string }>) =>
   renderToStaticMarkup(
     createElement(OnboardingChecklist, {
-      items: deriveChecklist({ members, invitations: [], hasVideoVersion }).items,
+      items: deriveChecklist({ members, invitations: [] }).items,
     })
   )
 
@@ -17,14 +17,15 @@ describe('OnboardingChecklist', () => {
     const html = render([])
     assert.match(html, /href="\/settings\/team"[^>]*>Invite an agent/)
     assert.match(html, /href="\/settings\/team"[^>]*>Invite a talent/)
-    assert.match(html, /href="\/upload"[^>]*>Upload a video/)
-    assert.match(html, /0 of 3 done/)
+    assert.doesNotMatch(html, /Upload a video/)
+    assert.doesNotMatch(html, /href="\/upload"/)
+    assert.match(html, /0 of 2 done/)
   })
 
   it('renders completed items without a link', () => {
     const html = render([{ role: 'agent' }])
     assert.doesNotMatch(html, />Invite an agent<\/a>/)
     assert.match(html, /Invite an agent/)
-    assert.match(html, /1 of 3 done/)
+    assert.match(html, /1 of 2 done/)
   })
 })

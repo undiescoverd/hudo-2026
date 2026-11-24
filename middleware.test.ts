@@ -11,12 +11,13 @@ let config: Mw['config']
 let isPublicPath: Mw['isPublicPath']
 let requiredRolesFor: Mw['requiredRolesFor']
 let isForbidden: Mw['isForbidden']
+let uploadRedirectFor: Mw['uploadRedirectFor']
 let middleware: Mw['middleware']
 let matcher: RegExp
 
 // Dynamic import so the env vars above are set before the module-level check runs.
 before(async () => {
-  ;({ config, isPublicPath, requiredRolesFor, isForbidden, middleware } =
+  ;({ config, isPublicPath, requiredRolesFor, isForbidden, uploadRedirectFor, middleware } =
     await import('./middleware'))
   // Approximation of Next's compiled matcher (it also allows an optional
   // /_next/data/<build> prefix, .json suffix and trailing slash). Verified to
@@ -152,4 +153,112 @@ test('middleware serves /offline without auth (no sign-in redirect)', async () =
   const res = await middleware(new NextRequest('http://localhost/offline'))
   assert.equal(res.headers.get('location'), null)
   assert.equal(res.status, 200)
+})
+
+test('uploadRedirectFor: /upload is talent only, everyone else goes to /dashboard', () => {
+  for (const path of ['/upload', '/upload/', '/upload/anything']) {
+    assert.equal(uploadRedirectFor(path, ['talent']), null, path)
+    // Mixed-role users pass with any talent membership.
+    assert.equal(uploadRedirectFor(path, ['agent', 'talent']), null, path)
+    for (const roles of [
+      ['agent'],
+      ['admin_agent'],
+      ['owner'],
+      ['owner', 'agent'],
+      [],
+      ['bogus'],
+    ]) {
+      assert.equal(uploadRedirectFor(path, roles), '/dashboard', `${path} ${roles.join()}`)
+    }
+  }
+  // Other paths are untouched, including prefix look-alikes.
+  for (const path of ['/dashboard', '/uploads', '/uploadx', '/videos/1', '/talent']) {
+    assert.equal(uploadRedirectFor(path, []), null, path)
+  }
+})
+
+test('uploadRedirectFor does not change the /admin and /agent 403 gates', () => {
+  assert.equal(isForbidden('/upload', []), false)
+  assert.equal(isForbidden('/admin', ['talent']), true)
+  assert.equal(isForbidden('/agent', ['talent']), true)
+})
+
+// Signed-in behaviour: Supabase auth + REST stubbed at the fetch layer.
+async function signedInMiddleware(path: string, memberships: Array<{ role: string }> | 'error') {
+  const realFetch = globalThis.fetch
+  const json = (status: number, b: unknown) =>
+    new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } })
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+    if (url.pathname === '/auth/v1/user') {
+      return json(200, {
+        id: 'u1',
+        aud: 'authenticated',
+        role: 'authenticated',
+        email: 'u@mw.test',
+        app_metadata: {},
+        user_metadata: {},
+        created_at: new Date().toISOString(),
+      })
+    }
+    if (url.pathname === '/rest/v1/memberships') {
+      return memberships === 'error'
+        ? json(500, { code: 'XX000', message: 'boom', details: null, hint: null })
+        : json(200, memberships)
+    }
+    return json(404, { message: 'unexpected ' + url.pathname })
+  }) as typeof fetch
+  const session = {
+    access_token: 'a',
+    refresh_token: 'r',
+    token_type: 'bearer',
+    expires_in: 3600,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    user: { id: 'u1', aud: 'authenticated' },
+  }
+  const req = new NextRequest('http://localhost' + path, {
+    headers: { cookie: `sb-127-auth-token=${encodeURIComponent(JSON.stringify(session))}` },
+  })
+  const origError = console.error
+  console.error = () => {}
+  try {
+    return await middleware(req)
+  } finally {
+    globalThis.fetch = realFetch
+    console.error = origError
+  }
+}
+
+test('middleware: /upload redirects non-talent to /dashboard (307), not 403', async () => {
+  for (const [label, memberships] of [
+    ['agent', [{ role: 'agent' }]],
+    ['admin_agent', [{ role: 'admin_agent' }]],
+    ['owner', [{ role: 'owner' }]],
+    ['zero memberships', []],
+  ] as const) {
+    for (const path of ['/upload', '/upload/anything']) {
+      const res = await signedInMiddleware(path, [...memberships])
+      assert.equal(res.status, 307, `${label} ${path}`)
+      assert.equal(new URL(res.headers.get('location')!).pathname, '/dashboard', `${label} ${path}`)
+    }
+  }
+})
+
+test('middleware: /upload passes any user with a talent membership', async () => {
+  for (const memberships of [[{ role: 'talent' }], [{ role: 'agent' }, { role: 'talent' }]]) {
+    const res = await signedInMiddleware('/upload', memberships)
+    assert.equal(res.status, 200)
+    assert.equal(res.headers.get('location'), null)
+  }
+})
+
+test('middleware: /upload fails closed to /dashboard when the memberships query errors', async () => {
+  const res = await signedInMiddleware('/upload', 'error')
+  assert.equal(res.status, 307)
+  assert.equal(new URL(res.headers.get('location')!).pathname, '/dashboard')
+})
+
+test('middleware: /admin still returns 403 for a non-admin (gate untouched)', async () => {
+  const res = await signedInMiddleware('/admin', [{ role: 'talent' }])
+  assert.equal(res.status, 403)
 })

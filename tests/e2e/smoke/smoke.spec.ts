@@ -131,11 +131,21 @@ test.describe.serial('S4-LAUNCH-002 staging smoke', () => {
     expect(member).toHaveLength(1)
   })
 
-  test('3. upload a video', async ({ run }) => {
-    run.videoId = await new UploadPage(owner).uploadForTalent(
-      { name: TINY_MP4_NAME, mimeType: 'video/mp4', buffer: tinyMp4() },
-      `Smoke video ${run.runId}`
-    )
+  test('3. upload a video (as the invited talent: agents never upload)', async ({
+    run,
+    browser,
+  }) => {
+    const talentCtx = await browser.newContext()
+    try {
+      const talent = await talentCtx.newPage()
+      await new AuthPage(talent).signIn(run.talentEmail, run.password)
+      run.videoId = await new UploadPage(talent).uploadAsTalent(
+        { name: TINY_MP4_NAME, mimeType: 'video/mp4', buffer: tinyMp4() },
+        `Smoke video ${run.runId}`
+      )
+    } finally {
+      await talentCtx.close()
+    }
     const { data: version, error } = await run.admin
       .from('video_versions')
       .select('id')

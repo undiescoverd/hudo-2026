@@ -122,10 +122,13 @@ export async function POST(request: NextRequest) {
     admin,
     user.id,
     agencyId,
-    'You do not have permission to complete uploads'
+    'Only talent can complete uploads'
   )
   if (membership instanceof NextResponse) return membership
-
+  // Review-only for agents (S5-NAV-006): the caller's role in THIS agency must be talent.
+  if (membership.role !== 'talent') {
+    return NextResponse.json({ error: 'Only talent can complete uploads' }, { status: 403 })
+  }
   const { role } = membership
 
   // --- Verify video belongs to agency ---
@@ -141,7 +144,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Video not found in this agency' }, { status: 404 })
   }
 
-  if (role === 'talent' && video.talent_id !== user.id) {
+  if (video.talent_id !== user.id) {
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 

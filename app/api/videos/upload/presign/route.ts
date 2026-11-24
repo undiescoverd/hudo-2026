@@ -15,7 +15,6 @@ import {
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { checkRateLimit, requireUploadRole } from '@/lib/api-helpers'
 import { isGracePeriodExpired } from '@/lib/plan-gates'
-import { isValidUUID } from '@/lib/validation'
 
 /**
  * POST /api/videos/upload/presign
@@ -107,7 +106,9 @@ export async function POST(request: NextRequest) {
   )
   if (rl) return rl
 
-  // --- Membership check (agent+ or talent role required) ---
+  // --- Membership check: talent of THIS agency only ---
+  // Hudo is review-only for agents (S5-NAV-006). The role is the caller's role
+  // in agencyId (not their highest role elsewhere), and must be exactly talent.
 
   const admin = createAdminClient()
 
@@ -115,63 +116,22 @@ export async function POST(request: NextRequest) {
     admin,
     user.id,
     agencyId,
-    'You do not have permission to upload videos'
+    'Only talent can upload videos'
   )
   if (membership instanceof NextResponse) return membership
-
-  const { role } = membership
+  if (membership.role !== 'talent') {
+    return NextResponse.json({ error: 'Only talent can upload videos' }, { status: 403 })
+  }
 
   // --- Anti-impersonation: talent may only upload for themselves ---
+  // A body talentId is never used (talent_id is always the caller); a different
+  // one is rejected rather than silently ignored.
 
-  if (
-    role === 'talent' &&
-    typeof talentId === 'string' &&
-    talentId.trim() &&
-    talentId !== user.id
-  ) {
+  if (typeof talentId === 'string' && talentId.trim() && talentId !== user.id) {
     return NextResponse.json(
       { error: 'Talent can only upload videos for themselves' },
       { status: 403 }
     )
-  }
-
-  // --- Agent-supplied talentId must be a talent member of this agency ---
-  // Agents may assign a video to a talent, but the target must belong to
-  // agencyId with role 'talent' (blocks cross-agency / non-talent / unknown ids).
-
-  const agentTalentId =
-    role !== 'talent' && typeof talentId === 'string' && talentId.trim() ? talentId.trim() : null
-
-  if (agentTalentId) {
-    // Malformed ids would fail PostgREST's uuid cast with a 500; reject up front.
-    if (!isValidUUID(agentTalentId)) {
-      return NextResponse.json(
-        { error: 'Selected talent is not a member of this agency' },
-        { status: 400 }
-      )
-    }
-
-    const { data: talentMembership, error: talentMembershipError } = await admin
-      .from('memberships')
-      .select('user_id')
-      .eq('user_id', agentTalentId)
-      .eq('agency_id', agencyId)
-      .eq('role', 'talent')
-      .maybeSingle()
-
-    if (talentMembershipError) {
-      console.error(
-        '[upload/presign] Failed to verify talent membership:',
-        talentMembershipError.message
-      )
-      return NextResponse.json({ error: 'Failed to verify selected talent' }, { status: 500 })
-    }
-    if (!talentMembership) {
-      return NextResponse.json(
-        { error: 'Selected talent is not a member of this agency' },
-        { status: 400 }
-      )
-    }
   }
 
   // --- Quota + grace-period check (best-effort; authoritative check in complete route) ---
@@ -230,15 +190,11 @@ export async function POST(request: NextRequest) {
         ? title.trim()
         : fileName.replace(/\.[^.]+$/, '').slice(0, 255)
 
-    // Talent can never upload on behalf of someone else — always force
-    // resolvedTalentId to the caller, ignoring any body-supplied talentId.
-    const resolvedTalentId = role === 'talent' ? user.id : (agentTalentId ?? user.id)
-
     const { data: newVideo, error: videoError } = await admin
       .from('videos')
       .insert({
         agency_id: agencyId,
-        talent_id: resolvedTalentId,
+        talent_id: user.id,
         title: videoTitle,
         status: 'draft',
       })
@@ -264,7 +220,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Video not found in this agency' }, { status: 404 })
     }
 
-    if (role === 'talent' && existingVideo.talent_id !== user.id) {
+    if (existingVideo.talent_id !== user.id) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
   }

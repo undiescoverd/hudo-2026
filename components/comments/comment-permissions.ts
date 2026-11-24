@@ -1,5 +1,5 @@
 import { COMMENT_BODY_MAX_LENGTH, type Comment } from '@/lib/comments'
-import { isAgentClassRole } from '@/lib/talent-roster'
+import { isAgentPlusRole } from '@/lib/roles'
 
 /** Who is looking at the comment. Guests and not-yet-loaded viewers pass nothing. */
 export interface CommentViewer {
@@ -48,7 +48,7 @@ export function getCommentPermissions(comment: Comment, viewer: CommentViewer): 
   }
 
   const isAuthor = comment.userId === userId
-  const agentPlus = isAgentClassRole(role)
+  const agentPlus = isAgentPlusRole(role)
 
   return {
     canReply: comment.parentId === null,

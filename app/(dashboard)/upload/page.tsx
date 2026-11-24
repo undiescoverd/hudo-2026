@@ -10,7 +10,6 @@ import { createClient } from '@/lib/auth'
 import { MULTIPART_THRESHOLD_BYTES } from '@/lib/upload-validation'
 import { attachBeforeUnloadGuard, performUpload } from '@/lib/upload-client'
 import { parseTargetVideoId } from '@/lib/new-version-upload'
-import { fetchTalentRoster, isAgentClassRole, type TalentRosterEntry } from '@/lib/talent-roster'
 
 async function fetchMembership(): Promise<{ agencyId: string; role: string }> {
   const supabase = createClient()
@@ -23,10 +22,13 @@ async function fetchMembership(): Promise<{ agencyId: string; role: string }> {
     .from('memberships')
     .select('agency_id, role')
     .eq('user_id', user.id)
+    // Only talent upload (S5-NAV-006). A user can be an agent in one agency and talent in
+    // another; pick the talent membership, not whichever row comes first.
+    .eq('role', 'talent')
     .limit(1)
-    .single()
+    .maybeSingle()
 
-  if (!membership?.agency_id) throw new Error('No agency found for your account')
+  if (!membership?.agency_id) throw new Error('Only talent can upload videos')
   return { agencyId: membership.agency_id as string, role: membership.role as string }
 }
 
@@ -50,8 +52,6 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
   const [role, setRole] = useState('')
   const [ready, setReady] = useState(false)
   const [setupError, setSetupError] = useState<string | null>(null)
-  const [roster, setRoster] = useState<TalentRosterEntry[]>([])
-  const [talentId, setTalentId] = useState('')
   const [progress, setProgress] = useState(0)
   const [isMultipart, setIsMultipart] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -66,8 +66,6 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
   useEffect(() => {
     draftVideoIdRef.current = targetVideoId
   }, [targetVideoId])
-
-  const needsTalent = !targetVideoId && isAgentClassRole(role)
 
   const loadContext = useCallback(async () => {
     setSetupError(null)
@@ -90,8 +88,6 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
         }
         resolvedAgencyId = video.agency_id as string
         setTargetTitle((video.title as string | null) ?? null)
-      } else if (isAgentClassRole(membership.role)) {
-        setRoster(await fetchTalentRoster(createClient(), membership.agencyId))
       }
       setAgencyId(resolvedAgencyId)
       setRole(membership.role)
@@ -121,8 +117,6 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
           agencyId,
           onProgress: setProgress,
           videoId: draftVideoIdRef.current,
-          // Talent role: never send talentId (the server forces it to the caller).
-          talentId: needsTalent ? talentId : undefined,
           onVideoId: (id) => {
             draftVideoIdRef.current = id
           },
@@ -139,12 +133,12 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
         setUploading(false)
       }
     },
-    [agencyId, needsTalent, talentId, targetVideoId, router]
+    [agencyId, targetVideoId, router]
   )
 
   const handleFileSelected = useCallback(
     async (f: File) => {
-      if (!ready || (needsTalent && !talentId)) return
+      if (!ready) return
       setFile(f)
       setIsMultipart(f.size > MULTIPART_THRESHOLD_BYTES)
       setError(null)
@@ -153,7 +147,7 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
       draftVideoIdRef.current = targetVideoId
       await runUpload(f)
     },
-    [ready, needsTalent, talentId, runUpload, targetVideoId]
+    [ready, runUpload, targetVideoId]
   )
 
   const handleRetry = useCallback(async () => {
@@ -161,8 +155,7 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
     await runUpload(file)
   }, [file, runUpload])
 
-  const noTalent = ready && needsTalent && roster.length === 0
-  const zoneDisabled = uploading || !ready || (needsTalent && !talentId)
+  const zoneDisabled = uploading || !ready
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
@@ -194,40 +187,9 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
 
       {!file ? (
         <div className="space-y-4">
-          {ready && needsTalent && (
-            <div>
-              {noTalent ? (
-                <p className="text-sm text-gray-700">
-                  Invite a talent to this agency before uploading
-                </p>
-              ) : (
-                <>
-                  <label
-                    htmlFor="upload-talent"
-                    className="mb-1.5 block text-[12.5px] font-medium text-gray-600"
-                  >
-                    Talent
-                  </label>
-                  <select
-                    id="upload-talent"
-                    value={talentId}
-                    onChange={(e) => setTalentId(e.target.value)}
-                    className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
-                  >
-                    <option value="">Select a talent…</option>
-                    {roster.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.fullName} ({t.email})
-                      </option>
-                    ))}
-                  </select>
-                </>
-              )}
-            </div>
-          )}
           <UploadZone
             onFileSelected={handleFileSelected}
-            disabled={zoneDisabled || noTalent}
+            disabled={zoneDisabled}
             isNewVersion={Boolean(targetVideoId)}
           />
         </div>
