@@ -44,34 +44,38 @@ jobs:
       # Pushes markdown status to Linear, creates missing issues (max 10), then re-checks.
       # Exits 1 if anything is still out of sync (or Linear is unreachable), failing the job.
       # Outputs git_drift: tasks merged to main but not marked done in markdown. The fix
-      # cannot commit that, so Linear is corrected and the IDs are surfaced to Slack.
+      # cannot commit that, so Linear is corrected and the IDs are surfaced to Zulip.
       - name: Run sync-fix
         id: fix
         if: steps.check.outcome == 'failure'
         run: node orchestrate.js sync-fix --ci
 
-      - name: Notify Slack (drift auto-fixed)
-        if: steps.check.outcome == 'failure' && steps.fix.outcome == 'success' && vars.SLACK_WEBHOOK_URL != ''
+      - name: Notify Zulip (drift auto-fixed)
+        if: steps.check.outcome == 'failure' && steps.fix.outcome == 'success'
+        continue-on-error: true
         env:
-          SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
+          ZULIP_SITE: ${{ secrets.ZULIP_SITE }}
+          ZULIP_BOT_EMAIL: ${{ secrets.ZULIP_BOT_EMAIL }}
+          ZULIP_BOT_API_KEY: ${{ secrets.ZULIP_BOT_API_KEY }}
           GIT_DRIFT: ${{ steps.fix.outputs.git_drift }}
         run: |
           if [ -n "$GIT_DRIFT" ]; then
-            TEXT="Linear was corrected, but these tasks are merged to main and not marked done in markdown: $GIT_DRIFT. Mark done in tasks/sprint-N.md on main (node orchestrate.js done <ID>)."
+            TEXT="⚠️ Linear was corrected, but these tasks are merged to main and not marked done in markdown: $GIT_DRIFT. Mark done in \`tasks/sprint-N.md\` on main (\`node orchestrate.js done <ID>\`)."
           else
-            TEXT="Linear sync drift detected and auto-fixed."
+            TEXT="🔧 Linear sync drift detected and auto-fixed."
           fi
-          jq -n --arg text "$TEXT" '{text: $text}' | curl -sS -X POST "$SLACK_WEBHOOK_URL" \
-            -H 'Content-type: application/json' --data @-
+          sh scripts/zulip-notify.sh "Linear sync" "$TEXT"
 
-      - name: Notify Slack (sync FAILED)
-        if: failure() && vars.SLACK_WEBHOOK_URL != ''
+      - name: Notify Zulip (sync FAILED)
+        if: failure()
+        continue-on-error: true
         env:
-          SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
+          ZULIP_SITE: ${{ secrets.ZULIP_SITE }}
+          ZULIP_BOT_EMAIL: ${{ secrets.ZULIP_BOT_EMAIL }}
+          ZULIP_BOT_API_KEY: ${{ secrets.ZULIP_BOT_API_KEY }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          jq -n --arg text "Linear sync FAILED: tasks are still drifted, missing or unreachable after sync-fix. $RUN_URL" '{text: $text}' \
-            | curl -sS -X POST "$SLACK_WEBHOOK_URL" -H 'Content-type: application/json' --data @-
+          sh scripts/zulip-notify.sh "Linear sync" "❌ **Linear sync FAILED:** tasks are still drifted, missing or unreachable after sync-fix. [view run]($RUN_URL)"
 
       - name: Cleanup
         if: always()

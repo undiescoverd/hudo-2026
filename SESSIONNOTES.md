@@ -1031,3 +1031,11 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Outcome:** done (PR open)
 - **Notes:** New `lib/landing.ts` (HOME_PATH, dashboardViewFor, videosListRedirectFor; unknown role → talent view). `/`, the sign-in fallback (`safeRedirect` default) and `/talent` now go to `/dashboard`, which renders the agent or talent view by role. Talent opening exactly `/videos` go to `/dashboard`; `/videos/[id]` unchanged. The redirect lives in the `/videos` page, not middleware. Code review found a zero-membership user would get a 403 on an old `/talent` bookmark, so the middleware `/talent` gate is removed (the page holds no data now). Walked live on hudo-dev as talent and owner.
 - **Gotcha (if any):** running `pnpm build` while `pnpm dev` is up overwrites `.next` and the dev server then 500s with "Cannot read properties of undefined (reading 'call')" in webpack-runtime; restart dev with a clean `.next`. Also, `redirect()` in a `(dashboard)` page returns 200 with a streamed redirect (the group has `loading.tsx`), not a 307, so check the body, not the status.
+
+## 2026-11-25 — Notifications moved from Slack to Zulip
+
+- **Task:** chore — replace every Slack webhook sender with Zulip (first of many projects feeding one Zulip org)
+- **Models:** planner=opus, executor=sonnet (main session); security review=hudo-security-reviewer
+- **Outcome:** done (PR open); the old SLACK_WEBHOOK_URL secret is removed only after the first bot message arrives in Zulip
+- **Notes:** New `scripts/zulip-notify.sh` plus `zulip-notify.yml` (renamed from `slack-notify.yml`); `ci.yml`, `playwright.yml`, `linear-sync-check.yml` call it. Zulip side set up through the REST API from `~/.zuliprc` (channel `hudo`, send-only "Hudo Notifier" bot); the bot key went straight into `gh secret set` and was never printed. Each PR gets its own topic (`PR #N`); CI/E2E post failures always, passes only on main. Runbook: `docs/ops/zulip-notifications.md`.
+- **Gotcha (if any):** the old Linear-sync Slack alerts never fired: they read `vars.SLACK_WEBHOOK_URL`, which was never set. Also, pasting `[api]` into zsh fails with "no matches found"; edit config files with `open -e`.

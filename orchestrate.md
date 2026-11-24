@@ -213,7 +213,7 @@ Repairs everything `sync-check` reports, then re-checks Linear:
 - **MISSING**: creates (at most 10 per run; more are refused and listed unless `--create-all` is passed, and `--ci` then fails) the Linear issue in team `Resolvelabs`, titled `<TASK_ID> — <TITLE>`, with a short description (source `tasks/sprint-N.md`, created by sync-fix) and the state mapped from the markdown status (`not_started` becomes Backlog). The project is the one most used by existing issues with the same `S<N>-` prefix; if none has a project the issue is created without one and the output says so. Each created identifier is printed.
 - **Merged into a release ref but not done**: the task is flipped to `done` in markdown, then Linear is set to Done.
 
-`issueCreate` is never retried after a 5xx, timeout or network error (the outcome is unknown, and a retry could duplicate); only 429 is retried. The re-check, or the next run, reconciles by title. A task with merge evidence is never pushed back from Done. In CI the markdown flip is not committed, so the daily job keeps Linear correct and posts the merged-but-not-done task IDs to Slack for a human to mark done on `main`. The workflow runs under a `linear-sync` concurrency group so two runs cannot overlap.
+`issueCreate` is never retried after a 5xx, timeout or network error (the outcome is unknown, and a retry could duplicate); only 429 is retried. The re-check, or the next run, reconciles by title. A task with merge evidence is never pushed back from Done. In CI the markdown flip is not committed, so the daily job keeps Linear correct and posts the merged-but-not-done task IDs to Zulip for a human to mark done on `main`. The workflow runs under a `linear-sync` concurrency group so two runs cannot overlap.
 
 Updates go straight to the issue by id (`issueUpdate`), so no per-task search is needed. Idempotent: safe to run repeatedly.
 
@@ -237,7 +237,7 @@ Linear sync is automated at multiple levels to prevent drift:
 | Push to `feat/s*-*` branch | GitHub Actions marks Linear → In Progress (only from Backlog/Todo). The task ID is found case-insensitively anywhere in the branch name (`feat/s5-S5-FLOW-003-x` → `S5-FLOW-003`) |
 | PR opened | GitHub Actions marks Linear → In Review + patches PR description |
 | PR merged | GitHub Actions marks Linear → Done |
-| Daily cron (08:00 UTC) | `linear-sync-check.yml` runs `sync-check --ci`, then `sync-fix --ci` if it failed. The job fails (and Slack says so) if anything is still drifted, missing or unreachable afterwards |
+| Daily cron (08:00 UTC) | `linear-sync-check.yml` runs `sync-check --ci`, then `sync-fix --ci` if it failed. The job fails (and Zulip says so) if anything is still drifted, missing or unreachable afterwards |
 | Manual check | `node orchestrate.js sync-check` / `sync-fix` |
 
 If `syncLinear()` fails, the warning message directs you to run `sync-fix` to repair.
@@ -343,7 +343,7 @@ node orchestrate.js gate sprint-0
 | `tasks/sprint-N.md` | Future sprint task lists (added as sprints are planned) |
 | `scripts/update-linear-task.sh` | Local helper — update or query (`--status`) Linear task status from the CLI |
 | `.github/workflows/linear-update.yml` | GitHub Actions — marks In Progress on push, In Review on PR open (patches PR description), Done on merge |
-| `.github/workflows/linear-sync-check.yml` | Daily cron — `sync-check --ci` / `sync-fix --ci`, fails loudly if drift remains, notifies Slack |
+| `.github/workflows/linear-sync-check.yml` | Daily cron — `sync-check --ci` / `sync-fix --ci`, fails loudly if drift remains, notifies Zulip |
 
 The audit log is created automatically on first use. Do not delete it — it provides a record of who started and completed what.
 
