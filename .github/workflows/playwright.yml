@@ -61,27 +61,27 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
-  notify-slack:
-    name: Slack notification
+  notify-zulip:
+    name: Zulip notification
     runs-on: ubuntu-24.04 # Playwright has no chromium build for ubuntu-latest (26.04) yet
     needs: e2e
-    if: always()
-    env:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    # Failures always post; passes only for main.
+    if: always() && needs.e2e.result != 'skipped' && (needs.e2e.result != 'success' || github.ref == 'refs/heads/main')
     steps:
-      - name: Post pass/fail to Slack
-        if: env.SLACK_WEBHOOK_URL != ''
+      - uses: actions/checkout@v4
+
+      - name: Post E2E result to Zulip
+        continue-on-error: true
         env:
+          ZULIP_SITE: ${{ secrets.ZULIP_SITE }}
+          ZULIP_BOT_EMAIL: ${{ secrets.ZULIP_BOT_EMAIL }}
+          ZULIP_BOT_API_KEY: ${{ secrets.ZULIP_BOT_API_KEY }}
           JOB_STATUS: ${{ needs.e2e.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          python3 -c "
-          import os, json, urllib.request
-          status = os.environ['JOB_STATUS']
-          icon = ':white_check_mark:' if status == 'success' else ':x:'
-          payload = json.dumps({
-              'text': f'{icon} *Playwright E2E:* {status} — <{os.environ[\"RUN_URL\"]}|View run>'
-          }).encode()
-          req = urllib.request.Request(os.environ['SLACK_WEBHOOK_URL'], data=payload, headers={'Content-Type': 'application/json'})
-          urllib.request.urlopen(req)
-          "
+          case "$JOB_STATUS" in
+            success) ICON="✅" ;;
+            failure) ICON="❌" ;;
+            *) ICON="⚠️" ;;
+          esac
+          sh scripts/zulip-notify.sh "E2E" "$ICON **Playwright E2E:** $JOB_STATUS — [view run]($RUN_URL)"
