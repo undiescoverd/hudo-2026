@@ -45,9 +45,9 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 | F4 | Agency owner sign-up | Flow 05, steps 01–08, 14–16 | Partial | — | Partial (wrong flow wired) | Not checked |
 | F5 | Invite and onboard an agent | Flow 03, sender and accept steps | Mapped | — | Partial | Not checked |
 | F6 | Invite and onboard a talent | Flow 03, invitee and accept steps; Flow 08, T2 → T3 | Drawn | #254 | Partial (accept works for an existing talent; the talent must sign in again after accepting, #254) | Not checked |
-| F7 | First-run onboarding | Flow 03, steps 12–13; Flow 05, steps 15–16; Flow 08, T3 (talent) | Partial | #252, #254, #255 (owner checklist drops its upload step) | Partial | Not checked |
+| F7 | First-run onboarding | Flow 03, steps 12–13; Flow 05, steps 15–16; Flow 08, T3 (talent) | Partial | #252, #254, #255 | Partial (owner checklist is now invite agent + invite talent, S5-NAV-006) | Not checked |
 | F8 | Role dashboards | Flow 01 (dashboards, Needs you strip); Flow 06, step 06; Flow 08, T3 and T6 (talent Dashboard) | Partial | #250, #251, #252 | Partial (every role lands on /dashboard and /talent redirects there, S5-NAV-001; talent overview #252 and header #251 pending) | Not checked |
-| F9 | Talent uploads media | Flow 01, steps 01–04; Flow 06, steps 01–04, 11–12; Flow 08, T4, T4b, T5 | Drawn | #149, #150, #151, #164, #253, #255, #256 | Partial (S5-FLOW-007: part retries, abort on give-up, tab-close warning) | Not checked |
+| F9 | Talent uploads media | Flow 01, steps 01–04; Flow 06, steps 01–04, 11–12; Flow 08, T4, T4b, T5 | Drawn | #149, #150, #151, #164, #253, #255, #256 | Partial (S5-FLOW-007: part retries, abort on give-up, tab-close warning; S5-NAV-006: talent only, server-side per agency, /upload redirects agents to /dashboard) | Not checked |
 | F10 | Needs attention list: seen-by now, owner later | Flow 01 "Needs attention" strip (renamed in Paper 2026-10-22) | Decided | #176 (spec, not yet confirmed ready) | No | Not checked |
 | F11 | Agent reviews with voice feedback | Flow 01, steps 05–07 (typed comments only) | Conflict | #169 | Partial (typed comments work; no voice recording code found) | Not checked |
 | F12 | Complete review and export edit list | Flow 01, steps 09–11; Flow 06, steps 09–10 | Conflict | #159, #160, #161 | Partial (PDF is HTML, no export) | Not checked |

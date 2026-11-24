@@ -126,22 +126,24 @@ export async function POST(request: NextRequest) {
     admin,
     user.id,
     agencyId,
-    'Only agents and above can request upload URLs'
+    'Only talent can request upload URLs'
   )
   if (membership instanceof NextResponse) return membership
+  // Review-only for agents (S5-NAV-006): the caller's role in THIS agency must be talent.
+  if (membership.role !== 'talent') {
+    return NextResponse.json({ error: 'Only talent can request upload URLs' }, { status: 403 })
+  }
 
   // Talent may only request part URLs for their own video, and only within
-  // the agency encoded in the R2 key. Agent+ callers are unrestricted (as before).
-  if (membership.role === 'talent') {
-    const { data: video, error: videoError } = await admin
-      .from('videos')
-      .select('id, agency_id, talent_id')
-      .eq('id', keyVideoId)
-      .single()
+  // the agency encoded in the R2 key.
+  const { data: video, error: videoError } = await admin
+    .from('videos')
+    .select('id, agency_id, talent_id')
+    .eq('id', keyVideoId)
+    .single()
 
-    if (videoError || !video || video.talent_id !== user.id || video.agency_id !== agencyId) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+  if (videoError || !video || video.talent_id !== user.id || video.agency_id !== agencyId) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
   // --- Generate presigned URLs for each part ---

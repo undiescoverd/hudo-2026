@@ -16,16 +16,18 @@ const SB = 'https://sb.upload-complete.test'
 const REDIS = 'https://redis.upload-complete.test'
 const AGENCY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const USER = '11111111-1111-4111-8111-111111111111'
+const OTHER_AGENCY = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const AGENT = '44444444-4444-4444-8444-444444444444'
 const VIDEO = '22222222-2222-4222-8222-222222222222'
 const NEW_VERSION = '55555555-5555-4555-8555-555555555555'
-const R2_KEY = `${AGENCY}/${VIDEO}/upload.mp4`
 const realFetch = globalThis.fetch
 
 type Call = { method: string; url: URL; body: unknown }
 
 let calls: Call[] = []
 let role = 'talent'
+// Per-agency roles; any agency not listed means the caller is not a member there.
+let roleByAgency: Record<string, string> | null = null
 // Status when the route first loads the video vs. when it re-reads it before the flip.
 let initialStatus = 'approved'
 let freshStatus = 'approved'
@@ -92,6 +94,10 @@ function installFetch() {
           { user_id: AGENT, role: 'agent' },
           { user_id: '66666666-6666-4666-8666-666666666666', role: 'talent' },
         ])
+      const wanted = url.searchParams.get('agency_id')?.replace(/^eq\./, '')
+      if (roleByAgency && wanted) {
+        return rows(roleByAgency[wanted] ? [{ role: roleByAgency[wanted] }] : [])
+      }
       return rows([{ role }])
     }
     if (url.pathname === '/rest/v1/videos' && method === 'GET') {
@@ -100,7 +106,12 @@ function installFetch() {
       return rows([
         isFreshRead
           ? { status: revertSeen ? 'in_review' : freshStatus }
-          : { id: VIDEO, agency_id: AGENCY, talent_id: talentOwnerId, status: initialStatus },
+          : {
+              id: VIDEO,
+              agency_id: url.searchParams.get('agency_id')?.replace(/^eq\./, '') ?? AGENCY,
+              talent_id: talentOwnerId,
+              status: initialStatus,
+            },
       ])
     }
     if (url.pathname === '/rest/v1/videos' && method === 'PATCH') {
@@ -137,13 +148,18 @@ const videoUpdates = () =>
 const notificationInserts = () =>
   calls.filter((c) => c.url.pathname === '/rest/v1/notifications' && c.method === 'POST')
 
-async function complete() {
+async function complete(agencyId: string = AGENCY) {
   calls = []
   installFetch()
   const req = new Request('http://localhost:3000/api/videos/upload/complete', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ videoId: VIDEO, agencyId: AGENCY, r2Key: R2_KEY, fileSizeBytes: 1000 }),
+    body: JSON.stringify({
+      videoId: VIDEO,
+      agencyId,
+      r2Key: `${agencyId}/${VIDEO}/upload.mp4`,
+      fileSizeBytes: 1000,
+    }),
   }) as unknown as NextRequest
   return runInScope(() => POST(req))
 }
@@ -196,6 +212,7 @@ before(async () => {
 afterEach(() => {
   globalThis.fetch = realFetch
   role = 'talent'
+  roleByAgency = null
   initialStatus = 'approved'
   freshStatus = 'approved'
   talentOwnerId = USER
@@ -273,16 +290,33 @@ describe('upload complete — talent new version on Approved (S5-FLOW-003)', () 
   }
 
   for (const r of ['agent', 'admin_agent', 'owner']) {
-    it(`${r} upload on an approved video never changes status`, async () => {
+    it(`${r} cannot complete an upload (S5-NAV-006): 403, no side effects`, async () => {
       role = r
       const res = await complete()
-      assert.equal(res.status, 200)
-      assert.equal(((await res.json()) as { status: string }).status, 'approved')
+      assert.equal(res.status, 403)
+      assert.match(((await res.json()) as { error: string }).error, /Only talent/)
+      assert.equal(calls.filter((c) => c.url.pathname.startsWith('/rest/v1/rpc/')).length, 0)
       assert.equal(videoUpdates().length, 0)
       assert.equal(flipAudits().length, 0)
       assert.equal(notificationInserts().length, 0)
     })
   }
+
+  it('a non-member of the agency is rejected', async () => {
+    roleByAgency = {}
+    const res = await complete()
+    assert.equal(res.status, 403)
+  })
+
+  it('mixed roles: agent at A is rejected for A, but the same user as talent at B is allowed for B', async () => {
+    roleByAgency = { [AGENCY]: 'agent', [OTHER_AGENCY]: 'talent' }
+    const denied = await complete(AGENCY)
+    assert.equal(denied.status, 403)
+    assert.equal(calls.filter((c) => c.url.pathname.startsWith('/rest/v1/rpc/')).length, 0)
+
+    const allowed = await complete(OTHER_AGENCY)
+    assert.equal(allowed.status, 200)
+  })
 
   it('lost race (conditional update matches 0 rows): no flip audit, no notification, still 200', async () => {
     raceLost = true

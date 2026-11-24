@@ -7,13 +7,13 @@ const FUTURE = new Date(Date.now() + 86_400_000).toISOString()
 const PAST = new Date(Date.now() - 86_400_000).toISOString()
 
 describe('deriveChecklist', () => {
-  const base = { members: [], invitations: [], hasVideoVersion: false }
+  const base = { members: [], invitations: [] }
 
   it('nothing done for an empty agency', () => {
     const r = deriveChecklist(base)
     assert.deepEqual(
       r.items.map((i) => i.done),
-      [false, false, false]
+      [false, false]
     )
     assert.equal(r.allDone, false)
   })
@@ -61,13 +61,20 @@ describe('deriveChecklist', () => {
     assert.equal(r.items[1].done, true)
   })
 
-  it('video version completes upload; allDone when all three', () => {
+  it('has exactly the invite-agent and invite-talent steps (no upload step)', () => {
+    const r = deriveChecklist(base)
+    assert.deepEqual(
+      r.items.map((i) => i.key),
+      ['invite-agent', 'invite-talent']
+    )
+    assert.ok(!r.items.some((i) => /upload/i.test(i.label) || i.href === '/upload'))
+  })
+
+  it('allDone once an agent and a talent are in', () => {
     const r = deriveChecklist({
       members: [{ role: 'agent' }, { role: 'talent' }],
       invitations: [],
-      hasVideoVersion: true,
     })
-    assert.equal(r.items[2].done, true)
     assert.equal(r.allDone, true)
   })
 
@@ -75,7 +82,7 @@ describe('deriveChecklist', () => {
     const r = deriveChecklist(base)
     assert.deepEqual(
       r.items.map((i) => i.href),
-      ['/settings/team', '/settings/team', '/upload']
+      ['/settings/team', '/settings/team']
     )
   })
 })
@@ -128,7 +135,6 @@ describe('getOnboardingChecklist', () => {
     const s = stub({
       memberships: ok([{ agency_id: 'a1', user_id: 'u1', role: 'owner' }]),
       invitations: ok([]),
-      video_versions: ok([]),
     })
     const r = await getOnboardingChecklist({ supabase: s, userId: 'u1' })
     assert.ok(r)
@@ -143,16 +149,15 @@ describe('getOnboardingChecklist', () => {
         { agency_id: 'a1', user_id: 'u2', role: 'agent' },
       ]),
       invitations: ok([]),
-      video_versions: ok([]),
     })
     const r = await getOnboardingChecklist({ supabase: s, userId: 'u1' })
     assert.deepEqual(
       r?.items.map((i) => i.done),
-      [true, false, false]
+      [true, false]
     )
   })
 
-  it('returns null (hidden) when all three are done', async () => {
+  it('returns null (hidden) when both steps are done', async () => {
     const s = stub({
       memberships: ok([
         { agency_id: 'a1', user_id: 'u1', role: 'owner' },
@@ -160,12 +165,11 @@ describe('getOnboardingChecklist', () => {
         { agency_id: 'a1', user_id: 'u3', role: 'talent' },
       ]),
       invitations: ok([]),
-      video_versions: ok([{ id: 'v1' }]),
     })
     assert.equal(await getOnboardingChecklist({ supabase: s, userId: 'u1' }), null)
   })
 
-  const twoAgencies = (videos: Record<string, boolean>, aAgentInvited: boolean) =>
+  const twoAgencies = (aAgentInvited: boolean) =>
     stub({
       agencies: ok([
         { id: 'a1', name: 'Alpha' },
@@ -179,12 +183,11 @@ describe('getOnboardingChecklist', () => {
         ...(aAgentInvited ? [{ agency_id: 'a2', user_id: 'u4', role: 'agent' }] : []),
       ]),
       invitations: ok([]),
-      video_versions: (id) => ok(id && videos[id] ? [{ id: 'v' }] : []),
     })
 
   it('two agencies: A complete, B new shows B with its name', async () => {
     const r = await getOnboardingChecklist({
-      supabase: twoAgencies({ a1: true }, false),
+      supabase: twoAgencies(false),
       userId: 'u1',
     })
     assert.equal(r?.agencyId, 'a2')
@@ -204,7 +207,6 @@ describe('getOnboardingChecklist', () => {
         { agency_id: 'a2', user_id: 'u3', role: 'talent' },
       ]),
       invitations: ok([]),
-      video_versions: (id) => ok(id === 'a2' ? [{ id: 'v' }] : []),
     })
     const r = await getOnboardingChecklist({ supabase: s, userId: 'u1' })
     assert.equal(r?.agencyId, 'a1')
@@ -223,7 +225,6 @@ describe('getOnboardingChecklist', () => {
         { agency_id: 'a2', user_id: 'u3', role: 'talent' },
       ]),
       invitations: ok([]),
-      video_versions: ok([{ id: 'v' }]),
     })
     assert.equal(await getOnboardingChecklist({ supabase: s, userId: 'u1' }), null)
   })
@@ -237,12 +238,11 @@ describe('getOnboardingChecklist', () => {
     assert.equal(r?.agencyName, null)
   })
 
-  for (const failing of ['agencies', 'memberships', 'invitations', 'video_versions']) {
+  for (const failing of ['agencies', 'memberships', 'invitations']) {
     it(`fails closed (hidden, logged) when the ${failing} query errors`, async () => {
       const map: Record<string, Entry> = {
         memberships: ok([{ agency_id: 'a1', user_id: 'u1', role: 'owner' }]),
         invitations: ok([]),
-        video_versions: ok([]),
       }
       map[failing] = { data: null, error: { message: 'boom' } }
       const logged: unknown[][] = []

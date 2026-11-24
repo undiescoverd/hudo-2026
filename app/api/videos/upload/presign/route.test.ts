@@ -101,112 +101,6 @@ describe('presign route — access control invariants', () => {
     const status = membership === null ? 403 : 200
     assert.equal(status, 403)
   })
-
-  it('allows agent+ roles', () => {
-    const agentPlusRoles = ['owner', 'admin_agent', 'agent']
-    assert.ok(agentPlusRoles.includes('owner'))
-    assert.ok(agentPlusRoles.includes('admin_agent'))
-    assert.ok(agentPlusRoles.includes('agent'))
-  })
-})
-
-describe('presign route — talent self-upload (S4-UPLOAD-001)', () => {
-  it('UPLOAD_ROLES (real import) includes talent and all agent+ roles', async () => {
-    const { UPLOAD_ROLES } = await import('../../../../../lib/api-helpers')
-    assert.deepEqual([...UPLOAD_ROLES].sort(), ['admin_agent', 'agent', 'owner', 'talent'].sort())
-  })
-
-  // Replicates the resolvedTalentId decision in route.ts: talent always gets
-  // forced to themselves; agent+ may set an arbitrary talentId (or default to self).
-  function resolveTalentId(role: string, bodyTalentId: string | undefined, userId: string) {
-    if (role === 'talent') return userId
-    return bodyTalentId && bodyTalentId.trim() ? bodyTalentId : userId
-  }
-
-  it('forces resolvedTalentId to the caller for talent, ignoring body talentId', () => {
-    assert.equal(resolveTalentId('talent', 'someone-else', 'user-1'), 'user-1')
-    assert.equal(resolveTalentId('talent', undefined, 'user-1'), 'user-1')
-  })
-
-  it('agent+ may set an arbitrary talentId in the body', () => {
-    assert.equal(resolveTalentId('agent', 'talent-abc', 'user-1'), 'talent-abc')
-    assert.equal(resolveTalentId('agent', undefined, 'user-1'), 'user-1')
-  })
-
-  // Replicates the anti-impersonation guard: talent + foreign talentId in body → 403.
-  function talentImpersonationBlocked(
-    role: string,
-    bodyTalentId: string | undefined,
-    userId: string
-  ): boolean {
-    return (
-      role === 'talent' && !!bodyTalentId && bodyTalentId.trim() !== '' && bodyTalentId !== userId
-    )
-  }
-
-  it('blocks talent supplying a foreign talentId in the body', () => {
-    assert.equal(talentImpersonationBlocked('talent', 'other-user', 'user-1'), true)
-  })
-
-  it('allows talent supplying their own talentId (no-op) or omitting it', () => {
-    assert.equal(talentImpersonationBlocked('talent', 'user-1', 'user-1'), false)
-    assert.equal(talentImpersonationBlocked('talent', undefined, 'user-1'), false)
-  })
-
-  it('never blocks agent+ regardless of talentId', () => {
-    assert.equal(talentImpersonationBlocked('agent', 'anyone', 'user-1'), false)
-  })
-
-  // Replicates the existing-video ownership guard for a videoId re-upload path.
-  function talentOwnershipBlocked(role: string, videoTalentId: string, userId: string): boolean {
-    return role === 'talent' && videoTalentId !== userId
-  }
-
-  it('blocks talent from re-uploading to a videoId they do not own', () => {
-    assert.equal(talentOwnershipBlocked('talent', 'other-user', 'user-1'), true)
-  })
-
-  it('allows talent to re-upload to their own videoId', () => {
-    assert.equal(talentOwnershipBlocked('talent', 'user-1', 'user-1'), false)
-  })
-
-  it('never blocks agent+ from re-uploading to any videoId in the agency', () => {
-    assert.equal(talentOwnershipBlocked('agent', 'someone-else', 'user-1'), false)
-  })
-})
-
-describe('presign route — source invariants (talent self-upload)', () => {
-  let source: string
-
-  before(async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.resolve(import.meta.dirname ?? __dirname, 'route.ts')
-    source = fs.readFileSync(routePath, 'utf8')
-  })
-
-  it('uses requireUploadRole, not requireAgentRole', () => {
-    assert.match(source, /requireUploadRole/)
-    assert.doesNotMatch(source, /requireAgentRole/)
-  })
-
-  it('captures the resolved role from the membership check', () => {
-    assert.match(source, /const \{ role \} = membership/)
-  })
-
-  it('rejects talent supplying a foreign talentId with a clear error message', () => {
-    assert.match(source, /Talent can only upload videos for themselves/)
-  })
-
-  it('the existing-video verification query also selects talent_id', () => {
-    const selectMatch = source.match(/\.from\('videos'\)\s*\.select\('id, agency_id, talent_id'\)/)
-    assert.ok(selectMatch, 'existing-video select must include talent_id')
-  })
-
-  it('returns 403 Access denied for a talent re-uploading to a video they do not own', () => {
-    assert.match(source, /existingVideo\.talent_id !== user\.id/)
-    assert.match(source, /Access denied/)
-  })
 })
 
 describe('presign route — source code invariants', () => {
@@ -229,70 +123,12 @@ describe('presign route — source code invariants', () => {
   })
 })
 
-describe('presign route — agent-supplied talentId membership check', () => {
-  let source: string
-
-  before(async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    source = fs.readFileSync(path.resolve(import.meta.dirname ?? __dirname, 'route.ts'), 'utf8')
-  })
-
-  it('queries memberships for user_id = talentId, agency_id = agencyId, role = talent', () => {
-    assert.match(
-      source,
-      /\.from\('memberships'\)\s*\.select\('user_id'\)\s*\.eq\('user_id', agentTalentId\)\s*\.eq\('agency_id', agencyId\)\s*\.eq\('role', 'talent'\)/
-    )
-  })
-
-  it('only applies to non-talent callers that supplied a non-empty talentId', () => {
-    assert.match(
-      source,
-      /role !== 'talent' && typeof talentId === 'string' && talentId\.trim\(\) \? talentId\.trim\(\) : null/
-    )
-    assert.match(source, /if \(agentTalentId\) \{/)
-  })
-
-  it('returns 400 for a non-member / non-talent target', () => {
-    assert.match(
-      source,
-      /if \(!talentMembership\) \{\s*return NextResponse\.json\(\s*\{ error: 'Selected talent is not a member of this agency' \},\s*\{ status: 400 \}/
-    )
-  })
-
-  it('logs and returns 500 when the membership query errors (checked before the 400)', () => {
-    const errIdx = source.indexOf('if (talentMembershipError)')
-    const missIdx = source.indexOf('if (!talentMembership)')
-    assert.ok(errIdx > -1 && missIdx > errIdx)
-    assert.match(source, /Failed to verify talent membership:/)
-    assert.match(source, /Failed to verify selected talent' \}, \{ status: 500 \}/)
-  })
-
-  it('runs before the videos insert (no partial writes)', () => {
-    const checkIdx = source.indexOf(".eq('role', 'talent')")
-    const insertIdx = source.indexOf(".from('videos')\n      .insert")
-    assert.ok(checkIdx > -1 && insertIdx > checkIdx)
-  })
-
-  it('talent callers are still forced to their own id; absent talentId defaults to caller', () => {
-    assert.match(
-      source,
-      /const resolvedTalentId = role === 'talent' \? user\.id : \(agentTalentId \?\? user\.id\)/
-    )
-  })
-
-  it('does not alter the existing-video path (it never writes talent_id)', () => {
-    const retry = source.slice(source.indexOf('// Verify video exists'))
-    assert.doesNotMatch(retry.split('// --- Generate presigned')[0], /talent_id:/)
-  })
-})
-
 // ---------------------------------------------------------------------------
 // Handler behaviour — real POST, with Supabase REST/Auth + Upstash stubbed at the
 // fetch layer and the Next request scope (cookies()) supplied via AsyncLocalStorage.
 // ---------------------------------------------------------------------------
 
-describe('presign route — talentId membership gate (real POST handler)', () => {
+describe('presign route — talent-only upload (real POST handler, S5-NAV-006)', () => {
   const SB = 'https://sb.presign.test'
   const REDIS = 'https://redis.presign.test'
   const AGENCY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -421,7 +257,6 @@ describe('presign route — talentId membership gate (real POST handler)', () =>
     installFetch()
   }
 
-  const agentRow: Row = { user_id: AGENT, agency_id: AGENCY, role: 'agent' }
   const talentRow: Row = { user_id: TALENT, agency_id: AGENCY, role: 'talent' }
 
   function call(overrides: Record<string, unknown> = {}) {
@@ -441,72 +276,84 @@ describe('presign route — talentId membership gate (real POST handler)', () =>
 
   const videoInserts = () =>
     calls.filter((c) => c.url.pathname === '/rest/v1/videos' && c.method === 'POST')
-  const talentLookups = () =>
-    calls.filter((c) => c.url.pathname === '/rest/v1/memberships' && c.url.searchParams.get('role'))
 
-  it('agent + non-member talentId -> 400, no videos insert', async () => {
-    setup([agentRow])
+  const OWN = { user_id: AGENT, agency_id: AGENCY } // the signed-in user's id is AGENT in this harness
+
+  for (const r of ['owner', 'admin_agent', 'agent']) {
+    it(`${r} of the agency -> 403 JSON error, no video created`, async () => {
+      setup([{ ...OWN, role: r }])
+      const res = await call()
+      assert.equal(res.status, 403)
+      assert.match(((await res.json()) as { error: string }).error, /Only talent/)
+      assert.equal(videoInserts().length, 0)
+    })
+
+    it(`${r} sending a talentId is still rejected (talentId no longer accepted)`, async () => {
+      setup([{ ...OWN, role: r }, talentRow])
+      const res = await call({ talentId: TALENT })
+      assert.equal(res.status, 403)
+      assert.equal(videoInserts().length, 0)
+    })
+  }
+
+  it('a non-member of the agency -> 403, no video created', async () => {
+    setup([])
+    const res = await call()
+    assert.equal(res.status, 403)
+    assert.equal(videoInserts().length, 0)
+  })
+
+  it('mixed roles: agent at A is rejected for A, the same user as talent at B is allowed for B', async () => {
+    setup([
+      { ...OWN, role: 'agent' },
+      { user_id: AGENT, agency_id: OTHER_AGENCY, role: 'talent' },
+    ])
+    const denied = await call({ agencyId: AGENCY })
+    assert.equal(denied.status, 403)
+    assert.equal(videoInserts().length, 0)
+
+    const allowed = await call({ agencyId: OTHER_AGENCY })
+    assert.equal(allowed.status, 200)
+    const inserts = videoInserts()
+    assert.equal(inserts.length, 1)
+    assert.equal((inserts[0].body as { agency_id: string }).agency_id, OTHER_AGENCY)
+  })
+
+  it('talent uploads: video is assigned to the caller', async () => {
+    setup([{ ...OWN, role: 'talent' }])
+    const res = await call()
+    assert.equal(res.status, 200)
+    assert.equal((videoInserts()[0].body as { talent_id: string }).talent_id, AGENT)
+  })
+
+  it('talent with their own talentId in the body is a no-op', async () => {
+    setup([{ ...OWN, role: 'talent' }])
+    const res = await call({ talentId: AGENT })
+    assert.equal(res.status, 200)
+    assert.equal((videoInserts()[0].body as { talent_id: string }).talent_id, AGENT)
+  })
+
+  it('talent supplying a foreign talentId -> 403, no video created', async () => {
+    setup([{ ...OWN, role: 'talent' }])
     const res = await call({ talentId: TALENT })
-    assert.equal(res.status, 400)
+    assert.equal(res.status, 403)
     assert.match(
       ((await res.json()) as { error: string }).error,
-      /Selected talent is not a member of this agency/
+      /Talent can only upload videos for themselves/
     )
     assert.equal(videoInserts().length, 0)
   })
 
-  it('agent + talent of a DIFFERENT agency -> 400, no videos insert', async () => {
-    setup([agentRow, { user_id: TALENT, agency_id: OTHER_AGENCY, role: 'talent' }])
-    const res = await call({ talentId: TALENT })
-    assert.equal(res.status, 400)
-    assert.equal(videoInserts().length, 0)
-  })
-
-  it('agent + member of this agency with a non-talent role -> 400', async () => {
-    setup([agentRow, { user_id: TALENT, agency_id: AGENCY, role: 'agent' }])
-    const res = await call({ talentId: TALENT })
-    assert.equal(res.status, 400)
-    assert.equal(videoInserts().length, 0)
-  })
-
-  it('membership lookup error -> 500, no videos insert', async () => {
-    setup([agentRow, talentRow])
-    membershipsError = true
-    const res = await call({ talentId: TALENT })
-    assert.equal(res.status, 500)
-    assert.equal(videoInserts().length, 0)
-  })
-
-  it('agent + valid talent with surrounding whitespace -> inserts the trimmed id', async () => {
-    setup([agentRow, talentRow])
-    const res = await call({ talentId: `  ${TALENT}  ` })
-    assert.equal(res.status, 200)
-    const inserts = videoInserts()
-    assert.equal(inserts.length, 1)
-    assert.equal((inserts[0].body as { talent_id: string }).talent_id, TALENT)
-  })
-
-  it('malformed talentId -> 400 and no talent membership query', async () => {
-    setup([agentRow, talentRow])
-    const res = await call({ talentId: 'abc' })
-    assert.equal(res.status, 400)
-    assert.equal(talentLookups().length, 0)
-    assert.equal(videoInserts().length, 0)
-  })
-
-  it('no talentId -> unchanged: video assigned to the caller, no talent lookup', async () => {
-    setup([agentRow])
-    const res = await call()
-    assert.equal(res.status, 200)
-    assert.equal((videoInserts()[0].body as { talent_id: string }).talent_id, AGENT)
-    assert.equal(talentLookups().length, 0)
-  })
-
-  it('talent caller has talentId forced to themselves', async () => {
-    setup([{ user_id: AGENT, agency_id: AGENCY, role: 'talent' }])
-    const res = await call({ talentId: AGENT })
-    assert.equal(res.status, 200)
-    assert.equal((videoInserts()[0].body as { talent_id: string }).talent_id, AGENT)
-    assert.equal(talentLookups().length, 0)
+  it('no talent-membership lookup by body talentId exists any more', async () => {
+    setup([{ ...OWN, role: 'talent' }, talentRow])
+    await call({ talentId: TALENT })
+    assert.equal(
+      calls.filter(
+        (c) =>
+          c.url.pathname === '/rest/v1/memberships' &&
+          c.url.searchParams.get('user_id') === `eq.${TALENT}`
+      ).length,
+      0
+    )
   })
 })

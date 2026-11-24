@@ -116,11 +116,17 @@ describe('VideoPage — source invariants', () => {
     assert.match(source, /<CommentPanel[\s\S]*?onOptimisticInsert=\{handleCommentInsert\}/)
     assert.match(source, /<CommentPanel[\s\S]*?onOptimisticRollback=\{handleCommentRollback\}/)
   })
-  it('shows an accessible "Upload new version" link to /upload?videoId only when agencyId is set', () => {
+  it('shows the "Upload new version" link only to the owning talent (S5-NAV-006)', () => {
     assert.match(
       source,
-      /\{agencyId && \(\s*<Link\s+href=\{`\/upload\?videoId=\$\{params\.id\}`\}[\s\S]*?>\s*Upload new version\s*<\/Link>/
+      /const canUploadNewVersion = role === 'talent' && userId !== null && videoRow\?\.talentId === userId/
     )
+    assert.match(
+      source,
+      /\{canUploadNewVersion && \(\s*<Link\s+href=\{`\/upload\?videoId=\$\{params\.id\}`\}[\s\S]*?>\s*Upload new version\s*<\/Link>/
+    )
+    // The old agencyId gate also admitted every non-talent member.
+    assert.doesNotMatch(source, /\{agencyId && \(\s*<Link/)
   })
 
   it('starts with no active version so VersionSelector auto-selects the newest after a redirect', () => {
