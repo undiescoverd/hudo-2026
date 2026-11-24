@@ -1,3 +1,5 @@
+import { HOME_PATH } from '@/lib/landing'
+
 /**
  * Password validation rules per PRD security requirements.
  * Returns an error message string, or null if the password is valid.
@@ -20,7 +22,7 @@ const REDIRECT_BASE_ORIGIN = new URL(REDIRECT_BASE).origin
  * `/\t/evil.com` resolve cross-origin even though they start with a single `/`.
  * Use the result as-is: never percent-decode it again (`/%2F/evil.com` would become `//evil.com`).
  */
-export function safeRedirect(target: string | null, fallback = '/videos'): string {
+export function safeRedirect(target: string | null, fallback = HOME_PATH): string {
   // '//' is protocol-relative; rejecting it up front also avoids `new URL` throwing on '//['.
   if (!target || !target.startsWith('/') || target.startsWith('//')) return fallback
   // Backslash, whitespace and control chars (C0 + DEL) are normalised away by URL parsers.

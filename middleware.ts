@@ -36,15 +36,13 @@ const ADMIN_ROLES = new Set(['owner', 'admin_agent'])
 /** Roles that can access /agent routes. */
 const AGENT_ROLES = new Set(['owner', 'admin_agent', 'agent'])
 
-/** Roles that can access /talent routes. */
-const TALENT_ROLES = new Set(['owner', 'admin_agent', 'agent', 'talent'])
-
 // Explicit role sets rather than lib/auth roleAtLeast(): an unknown role string
 // has indexOf -1 there, which would pass the check (fail open).
+// /talent is not gated: it is now a bare redirect to /dashboard (#249), so a
+// user with no memberships must reach the redirect, not a 403.
 const GATED_PREFIXES: Array<[string, Set<string>]> = [
   ['/admin', ADMIN_ROLES],
   ['/agent', AGENT_ROLES],
-  ['/talent', TALENT_ROLES],
 ]
 
 /** True when pathname is `base` itself or a sub-path of it (not `/basex`). */
@@ -83,7 +81,7 @@ export function isForbidden(pathname: string, roles: string[]): boolean {
  * - Otherwise refreshes the Supabase session cookie, so Server Components see
  *   the session without a client-side hydration step.
  * - Redirects unauthenticated users to /auth/signin?redirect=<path>.
- * - Enforces role-based access on /admin, /agent and /talent by querying the
+ * - Enforces role-based access on /admin and /agent by querying the
  *   memberships table. Returns 403 for insufficient role.
  * - Fails closed: a getUser failure redirects to sign-in, a memberships failure
  *   returns 403.

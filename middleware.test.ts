@@ -96,12 +96,8 @@ test('isPublicPath: protected and prefix-confusion paths', () => {
 test('requiredRolesFor', () => {
   assert.deepEqual([...requiredRolesFor('/admin')!].sort(), ['admin_agent', 'owner'])
   assert.deepEqual([...requiredRolesFor('/agent/x')!].sort(), ['admin_agent', 'agent', 'owner'])
-  assert.deepEqual([...requiredRolesFor('/talent')!].sort(), [
-    'admin_agent',
-    'agent',
-    'owner',
-    'talent',
-  ])
+  // /talent is a bare redirect to /dashboard (#249), so it carries no role gate.
+  assert.equal(requiredRolesFor('/talent'), null)
   assert.equal(requiredRolesFor('/dashboard'), null)
   assert.equal(requiredRolesFor('/administrator'), null)
 })
@@ -115,7 +111,8 @@ test('isForbidden role rules', () => {
   assert.equal(isForbidden('/agent', ['talent']), true)
   assert.equal(isForbidden('/talent', ['talent']), false)
   assert.equal(isForbidden('/talent', ['agent']), false)
-  assert.equal(isForbidden('/talent', []), true)
+  // A user with no memberships reaches the /talent → /dashboard redirect, not a 403.
+  assert.equal(isForbidden('/talent', []), false)
   assert.equal(isForbidden('/agent', ['talent', 'agent']), false)
   assert.equal(isForbidden('/dashboard', []), false)
   assert.equal(isForbidden('/videos', ['talent']), false)
@@ -124,7 +121,6 @@ test('isForbidden role rules', () => {
 test('middleware redirects signed-out requests to sign-in with ?redirect=', async () => {
   for (const [path, expected] of [
     ['/dashboard', '/dashboard'],
-    // Role-gated path: sign-in comes before the role check.
     ['/talent', '/talent'],
     // Query goes into ?redirect=, not onto the sign-in URL itself.
     ['/videos/abc?t=30', '/videos/abc?t=30'],

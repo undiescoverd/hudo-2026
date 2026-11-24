@@ -383,7 +383,7 @@ TASK_ID: S5-NAV-001
 TITLE: Every role lands on /dashboard (landing helper, /talent and /videos redirects)
 BRANCH: feat/s5-S5-NAV-001-role-landing
 MODEL: sonnet
-STATUS: not_started
+STATUS: in_progress
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - One helper decides the landing page; /, the sign-in fallback and the logo use it; every role lands on /dashboard

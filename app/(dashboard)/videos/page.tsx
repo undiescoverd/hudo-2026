@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { videosListRedirectFor } from '@/lib/landing'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { getCurrentUserRole } from '@/lib/auth-helpers'
 import { StatusBadge } from '@/lib/video-status'
@@ -18,7 +20,11 @@ export default async function VideosPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  const { agency_ids } = await getCurrentUserRole(supabase)
+  const { role, agency_ids } = await getCurrentUserRole(supabase)
+
+  // Talent have no agency-wide list; their home is the dashboard (exact /videos only).
+  const home = videosListRedirectFor(role)
+  if (home) redirect(home)
 
   const { data: videos, error } = await supabase
     .from('videos')

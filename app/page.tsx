@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { HOME_PATH } from '@/lib/landing'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 
 export default async function RootPage() {
@@ -11,7 +12,7 @@ export default async function RootPage() {
   } = await supabase.auth.getUser()
 
   if (user) {
-    redirect('/videos')
+    redirect(HOME_PATH)
   } else {
     redirect('/auth/signin')
   }
