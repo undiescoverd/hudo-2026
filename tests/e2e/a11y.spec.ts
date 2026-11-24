@@ -130,11 +130,11 @@ test.describe('axe WCAG 2.1 AA', () => {
     await page.close()
   })
 
-  test('dashboard (talent): /talent', async () => {
+  test('dashboard (talent): /dashboard', async () => {
     const page = await talentCtx.newPage()
-    await page.goto('/talent')
+    await page.goto('/dashboard')
     await page.waitForLoadState('networkidle')
-    await scan(page, '/talent')
+    await scan(page, '/dashboard (talent)')
     await page.close()
   })
 

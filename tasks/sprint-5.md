@@ -386,7 +386,7 @@ MODEL: sonnet
 STATUS: in_review
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
-  - One helper decides the landing page; /, the sign-in fallback and the logo use it; every role lands on /dashboard
+  - One helper decides the landing page; / and the sign-in fallback use it; every role lands on /dashboard (the header logo moves in S5-NAV-002, which owns AppHeader.tsx)
   - An explicit ?redirect= still wins, including after signing in again
   - /dashboard renders the talent Dashboard for talent and the agent dashboard for owner, admin_agent and agent
   - /talent redirects to /dashboard; the old /dashboard → /talent redirect is removed
