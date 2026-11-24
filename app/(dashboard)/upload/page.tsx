@@ -18,7 +18,7 @@ async function fetchMembership(): Promise<{ agencyId: string; role: string }> {
   } = await supabase.auth.getUser()
   if (!user) throw new Error('You must be signed in to upload')
 
-  const { data: membership } = await supabase
+  const { data: membership, error } = await supabase
     .from('memberships')
     .select('agency_id, role')
     .eq('user_id', user.id)
@@ -28,6 +28,7 @@ async function fetchMembership(): Promise<{ agencyId: string; role: string }> {
     .limit(1)
     .maybeSingle()
 
+  if (error) throw new Error('Could not load your agency. Refresh and try again.')
   if (!membership?.agency_id) throw new Error('Only talent can upload videos')
   return { agencyId: membership.agency_id as string, role: membership.role as string }
 }
