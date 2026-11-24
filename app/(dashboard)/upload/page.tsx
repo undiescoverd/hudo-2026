@@ -11,7 +11,7 @@ import { MULTIPART_THRESHOLD_BYTES } from '@/lib/upload-validation'
 import { attachBeforeUnloadGuard, performUpload } from '@/lib/upload-client'
 import { parseTargetVideoId } from '@/lib/new-version-upload'
 
-async function fetchMembership(): Promise<{ agencyId: string; role: string }> {
+async function fetchMembership(): Promise<{ agencyId: string }> {
   const supabase = createClient()
   const {
     data: { user },
@@ -20,17 +20,22 @@ async function fetchMembership(): Promise<{ agencyId: string; role: string }> {
 
   const { data: membership, error } = await supabase
     .from('memberships')
-    .select('agency_id, role')
+    .select('agency_id')
     .eq('user_id', user.id)
     // Only talent upload (S5-NAV-006). A user can be an agent in one agency and talent in
     // another; pick the talent membership, not whichever row comes first.
     .eq('role', 'talent')
+    // Deterministic until the 2+ agency chooser lands (S5-NAV-007): oldest membership first.
+    .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle()
 
-  if (error) throw new Error('Could not load your agency. Refresh and try again.')
+  if (error) {
+    console.error('[upload] talent membership query failed:', error.message)
+    throw new Error('Could not load your agency. Refresh and try again.')
+  }
   if (!membership?.agency_id) throw new Error('Only talent can upload videos')
-  return { agencyId: membership.agency_id as string, role: membership.role as string }
+  return { agencyId: membership.agency_id as string }
 }
 
 /** Strip file extension to use as default title */
@@ -50,7 +55,6 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
   const router = useRouter()
   const [file, setFile] = useState<File | null>(null)
   const [agencyId, setAgencyId] = useState('')
-  const [role, setRole] = useState('')
   const [ready, setReady] = useState(false)
   const [setupError, setSetupError] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
@@ -91,7 +95,6 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
         setTargetTitle((video.title as string | null) ?? null)
       }
       setAgencyId(resolvedAgencyId)
-      setRole(membership.role)
       setReady(true)
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : 'Failed to load agency')
@@ -206,7 +209,7 @@ export default function UploadPage({ searchParams }: UploadPageProps) {
 
           {uploadedVideoId ? (
             <>
-              {role === 'talent' && <p className="text-sm text-gray-600">Submitted for review</p>}
+              <p className="text-sm text-gray-600">Submitted for review</p>
               <MetadataForm
                 videoId={uploadedVideoId}
                 defaultTitle={fileNameWithoutExtension(uploadedFileName)}

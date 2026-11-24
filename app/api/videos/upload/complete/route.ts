@@ -264,8 +264,9 @@ export async function POST(request: NextRequest) {
 
   // --- Talent self-upload: auto-flip draft/changes_requested/approved -> pending_review ---
   // See shouldFlipOnTalentUpload() in lib/video-status.ts. Approved is included so a new
-  // version re-opens review (S5-FLOW-003). Agent+ uploads never auto-flip (they use PATCH
-  // /status explicitly); pending_review/in_review are left as they are.
+  // version re-opens review (S5-FLOW-003). Only talent reach this point since S5-NAV-006
+  // (agents are rejected above); the role guard below stays as defence in depth.
+  // pending_review/in_review are left as they are.
   //
   // TOCTOU guard: `video.status` was read at the top of the route, but multipart
   // completion + headObject + the quota/version RPCs take seconds — an agent may
