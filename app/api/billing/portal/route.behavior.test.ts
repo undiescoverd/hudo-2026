@@ -94,10 +94,15 @@ function call(body: unknown = { agencyId: AGENCY }) {
 }
 
 before(async () => {
-  // `server-only` throws outside the react-server condition; neutralise it for this harness.
-  const req = createRequire(import.meta.url)
-  const id = req.resolve('server-only')
-  req.cache[id] = { id, filename: id, loaded: true, exports: {} } as unknown as NodeJS.Module
+  // `server-only` is not an installed dependency (Next bundles it); stub the import for this harness.
+  const mod = createRequire(import.meta.url)('node:module') as {
+    _load: (request: string, ...rest: unknown[]) => unknown
+  }
+  const realLoad = mod._load
+  mod._load = function (this: unknown, request: string, ...rest: unknown[]) {
+    if (request === 'server-only') return {}
+    return realLoad.call(this, request, ...rest)
+  }
   process.env.NEXT_PUBLIC_SUPABASE_URL = SB
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-billing-portal-test'
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-billing-portal-test'

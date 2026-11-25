@@ -89,9 +89,14 @@ function call(method: 'PATCH' | 'POST', body: unknown) {
 }
 
 before(async () => {
-  const req = createRequire(import.meta.url)
-  const id = req.resolve('server-only')
-  req.cache[id] = { id, filename: id, loaded: true, exports: {} } as unknown as NodeJS.Module
+  const mod = createRequire(import.meta.url)('node:module') as {
+    _load: (request: string, ...rest: unknown[]) => unknown
+  }
+  const realLoad = mod._load
+  mod._load = function (this: unknown, request: string, ...rest: unknown[]) {
+    if (request === 'server-only') return {}
+    return realLoad.call(this, request, ...rest)
+  }
   process.env.NEXT_PUBLIC_SUPABASE_URL = SB
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-agency-billing-test'
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-agency-billing-test'
