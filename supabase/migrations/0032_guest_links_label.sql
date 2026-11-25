@@ -18,6 +18,6 @@ BEGIN
   ) THEN
     ALTER TABLE guest_links
       ADD CONSTRAINT guest_links_label_length
-      CHECK (label IS NULL OR char_length(label) BETWEEN 1 AND 80);
+      CHECK (label IS NULL OR (char_length(label) BETWEEN 1 AND 80 AND btrim(label) <> ''));
   END IF;
 END $$;

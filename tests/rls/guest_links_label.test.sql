@@ -7,7 +7,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(7);
+SELECT plan(8);
 
 INSERT INTO agencies (id, name, slug) VALUES
   ('c0ffee32-0000-4000-a000-000000000001'::uuid, 'Label Agency A', 'rls-label-agency-a'),
@@ -87,6 +87,19 @@ SELECT throws_ok(
   '23514',
   NULL,
   'an empty label violates guest_links_label_length'
+);
+
+-- 5b: whitespace-only label rejected
+SELECT throws_ok(
+  $$INSERT INTO guest_links (video_id, agency_id, token_hash, created_by, label)
+    VALUES ('b1de0032-0032-4000-a000-000000000001'::uuid,
+            'c0ffee32-0000-4000-a000-000000000001'::uuid,
+            '3636363636363636363636363636363636363636363636363636363636363636',
+            'dbeef032-0032-4000-a000-000000000001'::uuid,
+            '   ')$$,
+  '23514',
+  NULL,
+  'a whitespace-only label violates guest_links_label_length'
 );
 
 -- 6: talent in the same agency sees no links, so no labels

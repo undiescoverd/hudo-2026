@@ -136,7 +136,7 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
       token_hash: tokenHash,
       created_by: user.id,
       expires_at: expiresAt,
-      label,
+      ...(label !== null ? { label } : {}),
     })
     .select('id, expires_at, created_at, label')
     .single()
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
     typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
       ? user.user_metadata.full_name.trim()
       : (user.email ?? user.id)
-  logEvent({
+  await logEvent({
     action: 'guest_link_created',
     resourceType: 'guest_link',
     resourceId: link.id,
@@ -228,11 +228,28 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
   }
 
   // Version numbers for each link's pinned version and for the current (active) one.
-  const { data: versions } = await admin
-    .from('video_versions')
-    .select('id, version_number')
-    .eq('video_id', videoId)
-  const versionNumber = new Map((versions ?? []).map((v) => [v.id, v.version_number as number]))
+  // video_versions has no soft-delete column. On failure the links are still returned
+  // with null version info (no nudge) rather than failing the whole list.
+  const versionIds = [
+    ...new Set(
+      [video.active_version_id, ...(links ?? []).map((l) => l.video_version_id)].filter(
+        (id): id is string => typeof id === 'string'
+      )
+    ),
+  ]
+  const versionNumber = new Map<string, number>()
+  if (versionIds.length > 0) {
+    const { data: versions, error: versionError } = await admin
+      .from('video_versions')
+      .select('id, version_number')
+      .eq('video_id', videoId)
+      .in('id', versionIds)
+    if (versionError) {
+      console.error('[guest-links:get] Failed to load versions:', versionError.message)
+    } else {
+      for (const v of versions ?? []) versionNumber.set(v.id, v.version_number as number)
+    }
+  }
   const currentVersionNumber = video.active_version_id
     ? (versionNumber.get(video.active_version_id) ?? null)
     : null

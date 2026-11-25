@@ -36,6 +36,7 @@ let calls: Call[] = []
 let role = 'agent'
 let redisCount = 1
 let storedLinks: LinkRow[] = []
+let versionsFail = false
 
 let POST: (req: NextRequest, ctx: { params: { videoId: string } }) => Promise<Response>
 let GET: (req: NextRequest, ctx: { params: { videoId: string } }) => Promise<Response>
@@ -90,6 +91,7 @@ function installFetch() {
       return rows([{ role, agency_id: AGENCY }])
     }
     if (url.pathname === '/rest/v1/video_versions') {
+      if (versionsFail) return json(500, { message: 'versions down' })
       return rows([
         { id: V1, version_number: 1 },
         { id: V3, version_number: 3 },
@@ -172,6 +174,7 @@ afterEach(() => {
   role = 'agent'
   redisCount = 1
   storedLinks = []
+  versionsFail = false
 })
 
 describe('POST guest-links — label', () => {
@@ -182,11 +185,11 @@ describe('POST guest-links — label', () => {
     assert.equal(((await res.json()) as { label: string }).label, 'BBC casting, Sam')
   })
 
-  it('blank or absent label is stored as null', async () => {
+  it('blank or absent label is omitted from the insert (DB default null)', async () => {
     await request('POST', { label: '   ' })
-    assert.equal(inserted()?.label, null)
+    assert.ok(inserted() && !('label' in inserted()!))
     await request('POST', {})
-    assert.equal(inserted()?.label, null)
+    assert.ok(inserted() && !('label' in inserted()!))
   })
 
   it('accepts exactly 80 characters and rejects 81 with 400 (nothing inserted)', async () => {
@@ -288,5 +291,49 @@ describe('GET guest-links — list', () => {
     assert.equal(byId.unpinned.version_number, null)
     assert.equal(byId.old.label, 'label old')
     assert.ok(!JSON.stringify(body).includes('token_hash'))
+  })
+})
+
+describe('GET guest-links — version lookup', () => {
+  it('scopes the version query to the pinned and active ids', async () => {
+    storedLinks = [
+      {
+        id: 'a',
+        expires_at: null,
+        view_count: 0,
+        last_viewed_at: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+        label: null,
+        video_version_id: V1,
+      },
+    ]
+    await request('GET')
+    const q = calls.find((c) => c.url.pathname === '/rest/v1/video_versions')
+    const ids = q?.url.searchParams.get('id') ?? ''
+    assert.ok(ids.startsWith('in.') && ids.includes(V1) && ids.includes(V3), ids)
+  })
+
+  it('a version query failure still returns the links with no nudge data', async () => {
+    versionsFail = true
+    storedLinks = [
+      {
+        id: 'a',
+        expires_at: null,
+        view_count: 0,
+        last_viewed_at: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+        label: 'x',
+        video_version_id: V1,
+      },
+    ]
+    const res = await request('GET')
+    assert.equal(res.status, 200)
+    const body = (await res.json()) as {
+      current_version_number: number | null
+      links: { id: string; version_number: number | null }[]
+    }
+    assert.equal(body.links.length, 1)
+    assert.equal(body.links[0].version_number, null)
+    assert.equal(body.current_version_number, null)
   })
 })

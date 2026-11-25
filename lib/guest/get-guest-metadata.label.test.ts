@@ -62,3 +62,13 @@ describe('getGuestMetadata does not leak the link label', () => {
     for (const s of selects) assert.ok(!s.includes('label'), `guest_links select: ${s}`)
   })
 })
+
+describe('other guest-facing guest_links selects', () => {
+  it('playback-url route does not select label (source check, file not modified here)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync('app/api/guest/[token]/playback-url/route.ts', 'utf8')
+    for (const m of src.matchAll(/\.from\('guest_links'\)\s*\.select\('([^']*)'/g)) {
+      assert.ok(!m[1].includes('label'), m[1])
+    }
+  })
+})
