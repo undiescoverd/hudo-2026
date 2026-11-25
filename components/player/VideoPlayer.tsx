@@ -82,6 +82,10 @@ export function VideoPlayer({
   // listeners below keep working after Retry.
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
   const mediaError = isMediaFailed(failedUrl, url)
+  // Switching versions drops the old version's failure so the spinner shows while the new url loads.
+  useEffect(() => {
+    setFailedUrl(null)
+  }, [versionId])
   const retry = useCallback(() => {
     void fetchUrl(false)
   }, [fetchUrl])
