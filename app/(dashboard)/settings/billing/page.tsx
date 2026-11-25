@@ -1,7 +1,10 @@
 /**
  * /settings/billing — Billing overview page.
  *
- * Server component: owner-only, behind the billing feature flag.
+ * Server component: owner, or an admin agent the owner granted billing access to
+ * (memberships.can_manage_billing); behind the billing feature flag. A granted admin
+ * agent sees plan, usage and the payment-method portal but no upgrade controls
+ * (plan change and cancel stay owner-only).
  * Loads agency plan/usage data and passes it to the BillingOverview client component.
  */
 
@@ -11,6 +14,7 @@ import { isBillingEnabled } from '@/lib/feature-flags'
 import { AGENT_SEAT_ROLES } from '@/lib/plan-gates'
 import { BillingOverview } from '@/components/billing/BillingOverview'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { canChangePlan, canViewBilling } from '@/lib/billing-access'
 
 export default async function BillingSettingsPage() {
   if (!isBillingEnabled()) {
@@ -46,23 +50,24 @@ export default async function BillingSettingsPage() {
   // Use service-role client to bypass RLS for membership + agency reads
   const admin = createAdminClient()
 
-  // Resolve the user's owner membership (billing is owner-only).
-  // Order deterministically so a multi-agency owner always lands on the same
-  // agency (the portal route is scoped by this agencyId).
-  const { data: ownerMembership } = await admin
+  // Resolve the agency the user may see billing for: owner, or admin agent with the
+  // grant. Order deterministically so a multi-agency user always lands on the same
+  // agency (the portal route is scoped by this agencyId). Read fresh every request.
+  const { data: candidateRows } = await admin
     .from('memberships')
-    .select('agency_id')
+    .select('agency_id, role, can_manage_billing')
     .eq('user_id', user.id)
-    .eq('role', 'owner')
+    .in('role', ['owner', 'admin_agent'])
     .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle()
 
-  if (!ownerMembership) {
+  const billingMembership = (candidateRows ?? []).find((m) => canViewBilling(m))
+
+  if (!billingMembership) {
     redirect('/settings/notifications')
   }
 
-  const agencyId = ownerMembership.agency_id
+  const agencyId = billingMembership.agency_id
+  const mayChangePlan = canChangePlan(billingMembership)
 
   // Load the agency row
   const { data: agency } = await admin
@@ -123,12 +128,15 @@ export default async function BillingSettingsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Billing</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Manage your plan, usage, and billing details.
+          {mayChangePlan
+            ? 'Manage your plan, usage, and billing details.'
+            : 'View your plan, usage and invoices, and update the payment method.'}
         </p>
       </div>
 
       <BillingOverview
         agencyId={agencyId}
+        canChangePlan={mayChangePlan}
         plan={typedAgency.plan ?? 'freemium'}
         subscriptionStatus={typedAgency.subscription_status}
         currentPeriodEnd={typedAgency.current_period_end}

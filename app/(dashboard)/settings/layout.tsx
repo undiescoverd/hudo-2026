@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { getCurrentUserRole } from '@/lib/auth-helpers'
 import { isBillingEnabled } from '@/lib/feature-flags'
+import { getUserBillingAccess } from '@/lib/billing-access'
 import { SettingsNav } from '@/components/settings/SettingsNav'
 import { settingsNavItems } from '@/components/settings/settings-nav-items'
 
@@ -10,8 +11,11 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
-  const { role } = await getCurrentUserRole(supabase)
-  const items = settingsNavItems(role, isBillingEnabled())
+  const { user, role } = await getCurrentUserRole(supabase)
+  const { isDelegate } = user
+    ? await getUserBillingAccess(supabase, user.id)
+    : { isDelegate: false }
+  const items = settingsNavItems(role, isBillingEnabled(), isDelegate)
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 md:grid md:grid-cols-[200px_1fr] md:gap-10">

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { getCurrentUserRole } from '@/lib/auth-helpers'
 import { isBillingEnabled } from '@/lib/feature-flags'
+import { getUserBillingAccess } from '@/lib/billing-access'
 import { settingsNavItems } from '@/components/settings/settings-nav-items'
 
 /** /settings has no content of its own: send people to their first allowed section. */
@@ -12,5 +13,6 @@ export default async function SettingsIndexPage() {
   )
   const { user, role } = await getCurrentUserRole(supabase)
   if (!user) redirect('/auth/signin')
-  redirect(settingsNavItems(role, isBillingEnabled())[0].href)
+  const { isDelegate } = await getUserBillingAccess(supabase, user.id)
+  redirect(settingsNavItems(role, isBillingEnabled(), isDelegate)[0].href)
 }

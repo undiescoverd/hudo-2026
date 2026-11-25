@@ -51,6 +51,15 @@ These are the original £49/£149/£349 prices created 2026-06-17. The pricing r
 
 Coupon: `FOUNDING_50` — 50% off for 12 months, exists in both modes (applied at checkout when `agencies.is_founding_member = true`)
 
+## Billing portal configuration for delegates (manual — Dashboard only)
+
+An owner can grant an individual admin agent billing access (`memberships.can_manage_billing`, S5-ADMIN-001). That person may view invoices and change the payment method, but must not change plan or cancel. Stripe enforces this through a second portal configuration:
+
+1. Stripe Dashboard → Settings → Billing → Customer portal → create a new configuration with **only** Invoice history and Payment methods enabled (subscription cancel, subscription update and customer information off).
+2. Set its ID (`bpc_…`) as `STRIPE_PORTAL_CONFIG_DELEGATE` (server only; not a secret, but per environment and per Stripe mode) in `.env.local`, `.env.staging` and Vercel (preview + production).
+
+`POST /api/billing/portal` passes this configuration for delegates only and returns 503 for them while it is unset (fail closed). Owners keep the default configuration.
+
 ## Stripe Tax (manual — Dashboard only)
 
 1. Stripe Dashboard → Billing → Tax → Enable Stripe Tax

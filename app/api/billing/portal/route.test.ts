@@ -45,15 +45,10 @@ describe('billing/portal route — source invariants', () => {
     )
   })
 
-  it('requires owner role — filters memberships by role = owner', () => {
-    assert.ok(
-      source.includes("eq('role', 'owner')"),
-      "must gate on owner role via .eq('role', 'owner')"
-    )
-  })
-
-  it('returns 403 when no owner membership is found', () => {
-    assert.ok(source.includes('status: 403'), 'must return 403 for non-owners')
+  // Authorization (owner or granted admin agent) is exercised behaviourally in
+  // route.behavior.test.ts; here we only pin that the shared rule is used.
+  it('authorizes through requireBillingAccess', () => {
+    assert.ok(source.includes('requireBillingAccess('))
   })
 
   it('returns 400 when no stripe_customer_id exists on the agency', () => {
@@ -84,7 +79,7 @@ describe('billing/portal route — source invariants', () => {
 
   it('uses service-role client for membership and agency queries (bypasses RLS)', () => {
     const adminIdx = source.indexOf('const admin = createAdminClient()')
-    const membershipIdx = source.indexOf(".from('memberships')")
+    const membershipIdx = source.indexOf('requireBillingAccess(admin')
     const agencyIdx = source.indexOf(".from('agencies')")
     assert.ok(adminIdx !== -1, 'must create service-role admin client')
     assert.ok(adminIdx < membershipIdx, 'admin client must be created before membership query')
