@@ -293,20 +293,25 @@ MODEL: sonnet
 STATUS: not_started
 BLOCKED_BY: S5-FLOW-006
 ACCEPTANCE_CRITERIA:
-  - "Needs attention" list shows videos awaiting review for everyone in the agency
-  - Each video row shows which agency members have seen it (names, most recent first, with a count when there are many)
-  - Opening a video records that the user has seen it
-  - A new version resets "seen by"
-  - Talent never see "seen by"; guests never see it and no guest route writes a seen record
-  - RLS: users can only write their own comment_reads rows
-  - Tests for the write, the reset on new version, and the talent and guest exclusions
-  - Security review (RLS and a new write path)
+  - The "Needs you" strip is renamed "Needs attention" and shows Pending review first, then In review (newest activity first within each); stays 4 cards, "+N more" sets the table filter to Pending review + In review
+  - Each Needs attention card and each video-table row shows "Seen by <names> +N" or "Not seen yet", most recent first; hover/tap lists each name with when ("Sam · 2h ago")
+  - Seen = opened the video page after the current version was created; a new version is the only reset (derived from comment_reads.last_seen_at, no comment_reads schema change)
+  - Only agency staff (owner, admin_agent, agent) are counted; the viewer shows as "You"; erased or departed members are left out
+  - Read path is a SECURITY DEFINER RPC (e.g. seen_by(video_ids uuid[])) returning name + seen_at only to a caller with a staff membership in each video's agency; comment_reads own-row RLS unchanged; EXECUTE revoked from PUBLIC/anon explicitly
+  - Talent never see "seen by"; guests never see it and no guest route reads or writes seen records
+  - Computed on dashboard load (no Realtime on comment_reads)
+  - Tests: RPC pgTAP (staff allowed; talent, other agency, anon denied), reset on new version, talent and guest exclusions, strip ordering and "+N more"; security review (new RPC)
 FILES:
-  - app/(dashboard)/dashboard/page.tsx (+ test)
-  - components/dashboard/ (attention strip) (+ test)
+  - supabase/migrations/<next>_seen_by_rpc.sql
+  - tests/rls/ (seen_by pgTAP)
+  - lib/seen-by.ts (+ test)
   - lib/dashboard.ts (+ test)
-  - supabase/migrations/ (only if needed; RLS suite updated)
-NOTES: GH #176. Decided 2026-10-22: list name "Needs attention"; talent do not see "seen by". Owner (claim and assign) deferred until an agency asks. Paper boards already renamed. Linear RES-216.
+  - app/(dashboard)/dashboard/page.tsx (+ test)
+  - components/dashboard/NeedsYouStrip.tsx (+ test)
+  - components/dashboard/AgentDashboard.tsx (+ test)
+  - components/dashboard/VideoTable.tsx
+  - docs/flows/inventory.md
+NOTES: GH #176 (full spec agreed 2026-11-25, see issue comment). Build after #236 (server-clock last_seen_at). Migration number assigned at build time; apply with scripts/db-push.sh to dev and staging before merge. Privacy-notice line tracked on #228. Linear RES-216.
 
 ---
 
@@ -349,7 +354,7 @@ MODEL: sonnet
 STATUS: not_started
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
-  - Migration 0031 adds memberships.can_manage_billing (boolean, default false); RLS still derives access from memberships
+  - Migration 0033 adds memberships.can_manage_billing (boolean, default false); RLS still derives access from memberships
   - Owner sees a per-person billing-access toggle on the team page, offered for admin agents only
   - A granted admin agent sees Billing in the header and can open /settings/billing
   - Granted admin agents can view the plan and invoices and change the payment method (portal); plan change and cancel stay owner-only
@@ -358,7 +363,7 @@ ACCEPTANCE_CRITERIA:
   - Grant and revoke are written to audit_log
   - Unit tests for the permission rule, pgTAP for the column/RLS, route tests; security review (billing + app/api/)
 FILES:
-  - supabase/migrations/0031_membership_billing_access.sql
+  - supabase/migrations/0033_membership_billing_access.sql
   - tests/rls/memberships.test.sql
   - lib/billing-access.ts (+ test)
   - app/api/agencies/[id]/billing/route.ts (+ test)
@@ -367,7 +372,7 @@ FILES:
   - app/(dashboard)/settings/team/page.tsx (+ test)
   - components/settings/BillingAccessToggle.tsx (+ test)
   - components/layout/AppHeader.tsx (+ test)
-NOTES: GH #207 (all three open questions decided 2026-11-21). Paper: "Flow · Every role, end to end", admin agent lane, step 08. Needs an API route (or extension of the team route) for the toggle; add it to FILES when planned. Migration 0031: 0024–0026 and 0028 are reserved, 0029 is on main, 0030 is PR #199. Apply with scripts/db-push.sh. Linear RES-228.
+NOTES: GH #207 (all three open questions decided 2026-11-21). Paper: "Flow · Every role, end to end", admin agent lane, step 08. Needs an API route (or extension of the team route) for the toggle; add it to FILES when planned. Migration 0033 (0031 and 0032 are taken by S5-GUEST-004/002). Apply with scripts/db-push.sh. Linear RES-228.
 
 ---
 
