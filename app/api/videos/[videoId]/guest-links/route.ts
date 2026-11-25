@@ -6,6 +6,7 @@ import { generateGuestToken, hashGuestToken } from '@/lib/guest-tokens'
 import { isValidUUID } from '@/lib/validation'
 import { logEvent } from '@/lib/audit'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { MAX_EXPIRY_MS, GUEST_LINK_LABEL_MAX, normalizeLabel } from '@/lib/guest-link-options'
 
 /**
  * POST /api/videos/:videoId/guest-links
@@ -15,8 +16,14 @@ import { createAdminClient } from '@/lib/supabase-admin'
  *
  * GET /api/videos/:videoId/guest-links
  *
- * Lists active (non-revoked) guest links for a video. Does NOT include the
- * token hash or any token-like value — only the UUID id and metadata.
+ * Lists active guest links for a video: not revoked and not expired (expired rows
+ * are kept for audit, just hidden). Includes the agent-only label and the pinned
+ * version number. Does NOT include the token hash or any token-like value.
+ *
+ * expires_at validation: omitted/null = never expires; otherwise it must be in the
+ * future and at most 7 days (+5 min skew) ahead, i.e. within the largest UI preset.
+ * label: optional, trimmed, max 80 characters (also a DB CHECK). Never logged and
+ * never returned by any guest-facing route.
  *
  * Both methods require agent/admin_agent/owner membership in the video's agency.
  */
@@ -87,7 +94,10 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
   // Parse optional expires_at from body; missing/empty body is valid.
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
   let expiresAt: string | null = null
-  if (typeof body.expires_at === 'string') {
+  if (body.expires_at !== undefined && body.expires_at !== null) {
+    if (typeof body.expires_at !== 'string') {
+      return NextResponse.json({ error: 'Invalid expires_at format' }, { status: 400 })
+    }
     const d = new Date(body.expires_at)
     if (isNaN(d.getTime())) {
       return NextResponse.json({ error: 'Invalid expires_at format' }, { status: 400 })
@@ -95,7 +105,18 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
     if (d.getTime() <= Date.now()) {
       return NextResponse.json({ error: 'expires_at must be in the future' }, { status: 400 })
     }
+    if (d.getTime() > Date.now() + MAX_EXPIRY_MS) {
+      return NextResponse.json({ error: 'expires_at is too far in the future' }, { status: 400 })
+    }
     expiresAt = d.toISOString()
+  }
+
+  const label = normalizeLabel(body.label)
+  if (label === 'invalid') {
+    return NextResponse.json(
+      { error: `label must be text of at most ${GUEST_LINK_LABEL_MAX} characters` },
+      { status: 400 }
+    )
   }
 
   const ctx = await authorizeVideoAccess(videoId, user.id, 'Only agents can manage guest links')
@@ -115,8 +136,9 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
       token_hash: tokenHash,
       created_by: user.id,
       expires_at: expiresAt,
+      ...(label !== null ? { label } : {}),
     })
-    .select('id, expires_at, created_at')
+    .select('id, expires_at, created_at, label')
     .single()
 
   if (insertError || !link) {
@@ -131,7 +153,7 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
     typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
       ? user.user_metadata.full_name.trim()
       : (user.email ?? user.id)
-  logEvent({
+  await logEvent({
     action: 'guest_link_created',
     resourceType: 'guest_link',
     resourceId: link.id,
@@ -148,6 +170,7 @@ export async function POST(request: NextRequest, { params }: { params: { videoId
       url: guestUrl,
       expires_at: link.expires_at,
       created_at: link.created_at,
+      label: link.label ?? null,
     },
     { status: 201 }
   )
@@ -188,14 +211,15 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
 
   const ctx = await authorizeVideoAccess(videoId, user.id, 'Only agents can manage guest links')
   if (ctx instanceof NextResponse) return ctx
-  const { admin } = ctx
+  const { admin, video } = ctx
 
-  // Fetch active (non-revoked) links only — never include token_hash
+  // Active links only: not revoked, not expired. Never include token_hash.
   const { data: links, error: listError } = await admin
     .from('guest_links')
-    .select('id, expires_at, view_count, last_viewed_at, created_at')
+    .select('id, expires_at, view_count, last_viewed_at, created_at, label, video_version_id')
     .eq('video_id', videoId)
     .is('revoked_at', null)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .order('created_at', { ascending: false })
 
   if (listError) {
@@ -203,13 +227,43 @@ export async function GET(request: NextRequest, { params }: { params: { videoId:
     return NextResponse.json({ error: 'Failed to list guest links' }, { status: 500 })
   }
 
+  // Version numbers for each link's pinned version and for the current (active) one.
+  // video_versions has no soft-delete column. On failure the links are still returned
+  // with null version info (no nudge) rather than failing the whole list.
+  const versionIds = [
+    ...new Set(
+      [video.active_version_id, ...(links ?? []).map((l) => l.video_version_id)].filter(
+        (id): id is string => typeof id === 'string'
+      )
+    ),
+  ]
+  const versionNumber = new Map<string, number>()
+  if (versionIds.length > 0) {
+    const { data: versions, error: versionError } = await admin
+      .from('video_versions')
+      .select('id, version_number')
+      .eq('video_id', videoId)
+      .in('id', versionIds)
+    if (versionError) {
+      console.error('[guest-links:get] Failed to load versions:', versionError.message)
+    } else {
+      for (const v of versions ?? []) versionNumber.set(v.id, v.version_number as number)
+    }
+  }
+  const currentVersionNumber = video.active_version_id
+    ? (versionNumber.get(video.active_version_id) ?? null)
+    : null
+
   return NextResponse.json({
+    current_version_number: currentVersionNumber,
     links: (links ?? []).map((l) => ({
       id: l.id,
       expires_at: l.expires_at,
       view_count: l.view_count,
       last_viewed_at: l.last_viewed_at,
       created_at: l.created_at,
+      label: l.label ?? null,
+      version_number: l.video_version_id ? (versionNumber.get(l.video_version_id) ?? null) : null,
       url_path: `/guest/<masked>`,
     })),
   })

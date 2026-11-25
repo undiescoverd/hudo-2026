@@ -1,6 +1,22 @@
 'use client'
 
 import { useState } from 'react'
+import {
+  DEFAULT_EXPIRY_PRESET,
+  EXPIRY_PRESETS,
+  GUEST_LINK_LABEL_MAX,
+  expiresAtForPreset,
+  type ExpiryPresetId,
+} from '@/lib/guest-link-options'
+
+/** POST body for a new link: trimmed label (omitted if empty) and preset expiry (null = never). */
+export function buildCreateBody(label: string, preset: ExpiryPresetId, now: number = Date.now()) {
+  const trimmed = label.trim()
+  return {
+    expires_at: expiresAtForPreset(preset, now),
+    ...(trimmed ? { label: trimmed } : {}),
+  }
+}
 
 interface GuestLinkModalProps {
   videoId: string
@@ -19,7 +35,8 @@ interface GuestLinkResponse {
 
 export function GuestLinkModal({ videoId, isOpen, onClose, onCreated }: GuestLinkModalProps) {
   const [state, setStateValue] = useState<'form' | 'success'>('form')
-  const [expiresAt, setExpiresAt] = useState('')
+  const [preset, setPreset] = useState<ExpiryPresetId>(DEFAULT_EXPIRY_PRESET)
+  const [label, setLabel] = useState('')
   const [generatedUrl, setGeneratedUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -33,10 +50,7 @@ export function GuestLinkModal({ videoId, isOpen, onClose, onCreated }: GuestLin
     setError(null)
 
     try {
-      const body: { expires_at?: string } = {}
-      if (expiresAt) {
-        body.expires_at = new Date(expiresAt).toISOString()
-      }
+      const body = buildCreateBody(label, preset)
 
       const res = await fetch(`/api/videos/${videoId}/guest-links`, {
         method: 'POST',
@@ -46,7 +60,9 @@ export function GuestLinkModal({ videoId, isOpen, onClose, onCreated }: GuestLin
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}))
-        throw new Error(errorData.message || `Failed to generate link (${res.status})`)
+        throw new Error(
+          errorData.error || errorData.message || `Failed to generate link (${res.status})`
+        )
       }
 
       const data = (await res.json()) as GuestLinkResponse
@@ -71,7 +87,8 @@ export function GuestLinkModal({ videoId, isOpen, onClose, onCreated }: GuestLin
 
   const handleAcknowledge = () => {
     setStateValue('form')
-    setExpiresAt('')
+    setPreset(DEFAULT_EXPIRY_PRESET)
+    setLabel('')
     setGeneratedUrl('')
     setError(null)
     setCopied(false)
@@ -87,20 +104,47 @@ export function GuestLinkModal({ videoId, isOpen, onClose, onCreated }: GuestLin
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Generate Guest Link</h2>
             <form onSubmit={handleGenerateLink} className="space-y-4">
               <div>
-                <label
-                  htmlFor="expires_at"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Expires at (optional)
+                <label htmlFor="label" className="block text-sm font-medium text-gray-700 mb-1">
+                  Label (optional)
                 </label>
                 <input
-                  id="expires_at"
-                  type="datetime-local"
-                  value={expiresAt}
-                  onChange={(e) => setExpiresAt(e.target.value)}
+                  id="label"
+                  type="text"
+                  value={label}
+                  maxLength={GUEST_LINK_LABEL_MAX}
+                  placeholder="e.g. BBC casting, Sam"
+                  onChange={(e) => setLabel(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                <p className="mt-1 text-xs text-gray-500">Only you and your team see this.</p>
               </div>
+              <fieldset>
+                <legend className="block text-sm font-medium text-gray-700 mb-1">
+                  Link expires after
+                </legend>
+                <div className="grid grid-cols-4 gap-2">
+                  {EXPIRY_PRESETS.map((p) => (
+                    <label
+                      key={p.id}
+                      className={`px-2 py-2 text-center text-sm rounded-md border cursor-pointer ${
+                        preset === p.id
+                          ? 'border-blue-600 bg-blue-50 text-blue-700'
+                          : 'border-gray-300 text-gray-700'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="expiry"
+                        value={p.id}
+                        checked={preset === p.id}
+                        onChange={() => setPreset(p.id)}
+                        className="sr-only"
+                      />
+                      {p.label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               {error && <p className="text-sm text-red-600">{error}</p>}
               <div className="flex gap-3 pt-2">
                 <button

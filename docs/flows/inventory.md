@@ -66,7 +66,7 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 | F25 | Account deletion and data export | not drawn | Not drawn | #143, #144–#148 | Partial (erasure shipped, deletion not) | Not checked |
 | F26 | Google and Apple sign-in | not drawn | Not drawn | — | Partial (disabled placeholder buttons) | Not checked |
 | F27 | System pages: errors, empty states, legal | Flow 05 step 15; Flow 03 step 13; Flow 02 invalid-link | Partial | #171 | Partial | Not checked |
-| G1 | Guest review link (extra) | Flow 02, all steps and edge cases | Drawn | #165, #166, #167, #170 | Yes (guest page is video only, no comments, #165: S5-GUEST-001) | Not checked |
+| G1 | Guest review link (extra) | Flow 02, all steps and edge cases | Drawn | #165, #166, #167, #170 | Yes (guest page is video only, no comments, #165: S5-GUEST-001; label, expiry presets, hide expired, version nudge, #166: S5-GUEST-002) | Not checked |
 | G2 | Versions and status pipeline (extra) | Flow 01, steps 03–04, 09–10; Flow 06 | Drawn | #159, #160, #161, #162 | Partial (video-page status control and guards, #159: S5-FLOW-001; auto In review on first agent open, #160: S5-FLOW-002; open-comments note on earlier versions, #162: S5-FLOW-004; new talent version on an Approved video re-opens review, #161: S5-FLOW-003) | Not checked |
 | G3 | Legal entity, DPA and cookie consent (extra) | Billing & Settings page; Flow 05, step 06 | Partial | — | Yes (BILLING-004, BILLING-006, COMPLY-003) | Not checked |
 

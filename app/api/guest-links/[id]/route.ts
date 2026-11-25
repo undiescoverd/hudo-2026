@@ -90,7 +90,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
       ? user.user_metadata.full_name.trim()
       : (user.email ?? user.id)
-  logEvent({
+  await logEvent({
     action: 'guest_link_revoked',
     resourceType: 'guest_link',
     resourceId: id,
