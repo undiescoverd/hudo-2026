@@ -559,20 +559,3 @@ describe('billing helpers', () => {
     })
   })
 })
-
-describe('guestLinksAllowed (S5-GUEST-003)', () => {
-  it('only canceled ends guest links; every other value keeps them working', async () => {
-    const { guestLinksAllowed } = await import('./billing')
-    const cases: Array<[string | null, boolean]> = [
-      ['active', true],
-      ['trialing', true],
-      ['past_due', true],
-      [null, true],
-      ['some_future_status', true],
-      ['canceled', false],
-    ]
-    for (const [status, expected] of cases) {
-      assert.equal(guestLinksAllowed({ subscription_status: status }), expected, String(status))
-    }
-  })
-})

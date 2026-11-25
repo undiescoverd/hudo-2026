@@ -78,44 +78,6 @@ function mapStripeStatus(stripeStatus: string): DbSubscriptionStatus {
 }
 
 // ---------------------------------------------------------------------------
-// Guest-link entitlement (S5-GUEST-003)
-// ---------------------------------------------------------------------------
-
-/**
- * Guest links stop working when the agency's subscription has ENDED, and work again
- * if it resubscribes (computed live; link rows are never touched).
- *
- * Only `canceled` counts as ended. The DB CHECK allows just active|trialing|past_due|canceled
- * and mapStripeStatus folds unpaid/incomplete/incomplete_expired/paused into `past_due`,
- * so those keep working (same as past_due, a product decision). A null/unknown status
- * (no subscription, e.g. freemium) is not canceled and keeps working.
- */
-export function guestLinksAllowed(agency: { subscription_status: string | null }): boolean {
-  return agency.subscription_status !== 'canceled'
-}
-
-/**
- * Looks up the agency behind a guest link and applies guestLinksAllowed.
- * Fails closed (false) on a lookup error or missing agency. Logs carry no token.
- */
-export async function agencyAllowsGuestLinks(
-  admin: SupabaseClient,
-  agencyId: string
-): Promise<boolean> {
-  const { data, error } = await admin
-    .from('agencies')
-    .select('subscription_status')
-    .eq('id', agencyId)
-    .maybeSingle()
-  if (error) {
-    console.error('[guest:billing] Agency lookup failed:', error.message)
-    return false
-  }
-  if (!data) return false
-  return guestLinksAllowed(data)
-}
-
-// ---------------------------------------------------------------------------
 // Shared update + zero-row guard
 // ---------------------------------------------------------------------------
 

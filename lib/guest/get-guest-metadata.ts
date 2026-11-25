@@ -1,6 +1,6 @@
 import { verifyGuestToken } from '@/lib/guest-tokens'
 import { createAdminClient } from '@/lib/supabase-admin'
-import { agencyAllowsGuestLinks } from '@/lib/billing'
+import { agencyAllowsGuestLinks } from '@/lib/guest/agency-entitlement'
 
 /**
  * GuestMetadata — shape returned to callers (page + API route).
