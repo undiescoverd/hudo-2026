@@ -14,6 +14,7 @@ describe('guest playback-url — rate limit (real handler)', () => {
   const originalFetch = globalThis.fetch
   const saved: Record<string, string | undefined> = {}
   const fetched: string[] = []
+  const redisBodies: string[] = []
 
   before(() => {
     for (const k of ['UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'])
@@ -24,6 +25,7 @@ describe('guest playback-url — rate limit (real handler)', () => {
       const url = new URL(typeof input === 'string' ? input : input.toString())
       fetched.push(url.origin)
       assert.equal(url.origin, REDIS, 'over the limit nothing but Redis may be called')
+      redisBodies.push(String(init?.body ?? ''))
       const body = JSON.parse(String(init?.body ?? '[]'))
       const items = Array.isArray(body) ? body.map(() => ({ result: 10_000 })) : { result: 10_000 }
       return Response.json(items)
@@ -45,6 +47,10 @@ describe('guest playback-url — rate limit (real handler)', () => {
     const res = await GET(req, { params: { token: TOKEN } })
     assert.equal(res.status, 429)
     assert.ok(res.headers.get('retry-after'))
+    assert.ok(
+      redisBodies.every((b) => !b.includes(TOKEN)),
+      'rate-limit key must use the hashed token, never the plaintext token'
+    )
     assert.ok(fetched.length > 0 && fetched.every((o) => o === REDIS))
   })
 })

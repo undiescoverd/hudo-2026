@@ -324,6 +324,7 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
   let notifInserts: Array<Record<string, unknown>>
   let creatorIsMember: boolean
   let notifInsertFails: boolean
+  let rpcFails: boolean
 
   before(async () => {
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k]
@@ -372,6 +373,12 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
         case '/rest/v1/rpc/increment_guest_link_view': {
           const body = JSON.parse(String(init?.body)) as { p_id: string }
           rpcCalls.push(body)
+          if (rpcFails) {
+            return new Response(JSON.stringify({ message: 'rpc down' }), {
+              status: 500,
+              headers: { 'content-type': 'application/json' },
+            })
+          }
           // Mirrors the SQL: increment and RETURN the new count, synchronously (the
           // real UPDATE row-locks, so concurrent callers get distinct counts).
           row.view_count += 1
@@ -420,6 +427,7 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
     notifInserts = []
     creatorIsMember = true
     notifInsertFails = false
+    rpcFails = false
   })
 
   async function callRoute(query = '') {
@@ -536,6 +544,15 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
       const { status, body } = await callRoute()
       assert.equal(status, 200)
       assert.equal(typeof body.url, 'string')
+    })
+
+    it('view-count RPC error: no notification, playback still 200', async () => {
+      row.view_count = 0
+      rpcFails = true
+      const { status, body } = await callRoute()
+      assert.equal(status, 200)
+      assert.equal(typeof body.url, 'string')
+      assert.equal(notifInserts.length, 0)
     })
 
     it('payload carries no token, hash, guest data, link or r2 key', async () => {
