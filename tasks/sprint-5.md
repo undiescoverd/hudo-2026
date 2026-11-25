@@ -191,13 +191,13 @@ NOTES: GH #163. Paper: Flow 01 edge case "Talent signed to two agencies". Linear
 
 ---
 
-- [ ] **S5-GUEST-001** — Guest page: video only, no comments
+- [x] **S5-GUEST-001** — Guest page: video only, no comments
 
 TASK_ID: S5-GUEST-001
 TITLE: Guest page: video only, no comments
 BRANCH: feat/s5-S5-GUEST-001-video-only
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - getGuestMetadata no longer queries or returns comments
@@ -214,13 +214,13 @@ NOTES: GH #165. Paper: Flow 02 steps 05 and 07. Linear RES-212.
 
 ---
 
-- [ ] **S5-GUEST-002** — Guest links: label, expiry presets, auto-hide expired, version indicator
+- [x] **S5-GUEST-002** — Guest links: label, expiry presets, auto-hide expired, version indicator
 
 TASK_ID: S5-GUEST-002
 TITLE: Guest links: label, expiry presets, auto-hide expired, version indicator
 BRANCH: feat/s5-S5-GUEST-002-link-label-expiry
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Migration adds a nullable, length-capped label to guest_links; RLS reviewed; applied to dev and staging via apply_migration
@@ -238,13 +238,13 @@ NOTES: GH #166. Paper: Flow 02 steps 02, 03 and 08. Linear RES-213.
 
 ---
 
-- [ ] **S5-GUEST-003** — Guest links stop working when the agency subscription ends
+- [x] **S5-GUEST-003** — Guest links stop working when the agency subscription ends
 
 TASK_ID: S5-GUEST-003
 TITLE: Guest links stop working when the agency's subscription ends
 BRANCH: feat/s5-S5-GUEST-003-links-stop-on-cancel
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - getGuestMetadata and GET /api/guest/:token/playback-url treat links of agencies with subscription_status canceled as invalid, returning the same response as an expired link
@@ -259,13 +259,13 @@ NOTES: GH #167. Paper: Flow 02 edge case "Agency's plan is cancelled". Linear RE
 
 ---
 
-- [ ] **S5-GUEST-004** — Notify the agent when a guest watches a shared link
+- [x] **S5-GUEST-004** — Notify the agent when a guest watches a shared link
 
 TASK_ID: S5-GUEST-004
 TITLE: Notify the agent when a guest watches a shared link
 BRANCH: feat/s5-S5-GUEST-004-guest-view-alert
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - First playback on a guest link creates a bell notification for the decided recipients
