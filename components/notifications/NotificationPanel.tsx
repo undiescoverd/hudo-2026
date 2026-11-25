@@ -171,12 +171,19 @@ export function NotificationPanel({
                     />
                   )}
                   <div className={!n.read_at ? '' : 'ml-4'}>
-                    <p className="text-sm font-medium text-gray-900">{notificationLabel(n.type)}</p>
-                    {n.payload && typeof n.payload === 'object' && 'message' in n.payload && (
-                      <p className="mt-0.5 text-xs text-gray-600 line-clamp-2">
-                        {String(n.payload.message)}
-                      </p>
-                    )}
+                    <p className="text-sm font-medium text-gray-900">
+                      {n.type === 'guest_viewed' && typeof n.payload?.message === 'string'
+                        ? n.payload.message
+                        : notificationLabel(n.type)}
+                    </p>
+                    {n.type !== 'guest_viewed' &&
+                      n.payload &&
+                      typeof n.payload === 'object' &&
+                      'message' in n.payload && (
+                        <p className="mt-0.5 text-xs text-gray-600 line-clamp-2">
+                          {String(n.payload.message)}
+                        </p>
+                      )}
                     <p className="mt-0.5 text-xs text-gray-400">
                       {formatRelativeTime(n.created_at)}
                     </p>

@@ -84,7 +84,7 @@ export async function GET(request: NextRequest, { params }: { params: { token: s
 
   const { data: video, error: videoError } = await admin
     .from('videos')
-    .select('id, active_version_id')
+    .select('id, title, active_version_id')
     .eq('id', link.video_id)
     .single()
 
@@ -140,7 +140,12 @@ export async function GET(request: NextRequest, { params }: { params: { token: s
       // here must never break playback, and logs carry no token.
       try {
         await enqueueGuestViewNotification(
-          { agencyId: link.agency_id, videoId: link.video_id, creatorId: link.created_by },
+          {
+            agencyId: link.agency_id,
+            videoId: link.video_id,
+            creatorId: link.created_by,
+            videoTitle: video.title,
+          },
           { admin }
         )
       } catch (err) {

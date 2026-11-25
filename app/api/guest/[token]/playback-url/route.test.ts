@@ -325,6 +325,7 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
   let creatorIsMember: boolean
   let notifInsertFails: boolean
   let rpcFails: boolean
+  let videoTitle: string | null
 
   before(async () => {
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k]
@@ -367,7 +368,7 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
             revoked_at: null,
           })
         case '/rest/v1/videos':
-          return reply({ id: VIDEO_ID, active_version_id: VERSION_ID })
+          return reply({ id: VIDEO_ID, title: videoTitle, active_version_id: VERSION_ID })
         case '/rest/v1/video_versions':
           return reply({ id: VERSION_ID, r2_key: R2_KEY })
         case '/rest/v1/rpc/increment_guest_link_view': {
@@ -428,6 +429,7 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
     creatorIsMember = true
     notifInsertFails = false
     rpcFails = false
+    videoTitle = 'Showreel 2026'
   })
 
   async function callRoute(query = '') {
@@ -491,6 +493,7 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
       assert.equal(n.recipient_id, CREATOR_ID)
       assert.equal(n.agency_id, AGENCY_ID)
       assert.equal(n.video_id, VIDEO_ID)
+      assert.deepEqual(n.payload, { message: 'Guest watched Showreel 2026' })
     })
 
     it('second view, reloads and renewals create none', async () => {
@@ -544,6 +547,15 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
       const { status, body } = await callRoute()
       assert.equal(status, 200)
       assert.equal(typeof body.url, 'string')
+    })
+
+    it('missing video title falls back to the generic message', async () => {
+      row.view_count = 0
+      videoTitle = null
+      await callRoute()
+      assert.deepEqual(notifInserts[0].payload, {
+        message: 'A guest watched your shared video.',
+      })
     })
 
     it('view-count RPC error: no notification, playback still 200', async () => {

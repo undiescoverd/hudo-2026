@@ -141,7 +141,7 @@ export async function enqueueUploadNotification(
  * link, on the link's first watch only (S5-GUEST-004, GH #170). The caller decides
  * "first" from the atomic increment_guest_link_view result.
  *
- * Privacy: the payload is a fixed message. No guest identity, IP, user agent,
+ * Privacy: the payload is just a display message built from the video title. No guest identity, IP, user agent,
  * link or token is ever included. Skips silently if the creator is no longer a
  * member of the agency (left, or erased). Must not throw.
  */
@@ -150,10 +150,12 @@ export async function enqueueGuestViewNotification(
     agencyId,
     videoId,
     creatorId,
+    videoTitle,
   }: {
     agencyId: string
     videoId: string
     creatorId: string
+    videoTitle?: string | null
   },
   deps?: { admin?: SupabaseClient }
 ): Promise<void> {
@@ -186,7 +188,13 @@ export async function enqueueGuestViewNotification(
     type: 'guest_viewed',
     video_id: videoId,
     comment_id: null,
-    payload: { message: 'A guest watched your shared video.' },
+    // Stored as the display line (the panel shows `message` as the title for this
+    // type). The video title is internal and only the link creator sees it.
+    payload: {
+      message: videoTitle?.trim()
+        ? `Guest watched ${videoTitle.trim()}`
+        : 'A guest watched your shared video.',
+    },
   })
   if (insertError) {
     console.error('[notifications:enqueueGuestView] Insert failed:', insertError.message)

@@ -485,7 +485,12 @@ function makeGuestViewAdmin(opts: {
 }
 
 describe('enqueueGuestViewNotification', () => {
-  const args = { agencyId: 'agency-1', videoId: 'video-1', creatorId: 'creator-1' }
+  const args = {
+    agencyId: 'agency-1',
+    videoId: 'video-1',
+    creatorId: 'creator-1',
+    videoTitle: 'Showreel 2026',
+  }
 
   it('inserts one guest_viewed row for the creator with a fixed message and no guest data', async () => {
     const { enqueueGuestViewNotification } = await import('./notifications')
@@ -502,9 +507,18 @@ describe('enqueueGuestViewNotification', () => {
         type: 'guest_viewed',
         video_id: 'video-1',
         comment_id: null,
-        payload: { message: 'A guest watched your shared video.' },
+        payload: { message: 'Guest watched Showreel 2026' },
       },
     ])
+  })
+
+  it('falls back to the generic message when the video title is missing or blank', async () => {
+    const { enqueueGuestViewNotification } = await import('./notifications')
+    for (const videoTitle of [null, undefined, '   ']) {
+      const { admin, inserted } = makeGuestViewAdmin({ member: { user_id: 'creator-1' } })
+      await enqueueGuestViewNotification({ ...args, videoTitle }, { admin })
+      assert.deepEqual(inserted[0].payload, { message: 'A guest watched your shared video.' })
+    }
   })
 
   it('skips silently when the creator is no longer a member (left or erased)', async () => {
