@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict'
 import { afterEach, before, describe, it } from 'node:test'
 import React from 'react'
+import { renderToString } from 'react-dom/server'
 import { expand, findAll, textOf } from '../player/tree.testutil'
 
 import type * as GuestPlayerMod from './GuestPlayer'
@@ -79,17 +80,45 @@ describe('GuestPlayer load errors', () => {
     assert.doesNotMatch(textOf(failed), /\bnotes?\b/i)
   })
 
-  it('Retry runs the retry handler, which re-requests the playback url', async () => {
+  it('a failed request followed by Retry (same call, no renew flag) recovers', async () => {
+    stubFetch(429, { error: 'Too many requests' })
+    await assert.rejects(m.requestGuestPlaybackUrl('tok', false))
     stubFetch(200, { url: 'https://signed.example/v.mp4', expires_in: 900 })
-    const onRetry = () => void m.requestGuestPlaybackUrl('tok', false)
-    const tree = expand(React.createElement(m.GuestPlayerError, { kind: 'rate-limited', onRetry }))
-    const [btn] = findAll(tree, (e) => e.type === 'button')
-    assert.equal(textOf(btn), 'Retry')
-    assert.equal(calls.length, 0)
-    ;(btn.props.onClick as () => void)()
-    await new Promise((r) => setTimeout(r, 0))
+    const data = await m.requestGuestPlaybackUrl('tok', false)
+    assert.equal(data.url, 'https://signed.example/v.mp4')
     assert.equal(calls.length, 1)
     assert.match(calls[0], /\/api\/guest\/tok\/playback-url/)
     assert.doesNotMatch(calls[0], /renew=1/) // a retry counts as a real load, not a renewal
+  })
+
+  it('the video element stays rendered while the error shows, and Retry is the real handler', () => {
+    const onRetry = () => {}
+    const el = React.createElement(m.GuestPlayerView, {
+      url: 'https://signed.example/v.mp4',
+      loading: false,
+      error: 'rate-limited',
+      onRetry,
+      onMediaError() {},
+    })
+    const html = renderToString(el)
+    assert.match(html, /<video/)
+    assert.match(html, /role="alert"/)
+    assert.match(html, /Give it a minute and try again\./)
+    const [btn] = findAll(expand(el), (e) => e.type === 'button')
+    assert.equal(btn.props.onClick, onRetry)
+  })
+
+  it('no error overlay while healthy', () => {
+    const html = renderToString(
+      React.createElement(m.GuestPlayerView, {
+        url: 'https://signed.example/v.mp4',
+        loading: false,
+        error: null,
+        onRetry() {},
+        onMediaError() {},
+      })
+    )
+    assert.match(html, /<video/)
+    assert.doesNotMatch(html, /role="alert"/)
   })
 })

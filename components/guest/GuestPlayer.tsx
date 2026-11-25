@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { guestPlaybackUrlPath } from '@/lib/guest-playback'
 import { PlayerLoadError } from '@/components/player/PlayerLoadError'
+import { isMediaFailed } from '@/components/player/media-failure'
 
 export type GuestLoadError = 'rate-limited' | 'failed'
 
@@ -32,6 +33,7 @@ export function GuestPlayerError({ kind, onRetry }: { kind: GuestLoadError; onRe
   const limited = kind === 'rate-limited'
   return (
     <PlayerLoadError
+      className="h-full"
       title={limited ? 'Too many requests' : "This video couldn't be loaded"}
       detail={limited ? 'Give it a minute and try again.' : 'Check your connection and try again.'}
       onRetry={onRetry}
@@ -122,12 +124,17 @@ function useGuestSignedUrl(token: string) {
     }
   }, [fetchUrl])
 
-  return { url, loading, error, setError, pendingUrl, fetchUrl }
+  return { url, loading, error, pendingUrl, fetchUrl }
 }
 
 export function GuestPlayer({ token }: GuestPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
-  const { url, loading, error, setError, pendingUrl, fetchUrl } = useGuestSignedUrl(token)
+  const { url, loading, error, pendingUrl, fetchUrl } = useGuestSignedUrl(token)
+  // A media error (e.g. file missing in storage) is tied to the url that failed, so it
+  // clears when a new url lands. The <video> stays mounted so renewal listeners survive.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+  const shownError: GuestLoadError | null =
+    error ?? (isMediaFailed(failedUrl, url) ? 'failed' : null)
 
   // Apply pending URL on timeupdate and pause (same pattern as useSignedUrl)
   useEffect(() => {
@@ -158,11 +165,36 @@ export function GuestPlayer({ token }: GuestPlayerProps) {
     }
   }, [pendingUrl])
 
-  if (error) return <GuestPlayerError kind={error} onRetry={() => void fetchUrl(false)} />
+  return (
+    <GuestPlayerView
+      videoRef={videoRef}
+      url={url}
+      loading={loading}
+      error={shownError}
+      onRetry={() => void fetchUrl(false)}
+      onMediaError={() => setFailedUrl(url)}
+    />
+  )
+}
 
+export function GuestPlayerView({
+  videoRef,
+  url,
+  loading,
+  error,
+  onRetry,
+  onMediaError,
+}: {
+  videoRef?: React.Ref<HTMLVideoElement>
+  url: string | null
+  loading: boolean
+  error: GuestLoadError | null
+  onRetry: () => void
+  onMediaError: () => void
+}) {
   return (
     <div className="relative w-full bg-stage">
-      {loading && (
+      {loading && !error && (
         <div className="absolute inset-0 flex aspect-video items-center justify-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
         </div>
@@ -175,8 +207,13 @@ export function GuestPlayer({ token }: GuestPlayerProps) {
         controls
         playsInline
         controlsList="nodownload"
-        onError={() => setError('failed')} // e.g. file missing in storage
+        onError={onMediaError}
       />
+      {error && (
+        <div className="absolute inset-0">
+          <GuestPlayerError kind={error} onRetry={onRetry} />
+        </div>
+      )}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { PlayerControls } from './PlayerControls'
 import { CommentTimeline } from './CommentTimeline'
 import { useSignedUrl } from '@/hooks/useSignedUrl'
 import { PlayerLoadError } from './PlayerLoadError'
+import { isMediaFailed } from './media-failure'
 import { useVideoElementRef, useVideoPlayerState } from './VideoPlayerProvider'
 import type { Comment } from '@/lib/comments'
 
@@ -41,7 +42,7 @@ export function VideoLoadFailed({
       title="This version couldn't be loaded"
       detail="Check your connection and try again."
       onRetry={onRetry}
-      className="rounded-[10px]"
+      className="h-full rounded-[10px]"
     >
       {onVersionChange && others.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5">
@@ -76,13 +77,12 @@ export function VideoPlayer({
   const playerState = useVideoPlayerState()
   const { url, loading, error, fetchUrl, applyPendingUrl } = useSignedUrl(videoId, versionId)
 
-  // The media element failing (e.g. file missing in storage) must not surface its raw error.
-  const [mediaError, setMediaError] = useState(false)
-  useEffect(() => {
-    setMediaError(false)
-  }, [videoId, versionId])
+  // A media error (e.g. file missing in storage) is tied to the url that failed, so it clears
+  // when a new url lands. The <video> stays mounted under the overlay so the renewal
+  // listeners below keep working after Retry.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+  const mediaError = isMediaFailed(failedUrl, url)
   const retry = useCallback(() => {
-    setMediaError(false)
     void fetchUrl(false)
   }, [fetchUrl])
 
@@ -106,22 +106,11 @@ export function VideoPlayer({
     }
   }, [applyPendingUrl, videoRef])
 
-  if (error || mediaError) {
-    return (
-      <VideoLoadFailed
-        currentVersionId={versionId}
-        versions={versions}
-        onRetry={retry}
-        onVersionChange={onVersionChange}
-      />
-    )
-  }
-
   return (
     <div className={className ?? 'w-full'}>
       {/* Video + controls */}
       <div className="relative w-full overflow-hidden rounded-[10px] bg-stage">
-        {loading && (
+        {loading && !error && !mediaError && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
           </div>
@@ -134,12 +123,23 @@ export function VideoPlayer({
           className="aspect-video w-full"
           controls={!showCustomControls}
           playsInline
-          onError={() => setMediaError(true)}
+          onError={() => setFailedUrl(url)}
         >
           {captionsSrc && <track kind="captions" src={captionsSrc} label="Captions" default />}
         </video>
 
-        {showCustomControls && url && (
+        {(error || mediaError) && (
+          <div className="absolute inset-0 z-10">
+            <VideoLoadFailed
+              currentVersionId={versionId}
+              versions={versions}
+              onRetry={retry}
+              onVersionChange={onVersionChange}
+            />
+          </div>
+        )}
+
+        {showCustomControls && url && !mediaError && !error && (
           <div className="absolute bottom-0 left-0 right-0">
             <PlayerControls
               currentTime={playerState.currentTime}

@@ -1,10 +1,12 @@
+import type { GuestLinkRejection } from '@/lib/guest/get-guest-metadata'
+
 export type InvalidCopy = {
   title: string
   body: string
   icon: 'clock' | 'blocked' | 'lock' | 'help'
 }
 
-const COPY: Record<string, InvalidCopy> = {
+const COPY: Record<GuestLinkRejection, InvalidCopy> = {
   expired: {
     title: 'This link has expired',
     body: 'Ask the person who shared it for a new one.',
@@ -30,6 +32,6 @@ const COPY: Record<string, InvalidCopy> = {
 /** Unknown or missing reason → not-found copy. Never echoes the input. */
 export function copyForReason(reason: unknown): InvalidCopy {
   return typeof reason === 'string' && Object.hasOwn(COPY, reason)
-    ? COPY[reason]
+    ? COPY[reason as GuestLinkRejection]
     : COPY['not-found']
 }
