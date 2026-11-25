@@ -8,7 +8,7 @@ import { getGuestMetadata } from '@/lib/guest/get-guest-metadata'
  *
  * Public endpoint — no Supabase Auth required.
  * Validates the plaintext token against the stored SHA-256 hash.
- * Returns video metadata + comments for the current version.
+ * Returns video + version metadata only. Guests never receive comments.
  *
  * Security:
  * - Token comparison is timing-safe (via verifyGuestToken in getGuestMetadata).

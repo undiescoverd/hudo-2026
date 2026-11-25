@@ -16,15 +16,11 @@
  * - No Supabase client is imported or used.
  */
 
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { guestPlaybackUrlPath } from '@/lib/guest-playback'
 
 interface GuestPlayerProps {
   token: string
-  /** Shared with a sibling comment list so click-to-seek can drive this
-   *  player's <video> element directly. Falls back to an internal ref when
-   *  omitted (e.g. if GuestPlayer is ever used standalone). */
-  videoRef?: RefObject<HTMLVideoElement>
 }
 
 const EXPIRY_SECONDS = 900 // matches the API constant
@@ -106,9 +102,8 @@ function useGuestSignedUrl(token: string) {
   return { url, loading, error, pendingUrl, fetchUrl }
 }
 
-export function GuestPlayer({ token, videoRef: externalRef }: GuestPlayerProps) {
-  const internalRef = useRef<HTMLVideoElement>(null)
-  const videoRef = externalRef ?? internalRef
+export function GuestPlayer({ token }: GuestPlayerProps) {
+  const videoRef = useRef<HTMLVideoElement>(null)
   const { url, loading, error, pendingUrl, fetchUrl } = useGuestSignedUrl(token)
 
   // Apply pending URL on timeupdate and pause (same pattern as useSignedUrl)
@@ -138,7 +133,7 @@ export function GuestPlayer({ token, videoRef: externalRef }: GuestPlayerProps) 
       el.removeEventListener('timeupdate', applyPending)
       el.removeEventListener('pause', applyPending)
     }
-  }, [pendingUrl, videoRef])
+  }, [pendingUrl])
 
   if (error) {
     return (
