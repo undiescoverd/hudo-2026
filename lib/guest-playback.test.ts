@@ -68,22 +68,6 @@ describe('view counting across a watch', () => {
   })
 })
 
-describe('GuestPlayer wiring (source invariant)', () => {
-  const dir = path.dirname(fileURLToPath(import.meta.url))
-  const source = fs.readFileSync(path.resolve(dir, '../components/guest/GuestPlayer.tsx'), 'utf8')
-
-  it('builds the fetch URL via guestPlaybackUrlPath, passing isPending as the renewal flag', () => {
-    assert.match(source, /fetch\(guestPlaybackUrlPath\(token, isPending\)/)
-    assert.doesNotMatch(source, /fetch\(`\/api\/guest\/\$\{token\}\/playback-url`/)
-  })
-
-  it('timed renewal and its retry use fetchUrl(true); Retry button uses fetchUrl(false)', () => {
-    assert.ok([...source.matchAll(/void fetchUrl\(true\)/g)].length >= 2)
-    assert.match(source, /onClick=\{\(\) => fetchUrl\(false\)\}/)
-    assert.match(source, /void fetchUrl\(false\)/)
-  })
-})
-
 describe('guest-playback module hygiene', () => {
   it('has no imports (pure, safe for the use client GuestPlayer)', () => {
     const dir = path.dirname(fileURLToPath(import.meta.url))

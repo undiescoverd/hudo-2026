@@ -1,7 +1,7 @@
 /**
  * Guest playback page — /guest/[token]
  *
- * Server component. Calls getGuestMetadata directly (no HTTP round-trip, no
+ * Server component. Calls resolveGuestLink directly (no HTTP round-trip, no
  * host-header risk, no NEXT_PUBLIC_BASE_URL dependency). An invalid/expired/
  * revoked token → redirect to /guest/invalid. All data flows through the lib
  * helper and then API routes for dynamic resources (playback URL).
@@ -13,16 +13,18 @@
  */
 import { redirect } from 'next/navigation'
 import { GuestReview } from '@/components/guest/GuestReview'
-import { getGuestMetadata } from '@/lib/guest/get-guest-metadata'
+import { resolveGuestLink } from '@/lib/guest/get-guest-metadata'
 
 export default async function GuestPage({ params }: { params: { token: string } }) {
   const { token } = params
 
-  const data = await getGuestMetadata(token)
+  const result = await resolveGuestLink(token)
 
-  if (!data) {
-    redirect('/guest/invalid')
+  // The reason is an allowlisted word, never the token or any link detail.
+  if (!result.ok) {
+    redirect(`/guest/invalid?reason=${result.reason}`)
   }
+  const data = result.data
 
   // A valid token but no video isn't useful — treat as invalid
   if (!data.video) {

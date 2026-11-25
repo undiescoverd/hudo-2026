@@ -18,6 +18,40 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { guestPlaybackUrlPath } from '@/lib/guest-playback'
+import { PlayerLoadError } from '@/components/player/PlayerLoadError'
+
+export type GuestLoadError = 'rate-limited' | 'failed'
+
+export class GuestPlaybackError extends Error {
+  constructor(readonly kind: GuestLoadError) {
+    super(kind)
+  }
+}
+
+export function GuestPlayerError({ kind, onRetry }: { kind: GuestLoadError; onRetry: () => void }) {
+  const limited = kind === 'rate-limited'
+  return (
+    <PlayerLoadError
+      title={limited ? 'Too many requests' : "This video couldn't be loaded"}
+      detail={limited ? 'Give it a minute and try again.' : 'Check your connection and try again.'}
+      onRetry={onRetry}
+    />
+  )
+}
+
+/** One playback-url request. A 429 (20/min per link) is told apart from every other failure. */
+export async function requestGuestPlaybackUrl(
+  token: string,
+  isRenewal: boolean,
+  signal?: AbortSignal
+): Promise<{ url: string; expires_in: number }> {
+  const res = await fetch(guestPlaybackUrlPath(token, isRenewal), {
+    signal,
+    credentials: 'omit', // API ignores cookies; be explicit about intent
+  })
+  if (!res.ok) throw new GuestPlaybackError(res.status === 429 ? 'rate-limited' : 'failed')
+  return (await res.json()) as { url: string; expires_in: number }
+}
 
 interface GuestPlayerProps {
   token: string
@@ -29,7 +63,7 @@ const REFRESH_BUFFER_SECONDS = 180 // refresh 3 min before expiry
 function useGuestSignedUrl(token: string) {
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<GuestLoadError | null>(null)
 
   const pendingUrl = useRef<string | null>(null)
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -43,18 +77,7 @@ function useGuestSignedUrl(token: string) {
 
       try {
         // isPending = background renewal → flagged so it isn't counted as a view
-        const res = await fetch(guestPlaybackUrlPath(token, isPending), {
-          signal: controller.signal,
-          credentials: 'omit', // API ignores cookies; be explicit about intent
-        })
-
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}))
-          throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
-        }
-
-        // API returns { url, expires_in } — snake_case
-        const data = (await res.json()) as { url: string; expires_in: number }
+        const data = await requestGuestPlaybackUrl(token, isPending, controller.signal)
         const expiresIn = data.expires_in ?? EXPIRY_SECONDS
 
         if (isPending) {
@@ -74,7 +97,7 @@ function useGuestSignedUrl(token: string) {
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return
         if (!isPending) {
-          setError('Failed to load video')
+          setError(err instanceof GuestPlaybackError ? err.kind : 'failed')
           setLoading(false)
         } else {
           // Retry in 30 s so the URL doesn't expire without a replacement
@@ -99,12 +122,12 @@ function useGuestSignedUrl(token: string) {
     }
   }, [fetchUrl])
 
-  return { url, loading, error, pendingUrl, fetchUrl }
+  return { url, loading, error, setError, pendingUrl, fetchUrl }
 }
 
 export function GuestPlayer({ token }: GuestPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
-  const { url, loading, error, pendingUrl, fetchUrl } = useGuestSignedUrl(token)
+  const { url, loading, error, setError, pendingUrl, fetchUrl } = useGuestSignedUrl(token)
 
   // Apply pending URL on timeupdate and pause (same pattern as useSignedUrl)
   useEffect(() => {
@@ -135,20 +158,7 @@ export function GuestPlayer({ token }: GuestPlayerProps) {
     }
   }, [pendingUrl])
 
-  if (error) {
-    return (
-      <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-stage">
-        <p className="text-sm text-gray-300">Failed to load video</p>
-        <button
-          type="button"
-          onClick={() => fetchUrl(false)}
-          className="rounded bg-white/10 px-3 py-1 text-xs text-white hover:bg-white/20"
-        >
-          Retry
-        </button>
-      </div>
-    )
-  }
+  if (error) return <GuestPlayerError kind={error} onRetry={() => void fetchUrl(false)} />
 
   return (
     <div className="relative w-full bg-stage">
@@ -165,6 +175,7 @@ export function GuestPlayer({ token }: GuestPlayerProps) {
         controls
         playsInline
         controlsList="nodownload"
+        onError={() => setError('failed')} // e.g. file missing in storage
       />
     </div>
   )

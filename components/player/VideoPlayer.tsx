@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { PlayerControls } from './PlayerControls'
 import { CommentTimeline } from './CommentTimeline'
 import { useSignedUrl } from '@/hooks/useSignedUrl'
+import { PlayerLoadError } from './PlayerLoadError'
 import { useVideoElementRef, useVideoPlayerState } from './VideoPlayerProvider'
 import type { Comment } from '@/lib/comments'
 
@@ -18,6 +19,47 @@ interface VideoPlayerProps {
   comments?: Comment[]
   onSeekToComment?: (commentId: string) => void
   className?: string
+  /** The page's version list + setter, so the error state can offer the existing switch. */
+  versions?: { id: string; versionNumber: number }[]
+  onVersionChange?: (versionId: string) => void
+}
+
+export function VideoLoadFailed({
+  currentVersionId,
+  versions,
+  onRetry,
+  onVersionChange,
+}: {
+  currentVersionId?: string
+  versions?: { id: string; versionNumber: number }[]
+  onRetry: () => void
+  onVersionChange?: (versionId: string) => void
+}) {
+  const others = (versions ?? []).filter((v) => v.id !== currentVersionId)
+  return (
+    <PlayerLoadError
+      title="This version couldn't be loaded"
+      detail="Check your connection and try again."
+      onRetry={onRetry}
+      className="rounded-[10px]"
+    >
+      {onVersionChange && others.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5">
+          <span className="text-[12.5px] text-white/70">Or switch to</span>
+          {others.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => onVersionChange(v.id)}
+              className="rounded-md bg-white/10 px-2.5 py-1 font-mono text-[12.5px] text-white hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-coral"
+            >
+              v{v.versionNumber}
+            </button>
+          ))}
+        </div>
+      )}
+    </PlayerLoadError>
+  )
 }
 
 export function VideoPlayer({
@@ -27,10 +69,22 @@ export function VideoPlayer({
   comments,
   onSeekToComment,
   className,
+  versions,
+  onVersionChange,
 }: VideoPlayerProps) {
   const videoRef = useVideoElementRef()
   const playerState = useVideoPlayerState()
   const { url, loading, error, fetchUrl, applyPendingUrl } = useSignedUrl(videoId, versionId)
+
+  // The media element failing (e.g. file missing in storage) must not surface its raw error.
+  const [mediaError, setMediaError] = useState(false)
+  useEffect(() => {
+    setMediaError(false)
+  }, [videoId, versionId])
+  const retry = useCallback(() => {
+    setMediaError(false)
+    void fetchUrl(false)
+  }, [fetchUrl])
 
   // Remove native controls and show custom controls after hydration
   const [showCustomControls, setShowCustomControls] = useState(false)
@@ -52,18 +106,14 @@ export function VideoPlayer({
     }
   }, [applyPendingUrl, videoRef])
 
-  if (error) {
+  if (error || mediaError) {
     return (
-      <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-[10px] bg-stage">
-        <p className="text-sm text-white/60">Failed to load video</p>
-        <button
-          type="button"
-          onClick={() => fetchUrl(false)}
-          className="rounded bg-white/10 px-3 py-1 text-xs text-white hover:bg-white/20"
-        >
-          Retry
-        </button>
-      </div>
+      <VideoLoadFailed
+        currentVersionId={versionId}
+        versions={versions}
+        onRetry={retry}
+        onVersionChange={onVersionChange}
+      />
     )
   }
 
@@ -84,6 +134,7 @@ export function VideoPlayer({
           className="aspect-video w-full"
           controls={!showCustomControls}
           playsInline
+          onError={() => setMediaError(true)}
         >
           {captionsSrc && <track kind="captions" src={captionsSrc} label="Captions" default />}
         </video>

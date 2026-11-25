@@ -269,6 +269,8 @@ export default function VideoPage({ params }: Props) {
               videoId={params.id}
               versionId={activeVersionId ?? undefined}
               comments={timelineComments}
+              versions={versions ?? undefined}
+              onVersionChange={setActiveVersionId}
               className="h-full w-full"
             />
           }

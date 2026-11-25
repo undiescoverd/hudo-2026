@@ -34,13 +34,30 @@ export type GuestMetadata = {
  * missing video) so the caller can render 404 / redirect without leaking
  * enumeration information.
  */
+export type GuestLinkRejection = 'expired' | 'revoked' | 'subscription' | 'not-found'
+
+export type GuestLinkResult =
+  | { ok: true; data: GuestMetadata }
+  | { ok: false; reason: GuestLinkRejection }
+
 export async function getGuestMetadata(token: string): Promise<GuestMetadata | null> {
+  const result = await resolveGuestLink(token)
+  return result.ok ? result.data : null
+}
+
+/**
+ * Same pipeline as getGuestMetadata, but says why a link was rejected. Only the
+ * /guest/[token] page uses it (to pick a generic heading on /guest/invalid); the
+ * API route keeps collapsing every rejection to one response.
+ */
+export async function resolveGuestLink(token: string): Promise<GuestLinkResult> {
+  const notFound: GuestLinkResult = { ok: false, reason: 'not-found' }
   let admin: ReturnType<typeof createAdminClient>
   try {
     admin = createAdminClient()
   } catch (err) {
     console.error('[guest:metadata] Missing Supabase environment variables', err)
-    return null
+    return notFound
   }
 
   // Import here so this module works in both API-route and RSC contexts
@@ -59,18 +76,15 @@ export async function getGuestMetadata(token: string): Promise<GuestMetadata | n
 
   // Unknown / failed lookup / revoked / expired all collapse to null (no enumeration).
   // verifyGuestToken is timing-safe defense-in-depth even though hash equality is sufficient.
-  if (
-    !link ||
-    !verifyGuestToken(token, link.token_hash) ||
-    link.revoked_at !== null ||
-    (link.expires_at !== null && new Date(link.expires_at) < new Date())
-  ) {
-    return null
+  if (!link || !verifyGuestToken(token, link.token_hash)) return notFound
+  if (link.revoked_at !== null) return { ok: false, reason: 'revoked' }
+  if (link.expires_at !== null && new Date(link.expires_at) < new Date()) {
+    return { ok: false, reason: 'expired' }
   }
 
-  // Ended subscription: indistinguishable from an expired link (no reason leaked).
+  // Ended subscription: its own generic heading on /guest/invalid (no billing details).
   if (!(await agencyAllowsGuestLinks(admin, link.agency_id))) {
-    return null
+    return { ok: false, reason: 'subscription' }
   }
 
   // Fetch video metadata — never return r2_key, agency_id, or internal ids that allow pivoting
@@ -82,7 +96,7 @@ export async function getGuestMetadata(token: string): Promise<GuestMetadata | n
 
   if (videoError || !video) {
     console.error('[guest:metadata] Video lookup failed:', videoError?.message)
-    return null
+    return notFound
   }
 
   // Resolve which version to serve: pinned at link creation time, or current active
@@ -101,16 +115,19 @@ export async function getGuestMetadata(token: string): Promise<GuestMetadata | n
   }
 
   return {
-    video: {
-      id: video.id,
-      title: video.title,
+    ok: true,
+    data: {
+      video: {
+        id: video.id,
+        title: video.title,
+      },
+      version: version
+        ? {
+            id: version.id,
+            version_number: version.version_number,
+            duration_seconds: version.duration_seconds,
+          }
+        : null,
     },
-    version: version
-      ? {
-          id: version.id,
-          version_number: version.version_number,
-          duration_seconds: version.duration_seconds,
-        }
-      : null,
   }
 }
