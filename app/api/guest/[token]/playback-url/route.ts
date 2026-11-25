@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/nextjs'
 import { getStorage } from '@/lib/storage'
 import { hashGuestToken, verifyGuestToken } from '@/lib/guest-tokens'
 import { checkRateLimit } from '@/lib/api-helpers'
+import { agencyAllowsGuestLinks } from '@/lib/guest/agency-entitlement'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { isGuestPlaybackRenewal } from '@/lib/guest-playback'
 import { enqueueGuestViewNotification } from '@/lib/notifications'
@@ -79,6 +80,12 @@ export async function GET(request: NextRequest, { params }: { params: { token: s
     link.revoked_at !== null ||
     (link.expires_at !== null && new Date(link.expires_at) < new Date())
   ) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  // Ended subscription: same 404 as expired. Runs before signing and the view RPC, so a
+  // canceled agency's link never counts a view or notifies the creator.
+  if (!(await agencyAllowsGuestLinks(admin, link.agency_id))) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 

@@ -367,6 +367,8 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
             expires_at: null,
             revoked_at: null,
           })
+        case '/rest/v1/agencies':
+          return reply({ subscription_status: 'active' })
         case '/rest/v1/videos':
           return reply({ id: VIDEO_ID, title: videoTitle, active_version_id: VERSION_ID })
         case '/rest/v1/video_versions':

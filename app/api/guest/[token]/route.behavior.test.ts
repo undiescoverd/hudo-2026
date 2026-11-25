@@ -16,6 +16,7 @@ const SB = 'https://sb.guest-route.test'
 const REDIS = 'https://redis.guest-route.test'
 const VIDEO = '22222222-2222-4222-8222-222222222222'
 const VERSION = '33333333-3333-4333-8333-333333333333'
+const AGENCY = '44444444-4444-4444-8444-444444444444'
 const realFetch = globalThis.fetch
 
 let GET: (req: NextRequest, ctx: { params: { token: string } }) => Promise<Response>
@@ -27,6 +28,8 @@ let calls: URL[] = []
 let token = ''
 let revokedAt: string | null = null
 let expiresAt: string | null = null
+let agencyStatus: string | null = 'active'
+let agencyLookupFails = false
 let redisCount = 1
 let redisBodies: string[] = []
 
@@ -62,6 +65,7 @@ function installFetch() {
       return rows([
         {
           id: 'link-1',
+          agency_id: AGENCY,
           video_id: VIDEO,
           video_version_id: VERSION,
           token_hash: hashGuestToken(token),
@@ -69,6 +73,10 @@ function installFetch() {
           revoked_at: revokedAt,
         },
       ])
+    }
+    if (url.pathname === '/rest/v1/agencies') {
+      if (agencyLookupFails) return json(500, { message: 'boom' })
+      return rows([{ subscription_status: agencyStatus }])
     }
     if (url.pathname === '/rest/v1/videos') {
       return rows([
@@ -122,7 +130,63 @@ afterEach(() => {
   globalThis.fetch = realFetch
   revokedAt = null
   expiresAt = null
+  agencyStatus = 'active'
+  agencyLookupFails = false
   redisCount = 1
+})
+
+describe('GET /api/guest/:token: agency subscription (S5-GUEST-003)', () => {
+  async function snapshot(res: Response) {
+    return { status: res.status, body: await res.text(), headers: [...res.headers.entries()] }
+  }
+
+  it('canceled agency -> response identical to an expired link', async () => {
+    token = generateGuestToken()
+    expiresAt = new Date(Date.now() - 1000).toISOString()
+    const expired = await snapshot(await request())
+    expiresAt = null
+    agencyStatus = 'canceled'
+    const canceled = await snapshot(await request())
+    assert.equal(canceled.status, 404)
+    assert.deepEqual(canceled, expired)
+  })
+
+  it('getGuestMetadata returns null for a canceled agency and data after resubscribe (no link change)', async () => {
+    token = generateGuestToken()
+    agencyStatus = 'canceled'
+    installFetch()
+    assert.equal(await getGuestMetadata(token), null)
+    agencyStatus = 'active' // resubscribed: same link row, nothing modified
+    installFetch()
+    assert.ok(await getGuestMetadata(token))
+    assert.equal(calls.filter((u) => u.pathname === '/rest/v1/guest_links').length, 1)
+  })
+
+  for (const status of ['active', 'trialing', 'past_due', null]) {
+    it(`status ${String(status)} -> link works`, async () => {
+      token = generateGuestToken()
+      agencyStatus = status
+      assert.equal((await request()).status, 200)
+    })
+  }
+
+  it('agency lookup error fails closed with the expired-link response', async () => {
+    token = generateGuestToken()
+    expiresAt = new Date(Date.now() - 1000).toISOString()
+    const expired = await snapshot(await request())
+    expiresAt = null
+    agencyLookupFails = true
+    assert.deepEqual(await snapshot(await request()), expired)
+    installFetch()
+    assert.equal(await getGuestMetadata(token), null)
+  })
+
+  it('agency lookup selects only subscription_status, never the guest token', async () => {
+    token = generateGuestToken()
+    await request()
+    const q = calls.find((u) => u.pathname === '/rest/v1/agencies')
+    assert.equal(q?.searchParams.get('select'), 'subscription_status')
+  })
 })
 
 describe('GET /api/guest/:token: video only (real handler)', () => {

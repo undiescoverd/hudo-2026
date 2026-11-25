@@ -1,5 +1,6 @@
 import { verifyGuestToken } from '@/lib/guest-tokens'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { agencyAllowsGuestLinks } from '@/lib/guest/agency-entitlement'
 
 /**
  * GuestMetadata — shape returned to callers (page + API route).
@@ -48,7 +49,7 @@ export async function getGuestMetadata(token: string): Promise<GuestMetadata | n
 
   const { data: link, error: linkError } = await admin
     .from('guest_links')
-    .select('id, video_id, video_version_id, token_hash, expires_at, revoked_at')
+    .select('id, video_id, agency_id, video_version_id, token_hash, expires_at, revoked_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
 
@@ -64,6 +65,11 @@ export async function getGuestMetadata(token: string): Promise<GuestMetadata | n
     link.revoked_at !== null ||
     (link.expires_at !== null && new Date(link.expires_at) < new Date())
   ) {
+    return null
+  }
+
+  // Ended subscription: indistinguishable from an expired link (no reason leaked).
+  if (!(await agencyAllowsGuestLinks(admin, link.agency_id))) {
     return null
   }
 

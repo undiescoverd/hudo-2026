@@ -40,6 +40,7 @@ describe('getGuestMetadata does not leak the link label', () => {
           label: SECRET_LABEL, // a stub that over-returns must still not leak
         })
       }
+      if (url.pathname === '/rest/v1/agencies') return one({ subscription_status: 'active' })
       if (url.pathname === '/rest/v1/videos')
         return one({
           id: 'v1',
