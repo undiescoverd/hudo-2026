@@ -319,13 +319,13 @@ NOTES: GH #176 (full spec agreed 2026-11-25, see issue comment). Build after #23
 
 ---
 
-- [ ] **S5-ERR-001** — Design v3 error states: invalid guest link page and video load errors
+- [x] **S5-ERR-001** — Design v3 error states: invalid guest link page and video load errors
 
 TASK_ID: S5-ERR-001
 TITLE: Design v3 error states: invalid guest link page + video load errors
 BRANCH: feat/s5-S5-ERR-001-error-states
 MODEL: haiku
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - States drawn in Paper first, then ported
@@ -345,13 +345,13 @@ NOTES: GH #171. Paper: both flow boards' edge cases. Linear RES-217.
 
 ---
 
-- [ ] **S5-ADMIN-001** — Owner can grant billing access to admin agents
+- [x] **S5-ADMIN-001** — Owner can grant billing access to admin agents
 
 TASK_ID: S5-ADMIN-001
 TITLE: Owner can grant billing access to admin agents
 BRANCH: feat/s5-S5-ADMIN-001-billing-access
 MODEL: sonnet
-STATUS: not_started
+STATUS: done
 BLOCKED_BY: none
 ACCEPTANCE_CRITERIA:
   - Migration 0033 adds memberships.can_manage_billing (boolean, default false); RLS still derives access from memberships

@@ -1067,3 +1067,15 @@ See CLAUDE.md → "SESSIONNOTES.md log".
   - Migrations 0031 and 0032 were applied to dev and staging via `db-push.sh` from a scratch worktree before the PRs merged, and their effects were probed on both.
   - Follow-up: add the link label as the second line of the "Guest watched" notification (Paper design).
 - **Gotcha (if any):** A migration that adds a column the API selects must be applied BEFORE merge, because main deploys straight to staging. #264 carried a merge gate in its PR body for this. Also, `import 'server-only'` throws under `tsx --test`, so don't add it to modules that unit tests import.
+
+## 2026-11-26 — S5 Round 1: error states + billing access (ERR-001, ADMIN-001); FLOW-009 spec
+
+- **Task:** S5-ERR-001 (#268), S5-ADMIN-001 (#269), spec PR #267
+- **Models:** planner=opus, executor=sonnet, review=sonnet + hudo-security-reviewer
+- **Outcome:** done, all merged
+- **Notes:**
+  - ERR-001: `/guest/invalid?reason=` gives each reason its own heading (expired, revoked, subscription, not-found), allowlisted and never echoed. `resolveGuestLink` returns the reason; `getGuestMetadata` (API route) still collapses every rejection. Both players share `PlayerLoadError`. The review caught two Retry bugs: a stale media error re-armed by a late `onError`, and renewal listeners lost when `<video>` unmounted. The video now stays mounted under an overlay, and the media error is tied to the url that failed (`isMediaFailed`). Pullfrog caught the error staying up on version switch.
+  - ADMIN-001: `memberships.can_manage_billing` (migration 0033, applied to dev and staging before merge, effects probed). The guard trigger blocks client roles from changing the flag and clears it on demotion. The PATCH billing-access route is owner-only, and the audit insert hard-gates success, with rollback on failure. Delegates get the portal with `STRIPE_PORTAL_CONFIG_DELEGATE` (validated `bpc_`); plan change stays owner-only.
+  - Stripe test mode: `scripts/setup-stripe.ts --portal-only` ensures an owner default config and a non-default delegate config (`bpc_1Ufp6CPE8Ih3LOAAMKKrseLU`). Verified with temporary portal sessions.
+  - FLOW-009 (#176) grilled and agreed. Seen-by is read through a SECURITY DEFINER RPC; `comment_reads` keeps its own-row RLS. #240 decided: upload token.
+- **Gotcha (if any):** Stripe makes the FIRST Customer Portal configuration on an account the default. The test account had none, so the restricted delegate config briefly became the default for owners too; it was converted and a fresh delegate config created. Also, a stray `~/node_modules` resolved `server-only` locally while CI (clean install) failed, so CI is the real missing-dependency check. While probing a migration, a `new URL()` error echoed the hudo-dev DB URL, password included, into tool output. Parse with a regex or percent-encode first, and never pass the raw URL to `new URL()`.
