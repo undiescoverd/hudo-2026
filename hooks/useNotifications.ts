@@ -17,7 +17,12 @@ export interface Notification {
   read_at: string | null
   sent_at: string | null
   created_at: string
-  type: 'new_comment' | 'comment_resolved' | 'status_changed' | 'invitation_accepted'
+  type:
+    | 'new_comment'
+    | 'comment_resolved'
+    | 'status_changed'
+    | 'invitation_accepted'
+    | 'guest_viewed'
 }
 
 export interface UseNotificationsResult {

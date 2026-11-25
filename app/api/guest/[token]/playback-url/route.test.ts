@@ -172,7 +172,7 @@ describe('guest playback-url — view_count increment', () => {
     // in-progress watch never increments view_count.
     assert.match(
       source,
-      /if \(!isGuestPlaybackRenewal\(request\.nextUrl\.searchParams\)\) \{\s*const \{ error: rpcError \} = await admin\.rpc\('increment_guest_link_view'/,
+      /if \(!isGuestPlaybackRenewal\(request\.nextUrl\.searchParams\)\) \{\s*const \{ data: viewCount, error: rpcError \} = await admin\.rpc\('increment_guest_link_view'/,
       'increment_guest_link_view must be guarded by !isGuestPlaybackRenewal(...)'
     )
     // Exactly one RPC call site — no unguarded duplicate.
@@ -204,7 +204,7 @@ describe('guest playback-url — view_count increment', () => {
 
     assert.match(
       source,
-      /\.rpc\(\s*['"]increment_guest_link_view['"]\s*,\s*\{\s*p_id:\s*link\.id\s*\}\s*\)/,
+      /\.rpc\(\s*['"]increment_guest_link_view['"]\s*,\s*\{\s*p_id:\s*link\.id,?\s*\}\s*\)/,
       'Route must call increment_guest_link_view RPC with link id (atomic update)'
     )
     // Negative invariant: must NOT do a JS-side view_count + 1 update
@@ -300,6 +300,8 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
   const VIDEO_ID = '22222222-2222-4222-8222-222222222222'
   const VERSION_ID = '33333333-3333-4333-8333-333333333333'
   const R2_KEY = 'agency/video/v1-secret-key.mp4'
+  const AGENCY_ID = '44444444-4444-4444-8444-444444444444'
+  const CREATOR_ID = '55555555-5555-4555-8555-555555555555'
 
   const ENV_KEYS = [
     'NEXT_PUBLIC_SUPABASE_URL',
@@ -319,6 +321,11 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
   // Fake guest_links row; the stubbed RPC mutates it like the real SQL does.
   let row: { view_count: number; last_viewed_at: string | null }
   let rpcCalls: Array<{ p_id: string }>
+  let notifInserts: Array<Record<string, unknown>>
+  let creatorIsMember: boolean
+  let notifInsertFails: boolean
+  let rpcFails: boolean
+  let videoTitle: string | null
 
   before(async () => {
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k]
@@ -354,21 +361,52 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
             id: LINK_ID,
             video_id: VIDEO_ID,
             video_version_id: VERSION_ID,
+            agency_id: AGENCY_ID,
+            created_by: CREATOR_ID,
             token_hash: tokenHash,
             expires_at: null,
             revoked_at: null,
           })
         case '/rest/v1/videos':
-          return reply({ id: VIDEO_ID, active_version_id: VERSION_ID })
+          return reply({ id: VIDEO_ID, title: videoTitle, active_version_id: VERSION_ID })
         case '/rest/v1/video_versions':
           return reply({ id: VERSION_ID, r2_key: R2_KEY })
         case '/rest/v1/rpc/increment_guest_link_view': {
           const body = JSON.parse(String(init?.body)) as { p_id: string }
           rpcCalls.push(body)
+          if (rpcFails) {
+            return new Response(JSON.stringify({ message: 'rpc down' }), {
+              status: 500,
+              headers: { 'content-type': 'application/json' },
+            })
+          }
+          // Mirrors the SQL: increment and RETURN the new count, synchronously (the
+          // real UPDATE row-locks, so concurrent callers get distinct counts).
           row.view_count += 1
           row.last_viewed_at = new Date().toISOString()
-          return new Response(null, { status: 204 })
+          return new Response(JSON.stringify(row.view_count), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
         }
+        case '/rest/v1/memberships':
+          assert.equal(url.searchParams.get('user_id'), `eq.${CREATOR_ID}`)
+          assert.equal(url.searchParams.get('agency_id'), `eq.${AGENCY_ID}`)
+          return creatorIsMember
+            ? reply({ user_id: CREATOR_ID })
+            : new Response(JSON.stringify([]), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+              })
+        case '/rest/v1/notifications':
+          if (notifInsertFails) {
+            return new Response(JSON.stringify({ message: 'insert down' }), {
+              status: 500,
+              headers: { 'content-type': 'application/json' },
+            })
+          }
+          notifInserts.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+          return new Response(null, { status: 201 })
         default:
           throw new Error(`unexpected fetch in test: ${url.pathname}`)
       }
@@ -387,6 +425,11 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
   beforeEach(() => {
     row = { view_count: 17, last_viewed_at: null }
     rpcCalls = []
+    notifInserts = []
+    creatorIsMember = true
+    notifInsertFails = false
+    rpcFails = false
+    videoTitle = 'Showreel 2026'
   })
 
   async function callRoute(query = '') {
@@ -437,5 +480,111 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
       assert.ok(!serialized.includes(TOKEN), 'plaintext token must not be returned')
       assert.ok(!serialized.includes('"r2_key"'), 'r2_key field must not be returned')
     }
+  })
+
+  describe('first-watch notification to the link creator (S5-GUEST-004)', () => {
+    it('first view creates exactly one guest_viewed notification, addressed to the creator', async () => {
+      row.view_count = 0
+      const { status } = await callRoute()
+      assert.equal(status, 200)
+      assert.equal(notifInserts.length, 1)
+      const n = notifInserts[0]
+      assert.equal(n.type, 'guest_viewed')
+      assert.equal(n.recipient_id, CREATOR_ID)
+      assert.equal(n.agency_id, AGENCY_ID)
+      assert.equal(n.video_id, VIDEO_ID)
+      assert.deepEqual(n.payload, { message: 'Guest watched Showreel 2026' })
+    })
+
+    it('second view, reloads and renewals create none', async () => {
+      row.view_count = 0
+      await callRoute() // first watch
+      await callRoute('?renew=1')
+      await callRoute() // reload
+      await callRoute() // reload
+      assert.equal(notifInserts.length, 1)
+    })
+
+    it('a renewal never notifies, even on a link with zero views', async () => {
+      row.view_count = 0
+      await callRoute('?renew=1')
+      assert.equal(notifInserts.length, 0)
+    })
+
+    it('a link already viewed before this feature (count > 0) does not notify', async () => {
+      row.view_count = 5
+      await callRoute()
+      assert.equal(notifInserts.length, 0)
+    })
+
+    // Proves the `viewCount === 1` gating: given the distinct counts the RPC returns to
+    // concurrent callers, only one notifies. DB-level atomicity itself comes from the
+    // single-statement UPDATE (row lock) and is covered by the pgTAP suite
+    // (tests/rls/guest_links.test.sql), not by this stub.
+    it('concurrent callers receiving counts 1,2,3: only the one that got 1 notifies', async () => {
+      row.view_count = 0
+      const results = await Promise.all([callRoute(), callRoute(), callRoute()])
+      assert.deepEqual(
+        results.map((r) => r.status),
+        [200, 200, 200]
+      )
+      assert.equal(row.view_count, 3)
+      assert.equal(notifInserts.length, 1)
+    })
+
+    it('creator no longer in the agency: no notification, playback still works', async () => {
+      row.view_count = 0
+      creatorIsMember = false
+      const { status, body } = await callRoute()
+      assert.equal(status, 200)
+      assert.equal(typeof body.url, 'string')
+      assert.equal(notifInserts.length, 0)
+    })
+
+    it('notification insert failure: playback still returns 200 with the URL', async () => {
+      row.view_count = 0
+      notifInsertFails = true
+      const { status, body } = await callRoute()
+      assert.equal(status, 200)
+      assert.equal(typeof body.url, 'string')
+    })
+
+    it('missing video title falls back to the generic message', async () => {
+      row.view_count = 0
+      videoTitle = null
+      await callRoute()
+      assert.deepEqual(notifInserts[0].payload, {
+        message: 'A guest watched your shared video.',
+      })
+    })
+
+    it('view-count RPC error: no notification, playback still 200', async () => {
+      row.view_count = 0
+      rpcFails = true
+      const { status, body } = await callRoute()
+      assert.equal(status, 200)
+      assert.equal(typeof body.url, 'string')
+      assert.equal(notifInserts.length, 0)
+    })
+
+    it('payload carries no token, hash, guest data, link or r2 key', async () => {
+      row.view_count = 0
+      await callRoute()
+      const { hashGuestToken } = await import('@/lib/guest-tokens')
+      const serialized = JSON.stringify(notifInserts[0])
+      assert.ok(!serialized.includes(TOKEN), 'plaintext token')
+      assert.ok(!serialized.includes(hashGuestToken(TOKEN)), 'token hash')
+      assert.ok(!serialized.includes(LINK_ID), 'link id')
+      assert.ok(!serialized.includes(R2_KEY), 'r2 key')
+      assert.deepEqual(Object.keys(notifInserts[0]).sort(), [
+        'agency_id',
+        'comment_id',
+        'payload',
+        'recipient_id',
+        'type',
+        'video_id',
+      ])
+      assert.deepEqual(Object.keys(notifInserts[0].payload as object), ['message'])
+    })
   })
 })
