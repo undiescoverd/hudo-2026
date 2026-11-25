@@ -506,7 +506,11 @@ describe('guest playback-url — GET handler behaviour (view counting)', () => {
       assert.equal(notifInserts.length, 0)
     })
 
-    it('simultaneous first plays produce exactly one notification', async () => {
+    // Proves the `viewCount === 1` gating: given the distinct counts the RPC returns to
+    // concurrent callers, only one notifies. DB-level atomicity itself comes from the
+    // single-statement UPDATE (row lock) and is covered by the pgTAP suite
+    // (tests/rls/guest_links.test.sql), not by this stub.
+    it('concurrent callers receiving counts 1,2,3: only the one that got 1 notifies', async () => {
       row.view_count = 0
       const results = await Promise.all([callRoute(), callRoute(), callRoute()])
       assert.deepEqual(

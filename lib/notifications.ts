@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/nextjs'
 import { sendEmail as defaultSendEmail } from '@/lib/email'
 import {
   renderCommentsBatchEmail,
@@ -172,6 +173,9 @@ export async function enqueueGuestViewNotification(
     .maybeSingle()
   if (memberErr) {
     console.error('[notifications:enqueueGuestView] Membership lookup failed:', memberErr.message)
+    Sentry.captureException(
+      new Error(`guest-view notify: membership lookup failed: ${memberErr.message}`)
+    )
     return
   }
   if (!member) return
@@ -186,6 +190,7 @@ export async function enqueueGuestViewNotification(
   })
   if (insertError) {
     console.error('[notifications:enqueueGuestView] Insert failed:', insertError.message)
+    Sentry.captureException(new Error(`guest-view notify: insert failed: ${insertError.message}`))
   }
 }
 

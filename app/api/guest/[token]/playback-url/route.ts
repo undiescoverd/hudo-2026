@@ -144,10 +144,9 @@ export async function GET(request: NextRequest, { params }: { params: { token: s
           { admin }
         )
       } catch (err) {
-        console.error(
-          '[guest:playback-url] Failed to notify link creator:',
-          err instanceof Error ? err.message : 'Unknown error'
-        )
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        console.error('[guest:playback-url] Failed to notify link creator:', message)
+        Sentry.captureException(new Error(`guest-view notify failed: ${message}`))
       }
     }
   }
