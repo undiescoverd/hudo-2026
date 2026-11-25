@@ -55,8 +55,11 @@ Coupon: `FOUNDING_50` — 50% off for 12 months, exists in both modes (applied a
 
 An owner can grant an individual admin agent billing access (`memberships.can_manage_billing`, S5-ADMIN-001). That person may view invoices and change the payment method, but must not change plan or cancel. Stripe enforces this through a second portal configuration:
 
-1. Stripe Dashboard → Settings → Billing → Customer portal → create a new configuration with **only** Invoice history and Payment methods enabled (subscription cancel, subscription update and customer information off).
-2. Set its ID (`bpc_…`, validated against `^bpc_[A-Za-z0-9]+$`) as `STRIPE_PORTAL_CONFIG_DELEGATE` (server only; not a secret, but per environment and per Stripe mode) in `.env.local`, `.env.staging` and Vercel (preview + production).
+1. Run `node --import tsx --env-file=<env-file> scripts/setup-stripe.ts --portal-only` (or the full script) once per Stripe mode. It ensures two portal configurations, matched by `metadata.hudo_role` and re-enforced on every run:
+   - **Owner (account default):** invoices, payment method, email/address/tax ID, cancel at period end. Plan change stays in the app's upgrade flow. Created only when the account has no default; a default set in the Dashboard is left alone. Owners' portal sessions pass no `configuration`, so they get the default.
+   - **Delegate:** invoice history and payment methods only (cancel, plan change and customer-info edits off). Never the default; the script throws if it is.
+   - Trap: Stripe makes the FIRST portal configuration on an account the default. Never create the delegate one by hand on an account with no default, and don't edit the default in Dashboard → Settings → Billing → Customer portal expecting it to change the delegate one.
+2. Set the printed delegate ID (`bpc_…`, validated against `^bpc_[A-Za-z0-9]+$`) as `STRIPE_PORTAL_CONFIG_DELEGATE` (server only; not a secret, but per environment and per Stripe mode) in `.env.local`, `.env.staging` and Vercel (preview + production). Test mode (hudo test account): `bpc_1Ufp6CPE8Ih3LOAAMKKrseLU`.
 
 `POST /api/billing/portal` passes this configuration for delegates only and returns 503 for them while it is unset (fail closed). Owners keep the default configuration.
 
