@@ -276,6 +276,7 @@ describe('GET guest-links — list', () => {
     assert.deepEqual(links.map((l) => l.id).sort(), ['live', 'never'])
     const q = calls.find((c) => c.url.pathname === '/rest/v1/guest_links')
     assert.equal(q?.url.searchParams.get('revoked_at'), 'is.null')
+    assert.match(q?.url.searchParams.get('or') ?? '', /expires_at\.is\.null,expires_at\.gt\./)
   })
 
   it('returns the label, the pinned version number and the current version number', async () => {
