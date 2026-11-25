@@ -4,15 +4,8 @@ import { createAdminClient } from '@/lib/supabase-admin'
 /**
  * GuestMetadata — shape returned to callers (page + API route).
  * Never includes r2_key, agency_id, token_hash, or any internal pivot field.
+ * Guests see the video only: no comment data is queried or returned (flow decision, GH #165).
  */
-export type GuestComment = {
-  id: string
-  content: string
-  timestamp_seconds: number | null
-  created_at: string
-  display_name: string | null
-}
-
 export type GuestMetadata = {
   video: {
     id: string
@@ -25,7 +18,6 @@ export type GuestMetadata = {
     version_number: number
     duration_seconds: number | null
   } | null
-  comments: GuestComment[]
 }
 
 /**
@@ -37,7 +29,7 @@ export type GuestMetadata = {
  *   2. Timing-safe verifyGuestToken comparison (defense-in-depth).
  *   3. Revocation + expiry checks.
  *   4. Fetches video metadata (no r2_key / agency_id).
- *   5. Fetches version + non-deleted comments.
+ *   5. Fetches the version row (never comments).
  *
  * Returns null for any rejection case (unknown token, expired, revoked,
  * missing video) so the caller can render 404 / redirect without leaking
@@ -104,37 +96,6 @@ export async function getGuestMetadata(token: string): Promise<GuestMetadata | n
     if (v) version = v
   }
 
-  type RawComment = {
-    id: string
-    content: string
-    timestamp_seconds: number | null
-    created_at: string
-    users: { full_name: string } | { full_name: string }[] | null
-  }
-  let comments: GuestComment[] = []
-
-  if (version) {
-    const { data: rawComments } = await admin
-      .from('comments')
-      .select('id, content, timestamp_seconds, created_at, users!comments_user_id_fkey(full_name)')
-      .eq('video_version_id', version.id)
-      .is('deleted_at', null)
-      .order('timestamp_seconds', { ascending: true })
-
-    comments = ((rawComments ?? []) as RawComment[]).map((c) => {
-      const rel = c.users
-      const u = Array.isArray(rel) ? rel[0] : rel
-      const displayName = u?.full_name ?? null
-      return {
-        id: c.id,
-        content: c.content,
-        timestamp_seconds: c.timestamp_seconds != null ? Number(c.timestamp_seconds) : null,
-        created_at: c.created_at,
-        display_name: displayName,
-      }
-    })
-  }
-
   return {
     video: {
       id: video.id,
@@ -149,6 +110,5 @@ export async function getGuestMetadata(token: string): Promise<GuestMetadata | n
           duration_seconds: version.duration_seconds,
         }
       : null,
-    comments,
   }
 }

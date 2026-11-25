@@ -6,8 +6,8 @@
  *
  * Run: node --experimental-strip-types app/api/guest/\[token\]/route.test.ts
  *
- * Note: the DB lookup, verifyGuestToken call, service-role client construction,
- * and comment soft-delete filter all live in lib/guest/get-guest-metadata.ts.
+ * Note: the DB lookup, verifyGuestToken call, and service-role client construction
+ * all live in lib/guest/get-guest-metadata.ts.
  * Source-pattern assertions for those now target that module.
  */
 
@@ -185,23 +185,5 @@ describe('guest metadata — response shape (no sensitive data)', () => {
       'Helper must import the shared service-role client factory'
     )
     assert.match(source, /createAdminClient\(\)/, 'Helper must create admin client')
-  })
-
-  it('comments select does not expose deleted comments', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-
-    // Soft-delete filter lives in the lib helper
-    const helperPath = path.resolve(
-      import.meta.dirname ?? __dirname,
-      '../../../../lib/guest/get-guest-metadata.ts'
-    )
-    const source = fs.readFileSync(helperPath, 'utf8')
-
-    assert.match(
-      source,
-      /\.is\('deleted_at',\s*null\)/,
-      'Comments query must filter out soft-deleted comments'
-    )
   })
 })

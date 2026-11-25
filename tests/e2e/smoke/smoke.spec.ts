@@ -174,7 +174,7 @@ test.describe.serial('S4-LAUNCH-002 staging smoke', () => {
     const guestCtx = await browser.newContext()
     try {
       const guest = await guestCtx.newPage()
-      await new GuestPage(guest).openAndExpectComment(run.guestUrl, run.commentText)
+      await new GuestPage(guest).openAndExpectVideoOnly(run.guestUrl, run.commentText)
     } finally {
       await guestCtx.close()
     }
