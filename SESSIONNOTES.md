@@ -1039,3 +1039,31 @@ See CLAUDE.md → "SESSIONNOTES.md log".
 - **Outcome:** done (PR open); the old SLACK_WEBHOOK_URL secret is removed only after the first bot message arrives in Zulip
 - **Notes:** New `scripts/zulip-notify.sh` plus `zulip-notify.yml` (renamed from `slack-notify.yml`); `ci.yml`, `playwright.yml`, `linear-sync-check.yml` call it. Zulip side set up through the REST API from `~/.zuliprc` (channel `hudo`, send-only "Hudo Notifier" bot); the bot key went straight into `gh secret set` and was never printed. Each PR gets its own topic (`PR #N`); CI/E2E post failures always, passes only on main. Runbook: `docs/ops/zulip-notifications.md`.
 - **Gotcha (if any):** the old Linear-sync Slack alerts never fired: they read `vars.SLACK_WEBHOOK_URL`, which was never set. Also, pasting `[api]` into zsh fails with "no matches found"; edit config files with `open -e`.
+
+## 2026-11-23 — Linear drift guard (PR #248)
+
+- **Task:** chore. Stop Linear drifting from `tasks/sprint-N.md`.
+- **Models:** planner=opus, executor=sonnet, reviewer=sonnet
+- **Outcome:** done
+- **Notes:** Three root causes:
+  - The `linear-update.yml` branch regex matched lowercase only, so merge-to-Done skipped every S4 and S5 branch.
+  - `sync-check`/`sync-fix` ran one `searchIssues` per task, hit HTTP 429, and the daily job stayed green anyway (`|| true`).
+  - Task rows with no Linear issue were never created.
+
+  Fixed with a single batched fetch (`includeArchived`), direct updates with retry and backoff, and auto-create of missing issues (cap 10). Canceled and Duplicate matches are left alone, and `issueCreate` is never retried after an ambiguous failure. The daily job now fails loudly and has a concurrency lock. Repaired the S4 drift by hand (RES-201/203/221/222/224/225 set to Done; RES-235–238 created). Verified after merge: #259, #262, #263 and #264 each set Linear Done on merge automatically.
+
+- **Gotcha (if any):** Linear auto-archives old Done issues, and the issues query hides archived ones by default. Without `includeArchived: true`, `sync-fix` would have created duplicates of four S2 tasks.
+
+## 2026-11-25 — S5 Wave 2: guest links (GUEST-001..004)
+
+- **Task:** S5-GUEST-001 (#262), S5-GUEST-004 (#263), S5-GUEST-002 (#264), S5-GUEST-003 (#265)
+- **Models:** planner=opus, executor=sonnet, security review=hudo-security-reviewer
+- **Outcome:** done, all merged
+- **Notes:**
+  - Guest page is video only. The guest API now returns just `video{id,title}` and the version.
+  - First-watch notification goes to the link creator. Migration 0031 makes `increment_guest_link_view` return the count, adds the `guest_viewed` type, and revokes EXECUTE from anon/authenticated (closes #186).
+  - Link label (migration 0032), 24h/3d/7d/Never presets, expired links hidden, and the "Share vN instead" nudge.
+  - Links stop on `subscription_status = canceled`, and the response is identical to an expired link. `past_due` keeps working (user decision).
+  - Migrations 0031 and 0032 were applied to dev and staging via `db-push.sh` from a scratch worktree before the PRs merged, and their effects were probed on both.
+  - Follow-up: add the link label as the second line of the "Guest watched" notification (Paper design).
+- **Gotcha (if any):** A migration that adds a column the API selects must be applied BEFORE merge, because main deploys straight to staging. #264 carried a merge gate in its PR body for this. Also, `import 'server-only'` throws under `tsx --test`, so don't add it to modules that unit tests import.
