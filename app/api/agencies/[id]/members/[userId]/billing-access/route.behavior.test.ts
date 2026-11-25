@@ -26,7 +26,10 @@ let callerRole = 'owner'
 let target: Row | null = null
 let redisCount = 1
 let auditDone = false
+let auditSeen = false
 let updateRows: unknown[] = [{ id: TARGET_MEMBERSHIP }]
+let auditFails = false
+let rollbackFails = false
 
 type Handler = (
   req: NextRequest,
@@ -83,9 +86,15 @@ function installFetch() {
       if (who === `eq.${TARGET}`) return rows(target ? [target] : [])
       return rows([])
     }
-    if (url.pathname === '/rest/v1/memberships' && method === 'PATCH') return json(200, updateRows)
+    if (url.pathname === '/rest/v1/memberships' && method === 'PATCH') {
+      const isRollback = auditSeen
+      if (isRollback && rollbackFails) return json(500, { message: 'rollback down' })
+      return json(200, updateRows)
+    }
     if (url.pathname === '/rest/v1/audit_log' && method === 'POST') {
       await new Promise((r) => setTimeout(r, 40))
+      auditSeen = true
+      if (auditFails) return json(500, { message: 'audit down' })
       auditDone = true
       return json(201, [])
     }
@@ -96,6 +105,7 @@ function installFetch() {
 function call(body: unknown, ids = { id: AGENCY, userId: TARGET }) {
   calls = []
   auditDone = false
+  auditSeen = false
   installFetch()
   const req = new Request('http://localhost:3000/api/x', {
     method: 'PATCH',
@@ -140,6 +150,8 @@ afterEach(() => {
   callerRole = 'owner'
   target = { id: TARGET_MEMBERSHIP, role: 'admin_agent', can_manage_billing: false }
   redisCount = 1
+  auditFails = false
+  rollbackFails = false
   updateRows = [{ id: TARGET_MEMBERSHIP }]
 })
 
@@ -187,6 +199,34 @@ describe('PATCH billing-access — grant and revoke', () => {
     const res = await call({ enabled: true })
     assert.equal(res.status, 404)
     assert.equal(audits().length, 0)
+  })
+})
+
+describe('PATCH billing-access — audit is a hard gate', () => {
+  it('audit insert fails -> 500 and the flag is restored to its previous value', async () => {
+    target = { id: TARGET_MEMBERSHIP, role: 'admin_agent', can_manage_billing: false }
+    auditFails = true
+    const res = await call({ enabled: true })
+    assert.equal(res.status, 500)
+    const ups = updates()
+    assert.equal(ups.length, 2)
+    assert.deepEqual(ups[0].body, { can_manage_billing: true })
+    assert.deepEqual(ups[1].body, { can_manage_billing: false })
+  })
+
+  it('a failed revoke audit restores the grant', async () => {
+    target = { id: TARGET_MEMBERSHIP, role: 'admin_agent', can_manage_billing: true }
+    auditFails = true
+    const res = await call({ enabled: false })
+    assert.equal(res.status, 500)
+    assert.deepEqual(updates()[1].body, { can_manage_billing: true })
+  })
+
+  it('audit and rollback both fail -> still 500 (reported as critical, never 200)', async () => {
+    auditFails = true
+    rollbackFails = true
+    const res = await call({ enabled: true })
+    assert.equal(res.status, 500)
   })
 })
 

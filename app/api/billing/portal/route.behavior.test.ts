@@ -155,11 +155,11 @@ describe('POST /api/billing/portal — who gets in', () => {
   })
 
   it('granted admin agent -> 200 and the RESTRICTED portal configuration', async () => {
-    process.env.STRIPE_PORTAL_CONFIG_DELEGATE = 'bpc_payment_only'
+    process.env.STRIPE_PORTAL_CONFIG_DELEGATE = 'bpc_1PaymentOnly'
     membership = { role: 'admin_agent', can_manage_billing: true }
     const res = await call()
     assert.equal(res.status, 200)
-    assert.equal(portalCalls[0].configuration, 'bpc_payment_only')
+    assert.equal(portalCalls[0].configuration, 'bpc_1PaymentOnly')
   })
 
   it('granted admin agent with no restricted configuration set -> 503, no Stripe call', async () => {
@@ -169,8 +169,18 @@ describe('POST /api/billing/portal — who gets in', () => {
     assert.equal(portalCalls.length, 0)
   })
 
+  it('malformed restricted configuration id is treated as unset -> 503, no Stripe call', async () => {
+    membership = { role: 'admin_agent', can_manage_billing: true }
+    for (const bad of ['price_123', 'bpc_', 'bpc_ab cd', 'xbpc_abc', 'bpc_abc\n']) {
+      process.env.STRIPE_PORTAL_CONFIG_DELEGATE = bad
+      const res = await call()
+      assert.equal(res.status, 503, bad)
+      assert.equal(portalCalls.length, 0, bad)
+    }
+  })
+
   it('ungranted admin agent, agent and talent -> 403, no Stripe call', async () => {
-    process.env.STRIPE_PORTAL_CONFIG_DELEGATE = 'bpc_payment_only'
+    process.env.STRIPE_PORTAL_CONFIG_DELEGATE = 'bpc_1PaymentOnly'
     for (const m of [
       { role: 'admin_agent', can_manage_billing: false },
       { role: 'agent', can_manage_billing: true },
@@ -190,7 +200,7 @@ describe('POST /api/billing/portal — who gets in', () => {
   })
 
   it('a revoke applies on the very next request (membership is re-read, not cached)', async () => {
-    process.env.STRIPE_PORTAL_CONFIG_DELEGATE = 'bpc_payment_only'
+    process.env.STRIPE_PORTAL_CONFIG_DELEGATE = 'bpc_1PaymentOnly'
     membership = { role: 'admin_agent', can_manage_billing: true }
     assert.equal((await call()).status, 200)
     membership = { role: 'admin_agent', can_manage_billing: false }

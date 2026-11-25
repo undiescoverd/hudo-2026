@@ -9,7 +9,8 @@
  * - Caller must be an owner of this agency, read fresh from memberships (403)
  * - Target must be an admin_agent member of the same agency (404 unknown, 400 other role)
  * - Rate-limited: 20 requests / 60s per agency, after authorization
- * - The grant/revoke is written to audit_log and the insert is awaited
+ * - The grant/revoke MUST be audited: audit_log is inserted directly and checked; on
+ *   failure the flag is rolled back and the route returns 500 (never an unaudited change)
  * - memberships has no client write policy and a trigger blocks client roles from
  *   the column (0033); the write goes through the service-role client only
  */
@@ -20,7 +21,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { isValidUUID } from '@/lib/validation'
 import { checkRateLimit, requireMembership } from '@/lib/api-helpers'
 import { canGrantBillingAccess, isBillingGrantTarget } from '@/lib/billing-access'
-import { logEvent } from '@/lib/audit'
+import * as Sentry from '@sentry/nextjs'
 
 const RATE_LIMIT = 20
 const RATE_WINDOW = 60 // seconds
@@ -122,16 +123,36 @@ export async function PATCH(
         ? user.user_metadata.full_name.trim()
         : (user.email ?? user.id)
 
-    // Awaited: the grant/revoke trail must exist before we report success.
-    await logEvent({
+    // Hard gate: the change only stands if its audit row was written.
+    const { error: auditError } = await admin.from('audit_log').insert({
+      agency_id: agencyId,
+      actor_id: user.id,
+      actor_name: actorName,
       action: enabled ? 'billing_access_granted' : 'billing_access_revoked',
-      resourceType: 'membership',
-      resourceId: target.id,
-      agencyId,
-      actorId: user.id,
-      actorName,
+      resource_type: 'membership',
+      resource_id: target.id,
       metadata: { target_user_id: targetUserId },
     })
+    if (auditError) {
+      console.error('[billing-access:PATCH] audit insert failed, rolling back:', auditError.message)
+      const { error: rollbackError } = await admin
+        .from('memberships')
+        .update({ can_manage_billing: target.can_manage_billing })
+        .eq('id', target.id)
+      if (rollbackError) {
+        console.error('[billing-access:PATCH] CRITICAL: unaudited change not rolled back', {
+          membershipId: target.id,
+          rollbackError: rollbackError.message,
+        })
+        Sentry.captureException(
+          new Error(`CRITICAL: billing access change not audited and rollback failed`),
+          { extra: { membershipId: target.id, agencyId } }
+        )
+      } else {
+        Sentry.captureException(auditError)
+      }
+      return NextResponse.json({ error: 'Failed to record audit log' }, { status: 500 })
+    }
   }
 
   return NextResponse.json({ userId: targetUserId, canManageBilling: enabled }, { status: 200 })

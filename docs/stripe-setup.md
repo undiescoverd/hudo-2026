@@ -56,7 +56,7 @@ Coupon: `FOUNDING_50` — 50% off for 12 months, exists in both modes (applied a
 An owner can grant an individual admin agent billing access (`memberships.can_manage_billing`, S5-ADMIN-001). That person may view invoices and change the payment method, but must not change plan or cancel. Stripe enforces this through a second portal configuration:
 
 1. Stripe Dashboard → Settings → Billing → Customer portal → create a new configuration with **only** Invoice history and Payment methods enabled (subscription cancel, subscription update and customer information off).
-2. Set its ID (`bpc_…`) as `STRIPE_PORTAL_CONFIG_DELEGATE` (server only; not a secret, but per environment and per Stripe mode) in `.env.local`, `.env.staging` and Vercel (preview + production).
+2. Set its ID (`bpc_…`, validated against `^bpc_[A-Za-z0-9]+$`) as `STRIPE_PORTAL_CONFIG_DELEGATE` (server only; not a secret, but per environment and per Stripe mode) in `.env.local`, `.env.staging` and Vercel (preview + production).
 
 `POST /api/billing/portal` passes this configuration for delegates only and returns 503 for them while it is unset (fail closed). Owners keep the default configuration.
 

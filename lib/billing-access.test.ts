@@ -12,6 +12,7 @@ import {
   getBillingAccess,
   isBillingGrantTarget,
   getUserBillingAccess,
+  pickBillingMembership,
   requireBillingAccess,
 } from './billing-access'
 
@@ -137,5 +138,35 @@ describe('getUserBillingAccess (header + settings nav)', () => {
         isDelegate: false,
       })
     }
+  })
+})
+
+describe('pickBillingMembership (billing page agency choice)', () => {
+  it('prefers an owner membership over an earlier delegate one', () => {
+    const rows = [
+      { agency_id: 'A', role: 'admin_agent', can_manage_billing: true },
+      { agency_id: 'B', role: 'owner', can_manage_billing: false },
+    ]
+    assert.equal(pickBillingMembership(rows)?.agency_id, 'B')
+  })
+  it('falls back to a delegate membership, skipping ungranted ones', () => {
+    const rows = [
+      { agency_id: 'A', role: 'admin_agent', can_manage_billing: false },
+      { agency_id: 'B', role: 'admin_agent', can_manage_billing: true },
+    ]
+    assert.equal(pickBillingMembership(rows)?.agency_id, 'B')
+  })
+  it('keeps input order among owners; nothing when no access', () => {
+    assert.equal(
+      pickBillingMembership([
+        { agency_id: 'A', role: 'owner' },
+        { agency_id: 'B', role: 'owner' },
+      ])?.agency_id,
+      'A'
+    )
+    assert.equal(
+      pickBillingMembership([{ role: 'admin_agent', can_manage_billing: false }]),
+      undefined
+    )
   })
 })

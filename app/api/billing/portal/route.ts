@@ -7,7 +7,7 @@
  *
  * A granted admin agent may only view invoices and change the payment method, so
  * their session MUST use a restricted portal configuration (no plan change, no
- * cancel) from STRIPE_PORTAL_CONFIG_DELEGATE. Unset -> 503 (fail closed): Stripe's
+ * cancel) from STRIPE_PORTAL_CONFIG_DELEGATE (must match bpc_…). Unset/invalid -> 503 (fail closed): Stripe's
  * default portal configuration would expose cancel / plan change.
  *
  * Security:
@@ -32,6 +32,8 @@ import { getStripe } from '@/lib/stripe'
 import { getSiteOrigin } from '@/lib/site-url'
 import { requireBillingAccess } from '@/lib/billing-access'
 
+// Stripe portal configuration ids look like bpc_…; anything else is treated as unset.
+const DELEGATE_CONFIG_RE = /^bpc_[A-Za-z0-9]+$/
 const PORTAL_RATE_LIMIT = 10
 const PORTAL_RATE_WINDOW = 60 // seconds
 
@@ -89,8 +91,13 @@ export async function POST(request: NextRequest) {
 
   // A delegate must get the restricted portal (payment method + invoices only).
   const delegateConfig = process.env.STRIPE_PORTAL_CONFIG_DELEGATE
-  if (access.access === 'delegate' && !delegateConfig) {
-    console.error('[billing/portal] STRIPE_PORTAL_CONFIG_DELEGATE is not set; refusing delegate')
+  if (
+    access.access === 'delegate' &&
+    !(delegateConfig && DELEGATE_CONFIG_RE.test(delegateConfig))
+  ) {
+    console.error(
+      '[billing/portal] STRIPE_PORTAL_CONFIG_DELEGATE is unset or not a bpc_ id; refusing delegate'
+    )
     return NextResponse.json({ error: 'Billing portal is not available' }, { status: 503 })
   }
 

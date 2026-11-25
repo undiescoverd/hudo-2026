@@ -14,7 +14,7 @@ import { isBillingEnabled } from '@/lib/feature-flags'
 import { AGENT_SEAT_ROLES } from '@/lib/plan-gates'
 import { BillingOverview } from '@/components/billing/BillingOverview'
 import { createAdminClient } from '@/lib/supabase-admin'
-import { canChangePlan, canViewBilling } from '@/lib/billing-access'
+import { canChangePlan, pickBillingMembership } from '@/lib/billing-access'
 
 export default async function BillingSettingsPage() {
   if (!isBillingEnabled()) {
@@ -60,7 +60,7 @@ export default async function BillingSettingsPage() {
     .in('role', ['owner', 'admin_agent'])
     .order('created_at', { ascending: true })
 
-  const billingMembership = (candidateRows ?? []).find((m) => canViewBilling(m))
+  const billingMembership = pickBillingMembership(candidateRows ?? [])
 
   if (!billingMembership) {
     redirect('/settings/notifications')

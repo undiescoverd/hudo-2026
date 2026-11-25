@@ -81,6 +81,17 @@ export async function requireBillingAccess(
 }
 
 /**
+ * Which membership the billing page should show: an owner membership first (full
+ * control), then a granted admin agent one. Input order (created_at) breaks ties.
+ */
+export function pickBillingMembership<T extends BillingMembership>(candidates: T[]): T | undefined {
+  return (
+    candidates.find((m) => getBillingAccess(m) === 'owner') ??
+    candidates.find((m) => getBillingAccess(m) === 'delegate')
+  )
+}
+
+/**
  * Billing access across ALL of a user's memberships (header + settings nav).
  * `hasAccess`: owner anywhere, or a granted admin agent anywhere.
  * `isDelegate`: holds a granted admin_agent membership (feeds settingsNavItems).
@@ -90,10 +101,12 @@ export async function getUserBillingAccess(
   supabase: SupabaseClient,
   userId: string
 ): Promise<{ hasAccess: boolean; isDelegate: boolean }> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('memberships')
     .select('role, can_manage_billing')
     .eq('user_id', userId)
+  if (error)
+    console.error('[billing-access] getUserBillingAccess failed (fail closed):', error.message)
   const levels = ((data ?? []) as BillingMembership[]).map(getBillingAccess)
   return { hasAccess: levels.some((l) => l !== null), isDelegate: levels.includes('delegate') }
 }
