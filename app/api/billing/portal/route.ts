@@ -2,12 +2,20 @@
  * POST /api/billing/portal
  *
  * Creates a Stripe Billing Portal session and returns { url } for the caller
- * to redirect to. Owner-only, behind the billing feature flag.
+ * to redirect to. Owner, or an admin_agent the owner granted billing access to
+ * (memberships.can_manage_billing), behind the billing feature flag.
+ *
+ * A granted admin agent may only view invoices and change the payment method, so
+ * their session MUST use a restricted portal configuration (no plan change, no
+ * cancel) from STRIPE_PORTAL_CONFIG_DELEGATE (must match bpc_…). Unset/invalid -> 503 (fail closed): Stripe's
+ * default portal configuration would expose cancel / plan change.
  *
  * Security:
  * - Billing feature flag must be enabled (404 if not)
  * - Authenticated users only (401)
- * - Caller must hold 'owner' role in an agency with a stripe_customer_id (403/400)
+ * - Caller must hold owner, or admin_agent + can_manage_billing, in that agency (403),
+ *   read fresh from memberships on every request (a revoke applies immediately)
+ * - Agency must have a stripe_customer_id (400)
  * - Rate-limited: 10 requests / 60s per user
  * - STRIPE_SECRET_KEY never reaches client bundle (server-only)
  */
@@ -22,7 +30,10 @@ import { checkRateLimit } from '@/lib/api-helpers'
 import { isBillingEnabled } from '@/lib/feature-flags'
 import { getStripe } from '@/lib/stripe'
 import { getSiteOrigin } from '@/lib/site-url'
+import { requireBillingAccess } from '@/lib/billing-access'
 
+// Stripe portal configuration ids look like bpc_…; anything else is treated as unset.
+const DELEGATE_CONFIG_RE = /^bpc_[A-Za-z0-9]+$/
 const PORTAL_RATE_LIMIT = 10
 const PORTAL_RATE_WINDOW = 60 // seconds
 
@@ -74,17 +85,20 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient()
 
-  // Authorize: caller must hold the owner role IN THIS specific agency.
-  const { data: ownerMembership } = await admin
-    .from('memberships')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('agency_id', agencyId)
-    .eq('role', 'owner')
-    .maybeSingle()
+  // Authorize: owner, or admin_agent with billing access, IN THIS specific agency.
+  const access = await requireBillingAccess(admin, user.id, agencyId)
+  if (access instanceof NextResponse) return access
 
-  if (!ownerMembership) {
-    return NextResponse.json({ error: 'Access denied — owner role required' }, { status: 403 })
+  // A delegate must get the restricted portal (payment method + invoices only).
+  const delegateConfig = process.env.STRIPE_PORTAL_CONFIG_DELEGATE
+  if (
+    access.access === 'delegate' &&
+    !(delegateConfig && DELEGATE_CONFIG_RE.test(delegateConfig))
+  ) {
+    console.error(
+      '[billing/portal] STRIPE_PORTAL_CONFIG_DELEGATE is unset or not a bpc_ id; refusing delegate'
+    )
+    return NextResponse.json({ error: 'Billing portal is not available' }, { status: 503 })
   }
 
   // Load the agency to get stripe_customer_id (two-query pattern — avoids embed shape ambiguity)
@@ -110,6 +124,7 @@ export async function POST(request: NextRequest) {
     const session = await stripe.billingPortal.sessions.create({
       customer: agency.stripe_customer_id as string,
       return_url: returnUrl,
+      ...(access.access === 'delegate' ? { configuration: delegateConfig } : {}),
     })
     return NextResponse.json({ url: session.url }, { status: 200 })
   } catch (err) {

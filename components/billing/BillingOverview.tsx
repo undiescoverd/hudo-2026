@@ -25,6 +25,12 @@ import { PLAN_IDS, PLANS, getPlan, type BillingInterval, type PlanId } from '@/l
 
 export interface BillingOverviewProps {
   agencyId: string
+  /**
+   * Owner only. False for a billing-granted admin agent: no upgrade cards or upgrade flow,
+   * and the portal button is worded as payment method (the server-side portal for a
+   * delegate is also restricted, so this is presentation, not the security boundary).
+   */
+  canChangePlan: boolean
   plan: string
   subscriptionStatus: string | null
   currentPeriodEnd: string | null
@@ -173,6 +179,7 @@ type UpgradeStep = 'idle' | 'legal' | 'dpa' | 'checkout'
 
 export function BillingOverview({
   agencyId,
+  canChangePlan,
   plan,
   subscriptionStatus,
   currentPeriodEnd,
@@ -200,9 +207,9 @@ export function BillingOverview({
   // not a paid upgrade). The `!== 'freemium'` filter also guards the unknown-plan
   // case where indexOf returns -1 → slice(0) would otherwise include freemium and
   // render a nonsensical "Upgrade to Freemium (£0)" card.
-  const upgradablePlans = PLAN_IDS.slice(currentTierIndex + 1).filter(
-    (p) => p !== 'freemium'
-  ) as PlanId[]
+  const upgradablePlans = canChangePlan
+    ? (PLAN_IDS.slice(currentTierIndex + 1).filter((p) => p !== 'freemium') as PlanId[])
+    : []
 
   const renewalDate = currentPeriodEnd
     ? new Date(currentPeriodEnd).toLocaleDateString('en-GB', {
@@ -324,7 +331,11 @@ export function BillingOverview({
               disabled={isRedirecting}
               className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
             >
-              {isRedirecting ? 'Redirecting…' : 'Manage subscription'}
+              {isRedirecting
+                ? 'Redirecting…'
+                : canChangePlan
+                  ? 'Manage subscription'
+                  : 'Update payment method'}
             </button>
           )}
         </div>
@@ -337,7 +348,9 @@ export function BillingOverview({
 
         {hasStripeCustomer && (
           <p className="text-sm text-muted-foreground">
-            Payment method and invoices available in the billing portal.
+            {canChangePlan
+              ? 'Payment method and invoices available in the billing portal.'
+              : 'Invoices and payment method are available in the billing portal. Changing or cancelling the plan is up to the owner.'}
           </p>
         )}
       </section>

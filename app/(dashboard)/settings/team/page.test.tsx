@@ -12,6 +12,8 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { filterPendingInvitations } from '../../../../lib/invite-permissions.js'
 import { PendingInvitations } from '../../../../components/settings/PendingInvitations.js'
+import { BillingAccessList } from '../../../../components/settings/BillingAccessToggle.js'
+import { canGrantBillingAccess, isBillingGrantTarget } from '../../../../lib/billing-access.js'
 
 const now = new Date('2026-10-23T12:00:00Z')
 const rows = [
@@ -86,5 +88,33 @@ describe('settings nav', () => {
       'utf8'
     )
     assert.match(header, /canInvite\(role\) && \(\s*<Link href="\/settings\/team"/)
+  })
+})
+
+describe('billing access section (S5-ADMIN-001)', () => {
+  const members = [
+    { user_id: 'u-owner', role: 'owner', can_manage_billing: false },
+    { user_id: 'u-admin', role: 'admin_agent', can_manage_billing: true },
+    { user_id: 'u-agent', role: 'agent', can_manage_billing: false },
+    { user_id: 'u-talent', role: 'talent', can_manage_billing: false },
+  ]
+
+  it('is offered to owners only', () => {
+    assert.equal(canGrantBillingAccess('owner'), true)
+    for (const r of ['admin_agent', 'agent', 'talent'])
+      assert.equal(canGrantBillingAccess(r), false)
+  })
+
+  it('lists a toggle for admin agents only, never owner, agent or talent', () => {
+    const admins = members
+      .filter((m) => isBillingGrantTarget(m.role))
+      .map((m) => ({ userId: m.user_id, name: m.user_id, enabled: m.can_manage_billing }))
+    const html = renderToStaticMarkup(
+      React.createElement(BillingAccessList, { agencyId: 'ag-1', admins })
+    )
+    assert.equal((html.match(/type="checkbox"/g) ?? []).length, 1)
+    assert.match(html, /u-admin/)
+    assert.doesNotMatch(html, /u-owner|u-agent|u-talent/)
+    assert.match(html, /Can manage billing/)
   })
 })

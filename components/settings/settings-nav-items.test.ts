@@ -21,4 +21,22 @@ describe('settingsNavItems', () => {
   it('unknown role falls back to the least-privileged set', () => {
     assert.deepEqual(labels('nonsense'), ['Notifications', 'Account'])
   })
+  it('granted admin agent sees Billing; ungranted does not', () => {
+    const granted = settingsNavItems('admin_agent', true, true).map((i) => i.label)
+    assert.deepEqual(granted, ['Members', 'Billing', 'Notifications', 'Account'])
+    assert.deepEqual(labels('admin_agent'), ['Members', 'Notifications', 'Account'])
+  })
+  it('the grant flag never gives Billing to agent or talent', () => {
+    assert.deepEqual(
+      settingsNavItems('agent', true, true).map((i) => i.label),
+      ['Members', 'Notifications', 'Account']
+    )
+    assert.deepEqual(
+      settingsNavItems('talent', true, true).map((i) => i.label),
+      ['Notifications', 'Account']
+    )
+  })
+  it('a granted admin agent still loses Billing while billing is disabled', () => {
+    assert.ok(!settingsNavItems('admin_agent', false, true).some((i) => i.label === 'Billing'))
+  })
 })

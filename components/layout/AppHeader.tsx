@@ -9,10 +9,12 @@ import { canInvite } from '@/lib/invite-permissions'
 type Props = {
   displayName: string
   role: string
+  /** Owner, or an admin agent the owner granted billing access to (lib/billing-access). */
+  hasBillingAccess: boolean
 }
 
-export function AppHeader({ displayName, role }: Props) {
-  const pathname = usePathname()
+export function AppHeader({ displayName, role, hasBillingAccess }: Props) {
+  const pathname = usePathname() ?? ''
   const isAgent = role !== 'talent'
 
   function navClass(href: string) {
@@ -51,7 +53,7 @@ export function AppHeader({ displayName, role }: Props) {
         <div className="ml-auto flex items-center gap-3">
           <span className="text-sm text-muted-foreground hidden sm:block">{displayName}</span>
           <NotificationBell />
-          {isBillingEnabled() && (
+          {isBillingEnabled() && hasBillingAccess && (
             <Link href="/settings/billing" className={navClass('/settings/billing')}>
               Billing
             </Link>

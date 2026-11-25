@@ -1,6 +1,7 @@
 import { AppHeader } from '@/components/layout/AppHeader'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { getCurrentUserRole } from '@/lib/auth-helpers'
+import { getUserBillingAccess } from '@/lib/billing-access'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient(
@@ -10,12 +11,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const { user, role } = await getCurrentUserRole(supabase)
 
+  const { hasAccess } = user ? await getUserBillingAccess(supabase, user.id) : { hasAccess: false }
+
   const meta = user?.user_metadata as Record<string, string> | undefined
   const displayName = meta?.full_name ?? meta?.name ?? user?.email?.split('@')[0] ?? 'User'
 
   return (
     <div className="min-h-screen flex flex-col">
-      <AppHeader displayName={displayName} role={role} />
+      <AppHeader displayName={displayName} role={role} hasBillingAccess={hasAccess} />
       <div className="flex-1">{children}</div>
     </div>
   )

@@ -22,11 +22,125 @@
  *      NOT carry one of our current lookup_keys (sweeps the old £49/£149/£349 prices).
  *      Prices are never deleted and subscriptions are never touched.
  *
+ *   4. Ensure the Customer Portal configurations (S5-ADMIN-001), matched by metadata.hudo_role
+ *      and re-enforced on every run. `--portal-only` runs just this step.
+ *      - Owner = the account DEFAULT (owners' portal sessions pass no configuration):
+ *        invoices, payment method, email/address/tax ID, cancel at period end. Plan change
+ *        stays in the app's upgrade flow. Created only when the account has no default;
+ *        a default set in the Dashboard is left alone.
+ *      - Delegate (admin agents granted billing access): invoices + payment method only.
+ *        Never the default. Its ID is printed for STRIPE_PORTAL_CONFIG_DELEGATE.
+ *
  * Tier numbers come entirely from lib/plans.ts — no magic literals here.
  */
 
 import Stripe from 'stripe'
 import { PLANS, PAID_PLAN_IDS } from '../lib/plans'
+
+const DELEGATE_PORTAL_ROLE = 'billing_delegate'
+const OWNER_PORTAL_ROLE = 'owner_default'
+
+// Delegate portal: view invoices + update payment method only (passed explicitly by
+// /api/billing/portal for admin agents granted billing access).
+const DELEGATE_PORTAL_FEATURES: Stripe.BillingPortal.ConfigurationCreateParams.Features = {
+  invoice_history: { enabled: true },
+  payment_method_update: { enabled: true },
+  customer_update: { enabled: false },
+  subscription_cancel: { enabled: false },
+  subscription_update: { enabled: false },
+}
+
+// Owner (account default) portal: everything except plan change, which goes through the
+// app's upgrade flow (legal entity + DPA + Checkout), not the portal.
+const OWNER_PORTAL_FEATURES: Stripe.BillingPortal.ConfigurationCreateParams.Features = {
+  invoice_history: { enabled: true },
+  payment_method_update: { enabled: true },
+  customer_update: { enabled: true, allowed_updates: ['email', 'address', 'tax_id'] },
+  subscription_cancel: { enabled: true, mode: 'at_period_end' },
+  subscription_update: { enabled: false },
+}
+
+async function listPortalConfigs(stripe: Stripe): Promise<Stripe.BillingPortal.Configuration[]> {
+  const out: Stripe.BillingPortal.Configuration[] = []
+  for await (const c of stripe.billingPortal.configurations.list({ active: true, limit: 100 })) out.push(c)
+  return out
+}
+
+/**
+ * Owners get the account's DEFAULT portal configuration (the route passes no
+ * `configuration` for them). Stripe makes the first configuration on an account the
+ * default, so the owner one must exist before the delegate one is created. An existing
+ * default is never touched unless this script created it (metadata.hudo_role).
+ */
+async function ensureOwnerDefaultPortalConfig(stripe: Stripe): Promise<string> {
+  const configs = await listPortalConfigs(stripe)
+  const current = configs.find((c) => c.is_default)
+  if (current && current.metadata?.hudo_role === DELEGATE_PORTAL_ROLE) {
+    // Repair: a restricted delegate config must never be the default. Turn it into the
+    // owner default; a fresh delegate config is created afterwards.
+    const c = await stripe.billingPortal.configurations.update(current.id, {
+      name: 'Hudo owner (default)',
+      features: OWNER_PORTAL_FEATURES,
+      metadata: { hudo_role: OWNER_PORTAL_ROLE },
+    })
+    console.log(`  [~] Default portal configuration was the delegate one; converted to owner default: ${c.id}`)
+    return c.id
+  }
+  if (current && current.metadata?.hudo_role === OWNER_PORTAL_ROLE) {
+    const c = await stripe.billingPortal.configurations.update(current.id, { features: OWNER_PORTAL_FEATURES })
+    console.log(`  [~] Owner default portal configuration re-enforced: ${c.id}`)
+    return c.id
+  }
+  if (current) {
+    console.log(`  [=] Default portal configuration set outside this script, left as is: ${current.id}`)
+    return current.id
+  }
+  const c = await stripe.billingPortal.configurations.create({
+    name: 'Hudo owner (default)',
+    features: OWNER_PORTAL_FEATURES,
+    metadata: { hudo_role: OWNER_PORTAL_ROLE },
+  })
+  console.log(`  [+] Owner default portal configuration created: ${c.id}${c.is_default ? '' : ' (not default!)'}`)
+  return c.id
+}
+
+/** Find (by metadata, never the default) or create the delegate portal configuration. */
+async function ensureDelegatePortalConfig(stripe: Stripe): Promise<string> {
+  const existing = (await listPortalConfigs(stripe)).find(
+    (c) => !c.is_default && c.metadata?.hudo_role === DELEGATE_PORTAL_ROLE
+  )
+  let config: Stripe.BillingPortal.Configuration
+  if (existing) {
+    config = await stripe.billingPortal.configurations.update(existing.id, {
+      features: DELEGATE_PORTAL_FEATURES,
+    })
+    console.log(`  [~] Delegate portal configuration re-enforced: ${config.id}`)
+  } else {
+    config = await stripe.billingPortal.configurations.create({
+      name: 'Hudo billing delegate (invoices + payment method only)',
+      features: DELEGATE_PORTAL_FEATURES,
+      metadata: { hudo_role: DELEGATE_PORTAL_ROLE },
+    })
+    console.log(`  [+] Delegate portal configuration created: ${config.id}`)
+  }
+  const f = config.features
+  if (config.is_default) {
+    throw new Error(`Delegate portal configuration ${config.id} is the account default; owners would get it`)
+  }
+  if (f.subscription_cancel.enabled || f.subscription_update.enabled || f.customer_update.enabled) {
+    throw new Error(`Delegate portal configuration ${config.id} still allows cancel/plan/customer edits`)
+  }
+  return config.id
+}
+
+async function ensurePortalConfigs(stripe: Stripe): Promise<string> {
+  console.log('── Customer portal configurations ────────────────────────────────')
+  await ensureOwnerDefaultPortalConfig(stripe)
+  const delegateId = await ensureDelegatePortalConfig(stripe)
+  console.log(`  Set STRIPE_PORTAL_CONFIG_DELEGATE=${delegateId} for this Stripe mode.`)
+  console.log()
+  return delegateId
+}
 
 async function main() {
   const key = process.env.STRIPE_SECRET_KEY
@@ -69,6 +183,11 @@ async function main() {
   }
 
   const stripe = new Stripe(key, { apiVersion: '2026-05-27.dahlia' })
+
+  if (process.argv.includes('--portal-only')) {
+    await ensurePortalConfigs(stripe)
+    return
+  }
 
   // ── Summary counters ────────────────────────────────────────────────────────
   const summary = {
@@ -221,6 +340,8 @@ async function main() {
   }
   console.log()
 
+  const delegatePortalId = await ensurePortalConfigs(stripe)
+
   // ── Summary ─────────────────────────────────────────────────────────────────
   console.log('='.repeat(60))
   console.log('SUMMARY')
@@ -229,6 +350,7 @@ async function main() {
   console.log(`Prices    — created: ${summary.prices.created.length}, skipped: ${summary.prices.skipped.length}`)
   console.log(`Archived  — ${summary.archived.length} old price(s)`)
   console.log(`Coupons   — created: ${summary.coupons.created.length}, skipped: ${summary.coupons.skipped.length}`)
+  console.log(`Portal    — delegate configuration: ${delegatePortalId}`)
   if (summary.archived.length > 0) {
     console.log('\nArchived prices:')
     summary.archived.forEach(s => console.log(`  - ${s}`))

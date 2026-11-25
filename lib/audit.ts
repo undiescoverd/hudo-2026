@@ -15,6 +15,8 @@ export type AuditAction =
   | 'guest_link_revoked'
   | 'billing_plan_changed'
   | 'billing_payment_failed'
+  | 'billing_access_granted'
+  | 'billing_access_revoked'
   | 'user_erased'
   | 'video_purged'
   | 'version_purged'

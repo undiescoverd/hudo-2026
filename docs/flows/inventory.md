@@ -56,13 +56,13 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 | F15 | Media library and talent portfolio | Video table and card on Dashboard page only | Partial | — | No | Not checked |
 | F16 | Profile and account settings | not drawn | Not drawn | — | Partial (API only) | Not checked |
 | F17 | Agency settings | Legal entity form only (Billing & Settings page) | Partial | — | Partial (API only) | Not checked |
-| F18 | Team management | not drawn | Not drawn | — | Partial (invites only) | Not checked |
+| F18 | Team management | not drawn | Not drawn | #207 | Partial (invites, and the owner's per-person billing-access switch for admin agents) | Not checked |
 | F19 | Talent roster | not drawn | Not drawn | — | No | Not checked |
 | F20 | Talent responds to feedback | Flow 01 comment thread and upload v2; Flow 08, T7 → T4 | Drawn | #253 | Partial (resubmitting works since S5-FLOW-003; the video page has no way back to the talent's Dashboard, #253) | Not checked |
 | F21 | Talent transfer between agencies | not drawn | Not drawn | — | No | Not checked |
 | F22 | Search, filters and activity history | Status filter only | Partial | — | No | Not checked |
 | F23 | Platform admin | not drawn | Not drawn | — | Partial (pages broken) | Not checked |
-| F24 | Billing and subscriptions | Billing overview page | Partial | #142 (pricing draft) | Yes (S3 billing shipped, see discrepancies) | Not checked |
+| F24 | Billing and subscriptions | Billing overview page; Flow · Every role, end to end, admin agent lane step 08 | Partial | #142 (pricing draft), #207 | Yes (S3 billing shipped, see discrepancies; owner can grant an admin agent billing access, #207: S5-ADMIN-001, migration 0033 pending apply and a restricted Stripe portal configuration needed, see docs/stripe-setup.md) | Not checked |
 | F25 | Account deletion and data export | not drawn | Not drawn | #143, #144–#148 | Partial (erasure shipped, deletion not) | Not checked |
 | F26 | Google and Apple sign-in | not drawn | Not drawn | — | Partial (disabled placeholder buttons) | Not checked |
 | F27 | System pages: errors, empty states, legal | Flow 05 step 15; Flow 03 step 13; Flow 02 invalid-link; Guest v2 "Link · …" and "Video failed to load" | Partial | #171 | Partial (invalid-link page has generic expired / revoked / subscription-ended / not-found copy, guest player tells 429 from other failures, authed player shows "This version couldn't be loaded" with Retry and version switch, #171: S5-ERR-001; other system pages not done) | Not checked |
