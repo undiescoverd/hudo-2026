@@ -29,6 +29,8 @@ function notificationLabel(type: Notification['type']): string {
       return 'Status changed'
     case 'invitation_accepted':
       return 'Invitation accepted'
+    case 'guest_viewed':
+      return 'Guest watched'
     default:
       return 'Notification'
   }

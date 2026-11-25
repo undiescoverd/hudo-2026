@@ -15,7 +15,7 @@
 -- =============================================================
 
 BEGIN;
-SELECT plan(7);
+SELECT plan(14);
 
 -- ── Setup (runs as postgres superuser) ──────────────────────────────
 
@@ -152,6 +152,61 @@ SELECT is(
     WHERE id = 'dead0006-0006-4000-a000-000000000001'::uuid),
   1,
   'No DELETE policy: hard delete on guest_links silently blocked (link still exists)'
+);
+
+-- ── Tests 8–12: increment_guest_link_view returns the new view_count (0031, S5-GUEST-004) ──
+-- First call returns 1 (the "first watch" signal), then 2; a revoked link matches
+-- no row, so it returns NULL. Link 0099 was created above and is live.
+RESET ROLE;
+SELECT is(
+  increment_guest_link_view('dead0006-0006-4000-a000-000000000099'::uuid),
+  1,
+  'increment_guest_link_view: first call returns 1'
+);
+SELECT is(
+  increment_guest_link_view('dead0006-0006-4000-a000-000000000099'::uuid),
+  2,
+  'increment_guest_link_view: second call returns 2'
+);
+SELECT is(
+  increment_guest_link_view('dead0006-0006-4000-a000-000000000001'::uuid),
+  NULL::integer,
+  'increment_guest_link_view: revoked link returns NULL and is not counted'
+);
+SELECT is(
+  has_function_privilege('anon', 'increment_guest_link_view(uuid)', 'EXECUTE')
+    OR has_function_privilege('authenticated', 'increment_guest_link_view(uuid)', 'EXECUTE'),
+  false,
+  'increment_guest_link_view: not executable by anon/authenticated'
+);
+SELECT is(
+  has_function_privilege('service_role', 'increment_guest_link_view(uuid)', 'EXECUTE'),
+  true,
+  'increment_guest_link_view: executable by service_role'
+);
+
+-- ── Tests 13–14: notifications.type accepts guest_viewed, still rejects unknowns ──
+SELECT lives_ok(
+  $$INSERT INTO notifications (agency_id, recipient_id, type, video_id, payload)
+    VALUES (
+      'c0ffee06-0000-4000-a000-000000000001'::uuid,
+      'dbeef006-0006-4000-a000-000000000001'::uuid,
+      'guest_viewed',
+      'b1de0006-0006-4000-a000-000000000001'::uuid,
+      '{"message":"A guest watched your shared video."}'::jsonb
+    )$$,
+  'notifications.type: guest_viewed is accepted'
+);
+SELECT throws_ok(
+  $$INSERT INTO notifications (agency_id, recipient_id, type)
+    VALUES (
+      'c0ffee06-0000-4000-a000-000000000001'::uuid,
+      'dbeef006-0006-4000-a000-000000000001'::uuid,
+      'not_a_real_type'
+    )$$,
+  '23514',
+  NULL,
+  'notifications.type: unknown type is still rejected by the CHECK'
 );
 
 RESET ROLE;

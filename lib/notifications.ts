@@ -135,6 +135,60 @@ export async function enqueueUploadNotification(
   }
 }
 
+/**
+ * Inserts one 'guest_viewed' bell notification for the agent who created a guest
+ * link, on the link's first watch only (S5-GUEST-004, GH #170). The caller decides
+ * "first" from the atomic increment_guest_link_view result.
+ *
+ * Privacy: the payload is a fixed message. No guest identity, IP, user agent,
+ * link or token is ever included. Skips silently if the creator is no longer a
+ * member of the agency (left, or erased). Must not throw.
+ */
+export async function enqueueGuestViewNotification(
+  {
+    agencyId,
+    videoId,
+    creatorId,
+  }: {
+    agencyId: string
+    videoId: string
+    creatorId: string
+  },
+  deps?: { admin?: SupabaseClient }
+): Promise<void> {
+  let admin: SupabaseClient
+  try {
+    admin = deps?.admin ?? createAdminClient()
+  } catch (err) {
+    console.error('[notifications:enqueueGuestView] Config error:', err)
+    return
+  }
+
+  const { data: member, error: memberErr } = await admin
+    .from('memberships')
+    .select('user_id')
+    .eq('agency_id', agencyId)
+    .eq('user_id', creatorId)
+    .maybeSingle()
+  if (memberErr) {
+    console.error('[notifications:enqueueGuestView] Membership lookup failed:', memberErr.message)
+    return
+  }
+  if (!member) return
+
+  const { error: insertError } = await admin.from('notifications').insert({
+    agency_id: agencyId,
+    recipient_id: creatorId,
+    type: 'guest_viewed',
+    video_id: videoId,
+    comment_id: null,
+    payload: { message: 'A guest watched your shared video.' },
+  })
+  if (insertError) {
+    console.error('[notifications:enqueueGuestView] Insert failed:', insertError.message)
+  }
+}
+
 export type BatchSendDeps = {
   admin?: SupabaseClient
   emailSender?: typeof defaultSendEmail

@@ -447,3 +447,86 @@ describe('enqueueUploadNotification', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// enqueueGuestViewNotification (S5-GUEST-004 — first guest watch -> link creator)
+// ---------------------------------------------------------------------------
+
+function makeGuestViewAdmin(opts: {
+  member: { user_id: string } | null
+  memberError?: { message: string } | null
+  insertError?: { message: string } | null
+}) {
+  const inserted: Array<Record<string, unknown>> = []
+  const filters: Array<[string, unknown]> = []
+  const admin = {
+    from(table: string) {
+      if (table === 'memberships') {
+        const chain: any = {
+          select: () => chain,
+          eq: (col: string, val: unknown) => {
+            filters.push([col, val])
+            return chain
+          },
+          maybeSingle: async () => ({ data: opts.member, error: opts.memberError ?? null }),
+        }
+        return chain
+      }
+      assert.equal(table, 'notifications')
+      return {
+        insert: async (row: Record<string, unknown>) => {
+          inserted.push(row)
+          return { error: opts.insertError ?? null }
+        },
+      }
+    },
+  }
+  return { admin: admin as unknown as SupabaseClient, inserted, filters }
+}
+
+describe('enqueueGuestViewNotification', () => {
+  const args = { agencyId: 'agency-1', videoId: 'video-1', creatorId: 'creator-1' }
+
+  it('inserts one guest_viewed row for the creator with a fixed message and no guest data', async () => {
+    const { enqueueGuestViewNotification } = await import('./notifications')
+    const { admin, inserted, filters } = makeGuestViewAdmin({ member: { user_id: 'creator-1' } })
+    await enqueueGuestViewNotification(args, { admin })
+    assert.deepEqual(filters, [
+      ['agency_id', 'agency-1'],
+      ['user_id', 'creator-1'],
+    ])
+    assert.deepEqual(inserted, [
+      {
+        agency_id: 'agency-1',
+        recipient_id: 'creator-1',
+        type: 'guest_viewed',
+        video_id: 'video-1',
+        comment_id: null,
+        payload: { message: 'A guest watched your shared video.' },
+      },
+    ])
+  })
+
+  it('skips silently when the creator is no longer a member (left or erased)', async () => {
+    const { enqueueGuestViewNotification } = await import('./notifications')
+    const { admin, inserted } = makeGuestViewAdmin({ member: null })
+    await enqueueGuestViewNotification(args, { admin })
+    assert.equal(inserted.length, 0)
+  })
+
+  it('does not throw or insert when the membership lookup errors', async () => {
+    const { enqueueGuestViewNotification } = await import('./notifications')
+    const { admin, inserted } = makeGuestViewAdmin({ member: null, memberError: { message: 'x' } })
+    await enqueueGuestViewNotification(args, { admin })
+    assert.equal(inserted.length, 0)
+  })
+
+  it('does not throw when the insert fails', async () => {
+    const { enqueueGuestViewNotification } = await import('./notifications')
+    const { admin } = makeGuestViewAdmin({
+      member: { user_id: 'creator-1' },
+      insertError: { message: 'check violation' },
+    })
+    await assert.doesNotReject(enqueueGuestViewNotification(args, { admin }))
+  })
+})

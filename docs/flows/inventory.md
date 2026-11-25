@@ -52,7 +52,7 @@ Paper step numbers below are approximate, read from the boards. Check the board 
 | F11 | Agent reviews with voice feedback | Flow 01, steps 05–07 (typed comments only) | Conflict | #169 | Partial (typed comments work; no voice recording code found) | Not checked |
 | F12 | Complete review and export edit list | Flow 01, steps 09–11; Flow 06, steps 09–10 | Conflict | #159, #160, #161 | Partial (PDF is HTML, no export) | Not checked |
 | F13 | Talent receives and views feedback | Flow 01, steps 06–07; Flow 08, T6–T8 | Drawn | #168, #163, #252, #253, #257 | Partial | Not checked |
-| F14 | Notifications | Flow 01, step 08; Flow 02, step 08; Flow 08, T8 (talent status alerts) | Partial | #170, #257 | Partial | Not checked |
+| F14 | Notifications | Flow 01, step 08; Flow 02, step 08; Flow 08, T8 (talent status alerts) | Partial | #170, #257 | Partial (agent bell alert on a guest link's first watch, #170: S5-GUEST-004; migration 0031 pending apply) | Not checked |
 | F15 | Media library and talent portfolio | Video table and card on Dashboard page only | Partial | — | No | Not checked |
 | F16 | Profile and account settings | not drawn | Not drawn | — | Partial (API only) | Not checked |
 | F17 | Agency settings | Legal entity form only (Billing & Settings page) | Partial | — | Partial (API only) | Not checked |
