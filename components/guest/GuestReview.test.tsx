@@ -20,7 +20,7 @@ describe('GuestReview', () => {
 
   it('renders the player stage with no comments section', () => {
     const html = renderToStaticMarkup(React.createElement(GuestReview, { token: 'tok' }))
-    assert.ok(html.length > 0)
+    assert.match(html, /<video|Loading/i)
     assert.doesNotMatch(html, /comment/i)
   })
 })

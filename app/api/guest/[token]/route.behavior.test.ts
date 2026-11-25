@@ -28,12 +28,15 @@ let token = ''
 let revokedAt: string | null = null
 let expiresAt: string | null = null
 let redisCount = 1
+let redisBodies: string[] = []
 
 function installFetch() {
   calls = []
+  redisBodies = []
   globalThis.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
     if (url.origin === REDIS) {
+      redisBodies.push(typeof init.body === 'string' ? init.body : '')
       const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
       const n = Array.isArray(body) ? body.length : 1
       const items = Array.from({ length: n }, () => ({ result: redisCount }))
@@ -72,7 +75,7 @@ function installFetch() {
         {
           id: VIDEO,
           title: 'Showreel',
-          description: null,
+          description: 'INTERNAL DESCRIPTION',
           status: 'in_review',
           active_version_id: VERSION,
         },
@@ -129,9 +132,18 @@ describe('GET /api/guest/:token: video only (real handler)', () => {
     assert.equal(res.status, 200)
     const body = (await res.json()) as Record<string, unknown>
     assert.deepEqual(Object.keys(body).sort(), ['version', 'video'])
+    assert.deepEqual(Object.keys(body.video as object).sort(), ['id', 'title'])
+    assert.deepEqual(Object.keys(body.version as object).sort(), [
+      'duration_seconds',
+      'id',
+      'version_number',
+    ])
     assert.equal((body.video as { title: string }).title, 'Showreel')
     assert.equal(commentQueries().length, 0)
-    assert.doesNotMatch(JSON.stringify(body), /INTERNAL AGENT NOTE|Alex Agent|r2_key|token_hash/)
+    assert.doesNotMatch(
+      JSON.stringify(body),
+      /INTERNAL AGENT NOTE|INTERNAL DESCRIPTION|Alex Agent|r2_key|token_hash/
+    )
   })
 
   it('getGuestMetadata returns no comments and makes no comments query', async () => {
@@ -160,6 +172,14 @@ describe('GET /api/guest/:token: video only (real handler)', () => {
     token = generateGuestToken()
     expiresAt = new Date(Date.now() - 1000).toISOString()
     assert.equal((await request()).status, 404)
+  })
+
+  it('rate limit is keyed by the token hash, never the plaintext token', async () => {
+    token = generateGuestToken()
+    await request()
+    const sent = redisBodies.join(' ')
+    assert.ok(sent.includes(hashGuestToken(token)))
+    assert.ok(!sent.includes(token))
   })
 
   it('over the rate limit -> 429 with Retry-After, no data read', async () => {

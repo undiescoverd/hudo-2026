@@ -10,8 +10,6 @@ export type GuestMetadata = {
   video: {
     id: string
     title: string
-    description: string | null
-    status: string
   }
   version: {
     id: string
@@ -72,7 +70,7 @@ export async function getGuestMetadata(token: string): Promise<GuestMetadata | n
   // Fetch video metadata — never return r2_key, agency_id, or internal ids that allow pivoting
   const { data: video, error: videoError } = await admin
     .from('videos')
-    .select('id, title, description, status, active_version_id')
+    .select('id, title, active_version_id')
     .eq('id', link.video_id)
     .single()
 
@@ -100,8 +98,6 @@ export async function getGuestMetadata(token: string): Promise<GuestMetadata | n
     video: {
       id: video.id,
       title: video.title,
-      description: video.description,
-      status: video.status,
     },
     version: version
       ? {
